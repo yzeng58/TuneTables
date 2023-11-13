@@ -243,11 +243,11 @@ if __name__ == '__main__':
     config_parser.add_argument('--config')
     parser = argparse.ArgumentParser()
     parser.add_argument('prior')
-    parser.add_argument('--loss_function', default='barnll')
+    parser.add_argument('--loss_function', default='gaussnll')
     # Optional Arg's for `--loss_function barnll`
     parser.add_argument('--min_y', type=float, help='barnll can only model y in strict ranges, this is the minimum y can take.')
     parser.add_argument('--max_y', type=float, help='barnll can only model y in strict ranges, this is the maximum y can take.')
-    parser.add_argument('--num_buckets', default=100, type=int)
+    parser.add_argument('--num_features', default=None, type=int, help='Specify depending on the prior (can be None).')
     #parser.add_argument('--num_features', default=None, type=int, help='Specify depending on the prior.')
     parser.add_argument("--extra_prior_kwargs_dict", default={}, dest="extra_prior_kwargs_dict", action=StoreDictKeyPair, nargs="+", metavar="KEY=VAL", help='Specify depending on the prior.')
     parser.add_argument('--encoder', default='linear', type=str, help='Specify depending on the prior.')
@@ -293,10 +293,12 @@ if __name__ == '__main__':
 
     criterion = nn.GaussianNLLLoss(reduction='none', full=True)
     classificiation_criterion = nn.CrossEntropyLoss(reduction='none')
-    num_buckets = args.__dict__.pop('num_buckets')
     max_y = args.__dict__.pop('max_y')
     min_y = args.__dict__.pop('min_y')
     # criterion = nn.MSELoss(reduction='none')
+
+    if args.num_features:
+        extra_prior_kwargs_dict["num_features"] = args.num_features
 
     if loss_function == 'ce':
         criterion = nn.CrossEntropyLoss(reduction='none')
@@ -356,4 +358,3 @@ if __name__ == '__main__':
     train(prior, criterion, encoder_generator,
           y_encoder_generator=y_encoder_generator, pos_encoder_generator=pos_encoder_generator,
           **args.__dict__)
-
