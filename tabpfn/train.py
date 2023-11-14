@@ -9,16 +9,20 @@ from contextlib import nullcontext
 
 import torch
 from torch import nn
+from torch.utils.data import DataLoader
 
 import tabpfn.utils as utils
 from tabpfn.transformer import TransformerModel
 from tabpfn.utils import get_cosine_schedule_with_warmup, get_openai_lr, StoreDictKeyPair, get_weighted_single_eval_pos_sampler, get_uniform_single_eval_pos_sampler
-import tabpfn.priors as priors
+import priors
+from priors.real import TabDS
 import tabpfn.encoders as encoders
 import tabpfn.positional_encodings as positional_encodings
 from tabpfn.utils import init_dist
 from torch.cuda.amp import autocast, GradScaler
 from torch import nn
+
+import numpy as np
 
 class Losses():
     gaussian = nn.GaussianNLLLoss(full=True, reduction='none')
@@ -40,6 +44,10 @@ def train(priordataloader_class, criterion, encoder_generator, emsize=200, nhid=
     device = gpu_device if torch.cuda.is_available() else 'cpu:0'
     print(f'Using {device} device')
     using_dist, rank, device = init_dist(device)
+    if extra_prior_kwargs_dict.get('prior_type') == 'real':
+        real_prior = True
+    else:
+        real_prior = False
     single_eval_pos_gen = single_eval_pos_gen if callable(single_eval_pos_gen) else lambda: single_eval_pos_gen
 
     def eval_pos_seq_len_sampler():
@@ -48,9 +56,29 @@ def train(priordataloader_class, criterion, encoder_generator, emsize=200, nhid=
             return single_eval_pos, single_eval_pos + bptt_extra_samples
         else:
             return single_eval_pos, bptt
-    dl = priordataloader_class(num_steps=steps_per_epoch, batch_size=batch_size, eval_pos_seq_len_sampler=eval_pos_seq_len_sampler, seq_len_maximum=bptt+(bptt_extra_samples if bptt_extra_samples else 0), device=device, **extra_prior_kwargs_dict)
-
-    encoder = encoder_generator(dl.num_features, emsize)
+    
+    if real_prior:
+        X, y = priordataloader_class[0][0], priordataloader_class[0][1]
+        X_val, y_val = priordataloader_class[1][0], priordataloader_class[1][1]
+        X_test, y_test = priordataloader_class[2][0], priordataloader_class[2][1]
+        #TODO: make num_features a hyperparameter
+        num_features = 100
+        train_ds = TabDS(X, y, num_features=num_features, aggregate_k_gradients=aggregate_k_gradients)
+        dl = DataLoader(
+            train_ds, batch_size=bptt, shuffle=True, num_workers=2,
+        )
+        val_ds = TabDS(X_val, y_val, num_features=num_features, aggregate_k_gradients=aggregate_k_gradients)
+        val_dl = DataLoader(
+            val_ds, batch_size=bptt, shuffle=False, num_workers=2,
+        )
+        test_ds = TabDS(X_test, y_test, num_features=num_features, aggregate_k_gradients=aggregate_k_gradients)
+        test_dl = DataLoader(
+            test_ds, batch_size=bptt, shuffle=False, num_workers=2,
+        )
+    else:
+        dl = priordataloader_class(num_steps=steps_per_epoch, batch_size=batch_size, eval_pos_seq_len_sampler=eval_pos_seq_len_sampler, seq_len_maximum=bptt+(bptt_extra_samples if bptt_extra_samples else 0), device=device, **extra_prior_kwargs_dict)
+        num_features = dl.num_features
+    encoder = encoder_generator(num_features, emsize)
     #style_def = dl.get_test_batch()[0][0] # the style in batch of the form ((style, x, y), target, single_eval_pos)
     style_def = None
     #print(f'Style definition of first 3 examples: {style_def[:3] if style_def is not None else None}')
@@ -85,8 +113,9 @@ def train(priordataloader_class, criterion, encoder_generator, emsize=200, nhid=
     if using_dist:
         print("Distributed training")
         model = torch.nn.parallel.DistributedDataParallel(model, device_ids=[rank], output_device=rank, broadcast_buffers=False)
-    dl.model = model
-
+    
+    if not real_prior:
+        dl.model = model
 
     # learning rate
     if lr is None:
@@ -100,6 +129,26 @@ def train(priordataloader_class, criterion, encoder_generator, emsize=200, nhid=
     # check that everything uses up-to-date APIs
     utils.check_compatibility(dl)
 
+    def real_data_eval():
+        print("Evaluate on real data")
+        train_data, train_targets, _ = next(iter(dl))
+        single_eval_pos = len(train_targets)
+        with torch.no_grad():
+            correct = 0
+            total = len(val_ds)
+            for batch, (data, targets, _) in enumerate(val_dl):
+                batch_data = tuple([torch.cat((train_data[0], data[0]), dim=0), torch.cat((train_data[1], data[1]), dim=0)])
+                #print("Batch data shape: ", batch_data[0].shape)
+                #print("Single eval pos: ", single_eval_pos)
+                output = model(tuple(e.to(device) if torch.is_tensor(e) else e for e in batch_data) if isinstance(batch_data, tuple) else batch_data.to(device)
+                    , single_eval_pos=single_eval_pos)
+                #outputs_to_measure = output[single_eval_pos:, :]
+                #Compare predictions to targets
+                _, predicted = torch.max(output.cpu().data, 1)
+                # print("Predicted: ", predicted.shape)
+                # print("Targets: ", targets.shape)
+                correct += (predicted == targets).sum().item()
+        return np.round(correct / total, 3)
     def train_epoch():
         model.train()  # Turn on the train mode
         total_loss = 0.
@@ -110,6 +159,31 @@ def train(priordataloader_class, criterion, encoder_generator, emsize=200, nhid=
         before_get_batch = time.time()
         assert len(dl) % aggregate_k_gradients == 0, 'Please set the number of steps per epoch s.t. `aggregate_k_gradients` divides it.'
         for batch, (data, targets, single_eval_pos) in enumerate(dl):
+            if isinstance(data, list):
+                data = tuple(data)
+            #print(f"Batch {batch} of {len(dl)}")
+            #data is a Tuple of length 3: (style, x, y)?
+            # print("Length of data tuple: ", len(data))
+            #Data[1] shape: torch.Size([1152, 1, 100]), positive and negative values, [ 34.3708, -18.9162, -18.4063,  ...,   0.0000,   0.0000,   0.0000], padded with zeros at the end
+            #Data[2] == Targets(there are some holdout points)
+            #Targets shape: torch.Size([1152, 1]), values are integer class labels
+            """
+            tensor([[0.],
+            [2.],
+            [3.],
+            ...,
+            [2.],
+            [1.],
+            [0.]], device='cuda:0')
+            """
+            # print("Data1: ", data[1])
+            # print("Data2: ", data[2])
+            # print("Data2 shape", data[2].shape)
+            # print("Targets: ", targets)
+            # #print("Data shape: ", data.shape)
+            # print("Targets shape: ", targets.shape)
+            if isinstance(single_eval_pos, torch.Tensor) and single_eval_pos.numel() == 0:
+                single_eval_pos = None
             if using_dist and not (batch % aggregate_k_gradients == aggregate_k_gradients - 1):
                 cm = model.no_sync()
             else:
@@ -144,6 +218,10 @@ def train(priordataloader_class, criterion, encoder_generator, emsize=200, nhid=
                         losses = criterion(output.reshape(-1, n_out), targets.to(device).long().flatten())
                     else:
                         losses = criterion(output, targets)
+                    if len(output.shape) == 2:
+                        output = output.unsqueeze(1)
+                    # print("Losses shape: ", losses.shape)
+                    # print("Outputs shape: ", output.shape)
                     losses = losses.view(*output.shape[0:2])
                     loss, nan_share = utils.torch_nanmean(losses.mean(0), return_nanshare=True)
                     loss = loss / aggregate_k_gradients
@@ -187,11 +265,13 @@ def train(priordataloader_class, criterion, encoder_generator, emsize=200, nhid=
     total_positional_losses = float('inf')
     try:
         for epoch in (range(1, epochs + 1) if epochs is not None else itertools.count(1)):
-
             epoch_start_time = time.time()
             total_loss, total_positional_losses, time_to_get_batch, forward_time, step_time, nan_share, ignore_share =\
                 train_epoch()
-            if hasattr(dl, 'validate') and epoch % validation_period == 0:
+            if real_prior \
+                and epoch % validation_period == 0:
+                val_score = real_data_eval()
+            elif hasattr(dl, 'validate') and epoch % validation_period == 0:
                 with torch.no_grad():
                     val_score = dl.validate(model)
             else:
@@ -201,11 +281,11 @@ def train(priordataloader_class, criterion, encoder_generator, emsize=200, nhid=
                 print('-' * 89)
                 print(
                     f'| end of epoch {epoch:3d} | time: {(time.time() - epoch_start_time):5.2f}s | mean loss {total_loss:5.2f} | '
-                    f"pos losses {','.join([f'{l:5.2f}' for l in total_positional_losses])}, lr {scheduler.get_last_lr()[0]}"
-                    f' data time {time_to_get_batch:5.2f} step time {step_time:5.2f}'
-                    f' forward time {forward_time:5.2f}' 
-                    f' nan share {nan_share:5.2f} ignore share (for classification tasks) {ignore_share:5.4f}'
-                    + (f'val score {val_score}' if val_score is not None else ''))
+                    f"| pos losses {','.join([f'{l:5.2f}' for l in total_positional_losses])} | lr {scheduler.get_last_lr()[0]}"
+                    f' | data time {time_to_get_batch:5.2f} | step time {step_time:5.2f}'
+                    f' | forward time {forward_time:5.2f}' 
+                    f' | nan share {nan_share:5.2f} | ignore share (for classification tasks) {ignore_share:5.4f}'
+                    + (f' | val score {val_score}' if val_score is not None else ''))
                 print('-' * 89)
 
             # stepping with wallclock time based scheduler

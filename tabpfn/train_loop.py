@@ -36,8 +36,6 @@ def train_function(config_sample, i=0, add_name=''):
 def reload_config(config_type='causal', task_type='multiclass', longer=0):
     config = get_prior_config(config_type=config_type)
     
-    config['prior_type'], config['differentiable'], config['flexible'] = 'prior_bag', True, True
-    
     model_string = ''
     
     config['recompute_attn'] = True
@@ -55,9 +53,19 @@ def train_loop():
     parser = argparse.ArgumentParser(description='Train a model.')
     parser.add_argument('--resume', type=str, default=None, help='Path to model checkpoint to resume from.')
     parser.add_argument('--save_path', type=str, default=".", help='Path to save new checkpoints.')
+    parser.add_argument('--prior_type', type=str, default="prior_bag", help='Type of prior to use (real, prior_bag).')
+    parser.add_argument('--data_path', type=str, default=".", help='Path to data.')
     args = parser.parse_args()
 
     config, model_string = reload_config(longer=1)
+
+    if args.prior_type == 'prior_bag':
+        config['prior_type'], config['differentiable'], config['flexible'] = 'prior_bag', True, True
+    else:
+        #TODO: check this
+        config['prior_type'], config['differentiable'], config['flexible'] = args.prior_type, True, False
+
+    config['data_path'] = args.data_path
 
     if args.resume is not None:
         model_state, optimizer_state_load, config_sample_load = torch.load(args.resume, map_location='cpu')
