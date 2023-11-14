@@ -305,6 +305,8 @@ def get_model(config, device, should_train=True, verbose=False, state_dict=None,
                         , 'hyperparameters': prior_hyperparameters
                         #, 'dynamic_batch_size': 1 if ('num_global_att_tokens' in config and config['num_global_att_tokens']) else 2
                         , 'batch_size_per_gp_sample': config.get('batch_size_per_gp_sample', None)
+                        , 'prompt_tuning': config.get('prompt_tuning', False)
+                        , 'tuned_prompt_size': config.get('tuned_prompt_size', 0)
                         , **extra_kwargs
     }
     if config['prior_type'] == 'real':

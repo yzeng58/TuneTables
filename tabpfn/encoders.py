@@ -202,7 +202,6 @@ class Linear(nn.Linear):
         super().__setstate__(state)
         self.__dict__.setdefault('replace_nan_by_zero', True)
 
-
 class Conv(nn.Module):
     def __init__(self, input_size, emsize):
         super().__init__()

@@ -11,12 +11,12 @@ import torch
 from torch import nn
 from torch.utils.data import DataLoader
 
-import tabpfn.utils as utils
-from tabpfn.transformer import TransformerModel
+import utils
+from transformer import TransformerModel
 from tabpfn.utils import get_cosine_schedule_with_warmup, get_openai_lr, StoreDictKeyPair, get_weighted_single_eval_pos_sampler, get_uniform_single_eval_pos_sampler
 import priors
 from priors.real import TabDS
-import tabpfn.encoders as encoders
+import encoders
 import tabpfn.positional_encodings as positional_encodings
 from tabpfn.utils import init_dist
 from torch.cuda.amp import autocast, GradScaler
@@ -48,6 +48,14 @@ def train(priordataloader_class, criterion, encoder_generator, emsize=200, nhid=
         real_prior = True
     else:
         real_prior = False
+
+    if extra_prior_kwargs_dict.get('prompt_tuning'):
+        do_prompt_tuning = True
+        prefix_size = extra_prior_kwargs_dict.get('tuned_prompt_size', 100)
+    else:
+        do_prompt_tuning = False
+        prefix_size = 0
+
     single_eval_pos_gen = single_eval_pos_gen if callable(single_eval_pos_gen) else lambda: single_eval_pos_gen
 
     def eval_pos_seq_len_sampler():
@@ -93,10 +101,12 @@ def train(priordataloader_class, criterion, encoder_generator, emsize=200, nhid=
     model = TransformerModel(encoder, n_out, emsize, nhead, nhid, nlayers, dropout, style_encoder=style_encoder,
                              y_encoder=y_encoder_generator(1, emsize), input_normalization=input_normalization,
                              pos_encoder=(pos_encoder_generator or positional_encodings.NoPositionalEncoding)(emsize, bptt*2),
-                             decoder=decoder, init_method=initializer, efficient_eval_masking=efficient_eval_masking, **model_extra_args
+                             decoder=decoder, init_method=initializer, efficient_eval_masking=efficient_eval_masking, prefix_size=prefix_size, **model_extra_args
                              )
     model.criterion = criterion
     if load_weights_from_this_state_dict is not None:
+        if load_weights_from_this_state_dict.get('prefix_embedding.weight', None) is None:
+            load_weights_from_this_state_dict['prefix_embedding.weight'] = model.state_dict()['prefix_embedding.weight']
         model.load_state_dict(load_weights_from_this_state_dict)
     if initialize_with_model is not None:
         model.init_from_small_model(initialize_with_model)
@@ -150,6 +160,8 @@ def train(priordataloader_class, criterion, encoder_generator, emsize=200, nhid=
                 correct += (predicted == targets).sum().item()
         return np.round(correct / total, 3)
     def train_epoch():
+        if do_prompt_tuning:
+            model.freeze_parameters_except_prefix()
         model.train()  # Turn on the train mode
         total_loss = 0.
         total_positional_losses = 0.
@@ -269,7 +281,7 @@ def train(priordataloader_class, criterion, encoder_generator, emsize=200, nhid=
             total_loss, total_positional_losses, time_to_get_batch, forward_time, step_time, nan_share, ignore_share =\
                 train_epoch()
             if real_prior \
-                and epoch % validation_period == 0:
+                and (epoch - 1) % validation_period == 0:
                 val_score = real_data_eval()
             elif hasattr(dl, 'validate') and epoch % validation_period == 0:
                 with torch.no_grad():

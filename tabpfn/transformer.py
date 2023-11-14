@@ -15,7 +15,7 @@ class TransformerModel(nn.Module):
     def __init__(self, encoder, n_out, ninp, nhead, nhid, nlayers, dropout=0.0, style_encoder=None, y_encoder=None,
                  pos_encoder=None, decoder=None, input_normalization=False, init_method=None, pre_norm=False,
                  activation='gelu', recompute_attn=False, num_global_att_tokens=0, full_attention=False,
-                 all_layers_same_init=False, efficient_eval_masking=True):
+                 all_layers_same_init=False, efficient_eval_masking=True, prefix_size=0):
         super().__init__()
         self.model_type = 'Transformer'
         encoder_layer_creator = lambda: TransformerEncoderLayer(ninp, nhead, nhid, dropout, activation=activation,
@@ -33,6 +33,11 @@ class TransformerModel(nn.Module):
         if num_global_att_tokens is not None:
             assert not full_attention
         self.global_att_embeddings = nn.Embedding(num_global_att_tokens, ninp) if num_global_att_tokens else None
+        self.prefix_size = prefix_size
+        if self.prefix_size > 0:
+            self.prefix_embedding = nn.Embedding(prefix_size, ninp)
+            #name the parameters in prefix_embedding to avoid confusion with the encoder
+            self.prefix_y_embedding = torch.randint(0, n_out, (prefix_size, ))
         self.full_attention = full_attention
         self.efficient_eval_masking = efficient_eval_masking
 
@@ -81,6 +86,12 @@ class TransformerModel(nn.Module):
         mask = torch.zeros(num_global_att_tokens, num_global_att_tokens+seq_len-num_query_tokens) == 0
         return bool_mask_to_att_mask(mask)
 
+    def freeze_parameters_except_prefix(self):
+        for name, param in self.named_parameters():
+            # Freeze all parameters except those in prefix_embedding
+            if 'prefix_embedding' not in name:
+                param.requires_grad = False
+
     def init_weights(self):
         initrange = 1.
         # if isinstance(self.encoder,EmbeddingEncoder):
@@ -104,8 +115,20 @@ class TransformerModel(nn.Module):
             src = (None,) + src
 
         style_src, x_src, y_src = src
+        """
+        The encoder is a learned projection matrix from n_samples, n_features to n_samples, n_hidden
+        """
         x_src = self.encoder(x_src)
+
+        if self.prefix_size > 0:
+            single_eval_pos = single_eval_pos + self.prefix_size
+            #concatenate prefix embedding weights to x_src
+            x_src = torch.cat([self.prefix_embedding.weight, x_src], 0)
+            #concatenate prefix embedding to y_src
+            y_src = torch.cat([self.prefix_y_embedding.to(self.prefix_embedding.weight.device), y_src], 0)
+
         y_src = self.y_encoder(y_src.unsqueeze(-1) if len(y_src.shape) < len(x_src.shape) else y_src)
+
         style_src = self.style_encoder(style_src).unsqueeze(0) if self.style_encoder else \
             torch.tensor([], device=x_src.device)
         global_src = torch.tensor([], device=x_src.device) if self.global_att_embeddings is None else \

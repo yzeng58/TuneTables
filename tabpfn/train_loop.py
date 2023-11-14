@@ -55,10 +55,15 @@ def train_loop():
     parser.add_argument('--save_path', type=str, default=".", help='Path to save new checkpoints.')
     parser.add_argument('--prior_type', type=str, default="prior_bag", help='Type of prior to use (real, prior_bag).')
     parser.add_argument('--data_path', type=str, default=".", help='Path to data.')
+    parser.add_argument('--prompt_tuning', action='store_true', help='Whether to tune the prompt.')
+    parser.add_argument('--tuned_prompt_size', type=int, default=0, help='Size of the tuned prompt.')
+    parser.add_argument('--lr', type=float, default=0.0001, help='Learning rate.')
+    parser.add_argument('--epochs', type=int, default=400, help='Number of epochs to train for.')
     args = parser.parse_args()
 
     config, model_string = reload_config(longer=1)
-
+    config['prompt_tuning'] = args.prompt_tuning
+    config['tuned_prompt_size'] = args.tuned_prompt_size
     if args.prior_type == 'prior_bag':
         config['prior_type'], config['differentiable'], config['flexible'] = 'prior_bag', True, True
     else:
@@ -66,6 +71,7 @@ def train_loop():
         config['prior_type'], config['differentiable'], config['flexible'] = args.prior_type, True, False
 
     config['data_path'] = args.data_path
+    config['lr'] = args.lr
 
     if args.resume is not None:
         model_state, optimizer_state_load, config_sample_load = torch.load(args.resume, map_location='cpu')
@@ -133,7 +139,7 @@ def train_loop():
     config['aggregate_k_gradients'] = 8
     config['batch_size'] = 8*config['aggregate_k_gradients']
     config['num_steps'] = 1024//config['aggregate_k_gradients']
-    config['epochs'] = 400
+    config['epochs'] = args.epochs
     config['total_available_time_in_s'] = None #60*60*22 # 22 hours for some safety...
 
     config['train_mixed_precision'] = True
