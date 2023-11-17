@@ -3,7 +3,14 @@ tabpfn_path = '../../'
 sys.path.insert(0, tabpfn_path)
 
 import pandas
-from catboost import CatBoostClassifier, Pool
+try:
+    from catboost import CatBoostClassifier, Pool
+    import xgboost as xgb
+    from hyperopt import fmin, tpe, hp, STATUS_OK, Trials , space_eval, rand
+    from lightgbm import LGBMClassifier
+except ImportError:
+    print(" catboost, xgboost, lightgbm and / or hyperopt not available")
+
 from sklearn.model_selection import GridSearchCV
 from sklearn.model_selection import KFold
 from sklearn.model_selection import ParameterGrid
@@ -21,10 +28,10 @@ from sklearn.impute import SimpleImputer
 
 
 from sklearn.base import BaseEstimator, ClassifierMixin
-import xgboost as xgb
 from sklearn import neighbors
 from sklearn.gaussian_process import GaussianProcessClassifier
 from sklearn.gaussian_process.kernels import RBF
+
 import numpy as np
 np.warnings.filterwarnings('ignore', category=np.VisibleDeprecationWarning) 
 
@@ -39,7 +46,6 @@ from sklearn.linear_model import LogisticRegression, Ridge
 from sklearn.model_selection import cross_val_score
 import time
 
-from hyperopt import fmin, tpe, hp, STATUS_OK, Trials , space_eval, rand
 from sklearn.compose import ColumnTransformer
 from sklearn.preprocessing import OneHotEncoder
 from sklearn.preprocessing import MinMaxScaler
@@ -1033,8 +1039,6 @@ param_grid_hyperopt['lightgbm'] = {
     , 'reg_alpha': hp.choice('reg_alpha', [0, 1e-1, 1, 2, 5, 7, 10, 50, 100])
     , 'reg_lambda': hp.choice('reg_lambda', [0, 1e-1, 1, 5, 10, 20, 50, 100])
 }  # 'normalize': [False],
-
-from lightgbm import LGBMClassifier
 
 def lightgbm_metric(x, y, test_x, test_y, cat_features, metric_used, max_time=300, no_tune=None):
     x, y, test_x, test_y = preprocess_impute(x, y, test_x, test_y

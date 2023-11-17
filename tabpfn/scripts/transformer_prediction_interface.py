@@ -38,7 +38,7 @@ class CustomUnpickler(pickle.Unpickler):
         else:
             return super().find_class(module, name)
 
-def load_model_workflow(i, e, add_name, base_path, device='cpu', eval_addition='', only_inference=True):
+def load_model_workflow(i, e, add_name, base_path, device='cpu', eval_addition='', only_inference=True, prefix_size=0, n_classes=2):
     """
     Workflow for loading a model and setting appropriate parameters for diffable hparam tuning.
 
@@ -64,7 +64,7 @@ def load_model_workflow(i, e, add_name, base_path, device='cpu', eval_addition='
 
     def check_file(e):
         model_file, model_path, results_file = get_file(e)
-        if not Path(model_path).is_file():  # or Path(results_file).is_file():
+        if not Path(model_path).is_file() and e == -1:  # or Path(results_file).is_file():
             print('We have to download the TabPFN, as there is no checkpoint at ', model_path)
             print('It has about 100MB, so this might take a moment.')
             import requests
@@ -72,17 +72,21 @@ def load_model_workflow(i, e, add_name, base_path, device='cpu', eval_addition='
             r = requests.get(url, allow_redirects=True)
             os.makedirs(os.path.dirname(model_path), exist_ok=True)
             open(model_path, 'wb').write(r.content)
+        elif not Path(model_path).is_file():
+            return None, None, None
         return model_file, model_path, results_file
 
     model_file = None
     if e == -1:
-        for e_ in range(100, -1, -1):
+        for e_ in range(100, -2, -1):
             model_file_, model_path_, results_file_ = check_file(e_)
             if model_file_ is not None:
                 e = e_
                 model_file, model_path, results_file = model_file_, model_path_, results_file_
+                print(f"Loading model {model_path}")
                 break
     else:
+        raise Exception('Not implemented')
         model_file, model_path, results_file = check_file(e)
 
     if model_file is None:
@@ -93,7 +97,7 @@ def load_model_workflow(i, e, add_name, base_path, device='cpu', eval_addition='
     #print(f'Loading {model_file}')
     if only_inference:
         # print('Loading model that can be used for inference only')
-        model, c = load_model_only_inference(base_path, model_file, device)
+        model, c = load_model_only_inference(base_path, model_file, device, prefix_size=prefix_size, n_classes=n_classes)
     else:
         #until now also only capable of inference
         model, c = load_model(base_path, model_file, device, eval_positions=[], verbose=False)
@@ -109,7 +113,7 @@ class TabPFNClassifier(BaseEstimator, ClassifierMixin):
     def __init__(self, device='cpu', base_path=pathlib.Path(__file__).parent.parent.resolve(), model_string='',
                  N_ensemble_configurations=3, no_preprocess_mode=False, multiclass_decoder='permutation',
                  feature_shift_decoder=True, only_inference=True, seed=0, no_grad=True, batch_size_inference=32,
-                 subsample_features=False):
+                 subsample_features=False, prefix_size=0, use_memory=False, n_classes=2):
         """
         Initializes the classifier and loads the model. 
         Depending on the arguments, the model is either loaded from memory, from a file, or downloaded from the 
@@ -147,14 +151,16 @@ class TabPFNClassifier(BaseEstimator, ClassifierMixin):
         # Model file specification (Model name, Epoch)
         i = 0
         model_key = model_string+'|'+str(device)
-        if model_key in self.models_in_memory:
+        if model_key in self.models_in_memory and use_memory:
+            print("Loading model from memory")
             model, c, results_file = self.models_in_memory[model_key]
         else:
             model, c, results_file = load_model_workflow(i, -1, add_name=model_string, base_path=base_path, device=device,
-                                                         eval_addition='', only_inference=only_inference)
-            self.models_in_memory[model_key] = (model, c, results_file)
-            if len(self.models_in_memory) == 2:
-                print('Multiple models in memory. This might lead to memory issues. Consider calling remove_models_from_memory()')
+                                                         eval_addition='', only_inference=only_inference, prefix_size=prefix_size, n_classes=n_classes)
+            if use_memory:
+                self.models_in_memory[model_key] = (model, c, results_file)
+                if len(self.models_in_memory) == 2:
+                    print('Multiple models in memory. This might lead to memory issues. Consider calling remove_models_from_memory()')
         #style, temperature = self.load_result_minimal(style_file, i, e)
 
         self.device = device
@@ -179,6 +185,8 @@ class TabPFNClassifier(BaseEstimator, ClassifierMixin):
         self.seed = seed
         self.no_grad = no_grad
         self.subsample_features = subsample_features
+        self.prefix_size = prefix_size
+        self.num_classes = n_classes
 
         assert self.no_preprocess_mode if not self.no_grad else True, \
             "If no_grad is false, no_preprocess_mode must be true, because otherwise no gradient can be computed."
@@ -242,7 +250,7 @@ class TabPFNClassifier(BaseEstimator, ClassifierMixin):
         # Return the classifier
         return self
 
-    def predict_proba(self, X, normalize_with_test=False, return_logits=False):
+    def predict_proba(self, X, normalize_with_test=False, return_logits=False, return_early=False):
         """
         Predict the probabilities for the input X depending on the training set previously passed in the method fit.
 
@@ -285,13 +293,14 @@ class TabPFNClassifier(BaseEstimator, ClassifierMixin):
                                          return_logits=return_logits,
                                          no_grad=self.no_grad,
                                          batch_size_inference=self.batch_size_inference,
+                                         return_early=return_early,
                                          **get_params_from_config(self.c))
         prediction_, y_ = prediction.squeeze(0), y_full.squeeze(1).long()[eval_pos:]
 
         return prediction_.detach().cpu().numpy() if self.no_grad else prediction_
 
-    def predict(self, X, return_winning_probability=False, normalize_with_test=False):
-        p = self.predict_proba(X, normalize_with_test=normalize_with_test)
+    def predict(self, X, return_winning_probability=False, normalize_with_test=False, return_early=False):
+        p = self.predict_proba(X, normalize_with_test=normalize_with_test, return_early=return_early)
         y = np.argmax(p, axis=-1)
         y = self.classes_.take(np.asarray(y, dtype=np.intp))
         if return_winning_probability:
@@ -322,6 +331,7 @@ def transformer_predict(model, eval_xs, eval_ys, eval_position,
                         seed=0,
                         no_grad=True,
                         return_logits=False,
+                        return_early=False,
                         **kwargs):
     """
 
@@ -352,7 +362,6 @@ def transformer_predict(model, eval_xs, eval_ys, eval_position,
 
     def predict(eval_xs, eval_ys, used_style, softmax_temperature, return_logits):
         # Initialize results array size S, B, Classes
-
         # no_grad disables inference_mode, because otherwise the gradients are lost
         inference_mode_call = torch.inference_mode() if inference_mode and no_grad else NOP()
         with inference_mode_call:
@@ -489,13 +498,13 @@ def transformer_predict(model, eval_xs, eval_ys, eval_position,
 
         eval_xs_, eval_ys_ = eval_xs.clone(), eval_ys.clone()
 
-        if preprocess_transform_configuration in eval_xs_transformed:
-            eval_xs_ = eval_xs_transformed[preprocess_transform_configuration].clone()
-        else:
-            eval_xs_ = preprocess_input(eval_xs_, preprocess_transform=preprocess_transform_configuration)
-            if no_grad:
-                eval_xs_ = eval_xs_.detach()
-            eval_xs_transformed[preprocess_transform_configuration] = eval_xs_
+        # if preprocess_transform_configuration in eval_xs_transformed:
+        #     eval_xs_ = eval_xs_transformed[preprocess_transform_configuration].clone()
+        # else:
+        #     eval_xs_ = preprocess_input(eval_xs_, preprocess_transform=preprocess_transform_configuration)
+        #     if no_grad:
+        #         eval_xs_ = eval_xs_.detach()
+        #     eval_xs_transformed[preprocess_transform_configuration] = eval_xs_
 
         eval_ys_ = ((eval_ys_ + class_shift_configuration) % num_classes).float()
 
@@ -533,6 +542,9 @@ def transformer_predict(model, eval_xs, eval_ys, eval_position,
     #print('MODEL INFERENCE TIME ('+str(batch_input.device)+' vs '+device+', '+str(fp16_inference)+')', str(time.time()-start))
 
     outputs = torch.cat(outputs, 1)
+    if return_early:
+        return outputs
+
     for i, ensemble_configuration in enumerate(ensemble_configurations):
         (class_shift_configuration, feature_shift_configuration), preprocess_transform_configuration, styles_configuration = ensemble_configuration
         output_ = outputs[:, i:i+1, :]

@@ -15,7 +15,7 @@ class TransformerModel(nn.Module):
     def __init__(self, encoder, n_out, ninp, nhead, nhid, nlayers, dropout=0.0, style_encoder=None, y_encoder=None,
                  pos_encoder=None, decoder=None, input_normalization=False, init_method=None, pre_norm=False,
                  activation='gelu', recompute_attn=False, num_global_att_tokens=0, full_attention=False,
-                 all_layers_same_init=False, efficient_eval_masking=True, prefix_size=0):
+                 all_layers_same_init=False, efficient_eval_masking=True, prefix_size=0, n_classes=2):
         super().__init__()
         self.model_type = 'Transformer'
         encoder_layer_creator = lambda: TransformerEncoderLayer(ninp, nhead, nhid, dropout, activation=activation,
@@ -37,7 +37,8 @@ class TransformerModel(nn.Module):
         if self.prefix_size > 0:
             self.prefix_embedding = nn.Embedding(prefix_size, ninp)
             #name the parameters in prefix_embedding to avoid confusion with the encoder
-            self.prefix_y_embedding = torch.randint(0, n_out, (prefix_size, ))
+            self.prefix_y_embedding = torch.randint(0, n_classes, (prefix_size, ))
+            print('prefix_y_embedding has {} unique classes'.format(len(torch.unique(self.prefix_y_embedding))))
         self.full_attention = full_attention
         self.efficient_eval_masking = efficient_eval_masking
 
@@ -45,6 +46,12 @@ class TransformerModel(nn.Module):
         self.nhid = nhid
 
         self.init_weights()
+        print("Model initialized with following parameters: ")
+        print("ninp: {}, nhead: {}, nhid: {}, nlayers: {}, dropout: {}, activation: {}, recompute_attn: {}, "
+                "num_global_att_tokens: {}, full_attention: {}, all_layers_same_init: {}, efficient_eval_masking: {}, "
+                "prefix_size: {}, n_classes: {}, encoder: {}, y_encoder: {}, pos_encoder: {}, style_encoder: {}".format(ninp, nhead, nhid, nlayers, dropout, activation, recompute_attn,
+                                                        num_global_att_tokens, full_attention, all_layers_same_init,
+                                                        efficient_eval_masking, prefix_size, n_classes, encoder, y_encoder, pos_encoder, style_encoder))
 
     def __setstate__(self, state):
         super().__setstate__(state)
@@ -123,9 +130,19 @@ class TransformerModel(nn.Module):
         if self.prefix_size > 0:
             single_eval_pos = single_eval_pos + self.prefix_size
             #concatenate prefix embedding weights to x_src
-            x_src = torch.cat([self.prefix_embedding.weight, x_src], 0)
+            if len(x_src.shape) > len(self.prefix_embedding.weight.shape):
+                x_src = torch.cat([self.prefix_embedding.weight.unsqueeze(1), x_src], 0)
+            elif len(x_src.shape) == len(self.prefix_embedding.weight.shape):
+                x_src = torch.cat([self.prefix_embedding.weight, x_src], 0)
+            else:
+                x_src = torch.cat([x_src.unsqueeze(1), self.prefix_embedding.weight], 0)
             #concatenate prefix embedding to y_src
-            y_src = torch.cat([self.prefix_y_embedding.to(self.prefix_embedding.weight.device), y_src], 0)
+            if len(y_src.shape) > len(self.prefix_y_embedding.shape):
+                y_src = torch.cat([self.prefix_y_embedding.to(self.prefix_embedding.weight.device).unsqueeze(1), y_src], 0)
+            elif len(y_src.shape) == len(self.prefix_y_embedding.shape):
+                y_src = torch.cat([self.prefix_y_embedding.to(self.prefix_embedding.weight.device), y_src], 0)
+            else:
+                y_src = torch.cat([y_src.unsqueeze(1), self.prefix_y_embedding.to(self.prefix_embedding.weight.device)], 0)
 
         y_src = self.y_encoder(y_src.unsqueeze(-1) if len(y_src.shape) < len(x_src.shape) else y_src)
 

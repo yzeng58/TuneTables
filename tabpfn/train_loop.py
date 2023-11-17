@@ -1,10 +1,11 @@
 import time
 from datetime import datetime
 import argparse
+import json
 
-from scripts.model_builder import get_model, save_model
-from scripts.model_configs import *
-from priors.utils import uniform_int_sampler_f
+from tabpfn.scripts.model_builder import get_model, save_model
+from tabpfn.scripts.model_configs import *
+from tabpfn.priors.utils import uniform_int_sampler_f
 from notebook_utils import *
 
 def train_function(config_sample, i=0, add_name=''):
@@ -23,7 +24,7 @@ def train_function(config_sample, i=0, add_name=''):
             save_model(model, config_sample['base_path'], f'models_diff/prior_diff_real_checkpoint{add_name}_n_{i}_epoch_{model.last_saved_epoch}.cpkt',
                            config_sample)
             model.last_saved_epoch = model.last_saved_epoch + 1 # TODO: Rename to checkpoint
-            print("Done saving.")
+    
     model = get_model(config_sample
                       , config_sample["device"]
                       , should_train=True
@@ -38,6 +39,7 @@ def reload_config(config_type='causal', task_type='multiclass', longer=0):
     
     model_string = ''
     
+    #TODO: check this, it was set to true in the script
     config['recompute_attn'] = True
 
     config['max_num_classes'] = 10
@@ -46,7 +48,6 @@ def reload_config(config_type='causal', task_type='multiclass', longer=0):
     model_string = model_string + '_multiclass'
     
     model_string = model_string + '_'+datetime.now().strftime("%m_%d_%Y_%H_%M_%S")
-    
     return config, model_string
 
 def train_loop():
@@ -59,11 +60,16 @@ def train_loop():
     parser.add_argument('--tuned_prompt_size', type=int, default=0, help='Size of the tuned prompt.')
     parser.add_argument('--lr', type=float, default=0.0001, help='Learning rate.')
     parser.add_argument('--epochs', type=int, default=400, help='Number of epochs to train for.')
+    parser.add_argument('--num_eval_fitting_samples', type=int, default=1000, help='How many samples from the training set to draw when fitting the eval set.')
+    parser.add_argument('--split', type=int, default=0, help='Which split to use (0-9?).')
     args = parser.parse_args()
 
     config, model_string = reload_config(longer=1)
+    config['model_string'] = model_string
     config['prompt_tuning'] = args.prompt_tuning
     config['tuned_prompt_size'] = args.tuned_prompt_size
+    config['num_eval_fitting_samples'] = args.num_eval_fitting_samples
+    config['split'] = args.split
     if args.prior_type == 'prior_bag':
         config['prior_type'], config['differentiable'], config['flexible'] = 'prior_bag', True, True
     else:
@@ -149,6 +155,16 @@ def train_loop():
     config_sample = evaluate_hypers(config)
 
     config_sample['batch_size'] = 4
+
+    print("Saving config ...")
+    config_sample_copy = config_sample.copy()
+    config_sample_copy['num_classes'] = 0
+    config_sample_copy['num_features_used'] = 0
+    config_sample_copy['differentiable_hyperparameters'] = {}
+    config_sample_copy['state_dict'] = None
+    
+    with open(f'{config_sample["base_path"]}/config_diff_real_{model_string}_n_{0}.json', 'w') as f:
+        json.dump(config_sample_copy, f, indent=4)
 
     print("Training model ...")
 

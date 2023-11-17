@@ -30,7 +30,7 @@ def save_model(model, path, filename, config_sample):
     #del config_sample['num_classes']
 
     config_sample = make_serializable(config_sample)
-
+    print("Saving to ", os.path.join(path, filename))
     torch.save((model.state_dict(), None, config_sample), os.path.join(path, filename))
 
 
@@ -42,14 +42,17 @@ def get_gpu_memory():
     memory_free_info = sp.check_output(command.split()).decode('ascii')
     return memory_free_info
 
-def load_model_only_inference(path, filename, device):
+def load_model_only_inference(path, filename, device, prefix_size, n_classes):
+    import tabpfn.positional_encodings as positional_encodings
     """
     Loads a saved model from the specified position. This function only restores inference capabilities and
     cannot be used for further training.
     """
 
     model_state, optimizer_state, config_sample = torch.load(os.path.join(path, filename), map_location='cpu')
-
+    config_sample['prefix_size'] = prefix_size
+    #TODO: check this, it was set to true in the training script
+    config_sample['recompute_attn'] = True
     if (('nan_prob_no_reason' in config_sample and config_sample['nan_prob_no_reason'] > 0.0) or
         ('nan_prob_a_reason' in config_sample and config_sample['nan_prob_a_reason'] > 0.0) or
         ('nan_prob_unknown_reason' in config_sample and config_sample['nan_prob_unknown_reason'] > 0.0)):
@@ -68,17 +71,26 @@ def load_model_only_inference(path, filename, device):
 
     assert config_sample['max_num_classes'] > 2
     loss = torch.nn.CrossEntropyLoss(reduction='none', weight=torch.ones(int(config_sample['max_num_classes'])))
-
-    model = TransformerModel(encoder, n_out, config_sample['emsize'], config_sample['nhead'], nhid,
-                             config_sample['nlayers'], y_encoder=y_encoder_generator(1, config_sample['emsize']),
-                             dropout=config_sample['dropout'],
-                             efficient_eval_masking=config_sample['efficient_eval_masking'])
+    pos_enc = positional_encodings.NoPositionalEncoding(config_sample['emsize'], config_sample['bptt']*2)
+    model = TransformerModel(encoder, n_out, config_sample['emsize'], 
+                             config_sample['nhead'], nhid, 
+                             config_sample['nlayers'], 
+                             recompute_attn=config_sample['recompute_attn'],
+                             y_encoder=y_encoder_generator(1, config_sample['emsize']),
+                             dropout=config_sample['dropout'], 
+                             pos_encoder=pos_enc,
+                             efficient_eval_masking=config_sample['efficient_eval_masking'], 
+                             prefix_size=config_sample.get('prefix_size', 0),
+                             n_classes=n_classes,
+                             )
 
     # print(f"Using a Transformer with {sum(p.numel() for p in model.parameters()) / 1000 / 1000:.{2}f} M parameters")
 
     model.criterion = loss
     module_prefix = 'module.'
     model_state = {k.replace(module_prefix, ''): v for k, v in model_state.items()}
+    if model_state.get('prefix_embedding.weight', None) is None and model.state_dict().get('prefix_embedding.weight', None) is not None:
+            model_state['prefix_embedding.weight'] = model.state_dict()['prefix_embedding.weight']
     model.load_state_dict(model_state)
     model.to(device)
     model.eval()
@@ -302,18 +314,23 @@ def get_model(config, device, should_train=True, verbose=False, state_dict=None,
     epkd = {
                         'prior_type': config['prior_type']
                         , 'num_features': config['num_features']
+                        , 'split': config['split']
                         , 'hyperparameters': prior_hyperparameters
+                        , 'num_eval_fitting_samples': config.get('num_eval_fitting_samples', 1000)
                         #, 'dynamic_batch_size': 1 if ('num_global_att_tokens' in config and config['num_global_att_tokens']) else 2
                         , 'batch_size_per_gp_sample': config.get('batch_size_per_gp_sample', None)
                         , 'prompt_tuning': config.get('prompt_tuning', False)
                         , 'tuned_prompt_size': config.get('tuned_prompt_size', 0)
+                        , 'model_string': config.get('model_string', '')
+                        , 'save_path': config.get('save_path', '.')
                         , **extra_kwargs
     }
     if config['prior_type'] == 'real':
+        dataset_built = False
         for i, split_dictionary in enumerate(dataset.split_indeces):
             # TODO: make stopping index a hyperparameter
-            if i > 0:
-                break
+            if i != config['split']:
+                continue
             train_index = split_dictionary["train"]
             val_index = split_dictionary["val"]
             test_index = split_dictionary["test"]
@@ -332,7 +349,12 @@ def get_model(config, device, should_train=True, verbose=False, state_dict=None,
             X_train, y_train = processed_data["data_train"]
             X_val, y_val = processed_data["data_val"]
             X_test, y_test = processed_data["data_test"]
+            epkd['num_classes'] = len(set(y_train))
             dataloader = [[X_train, y_train], [X_val, y_val], [X_test, y_test]]
+            dataset_built = True
+            break
+        if not dataset_built:
+            raise Exception(f"Split {config['split']} not found in dataset!")
     else:
         dataloader = model_proto.DataLoader  
 

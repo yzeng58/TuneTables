@@ -4,6 +4,7 @@ import argparse
 import time
 import datetime
 import yaml
+import json
 from contextlib import nullcontext
 
 
@@ -11,12 +12,13 @@ import torch
 from torch import nn
 from torch.utils.data import DataLoader
 
-import utils
-from transformer import TransformerModel
+import tabpfn.utils as utils
+from tabpfn.transformer import TransformerModel
+from tabpfn.scripts.tabular_evaluation import predict_wrapper
 from tabpfn.utils import get_cosine_schedule_with_warmup, get_openai_lr, StoreDictKeyPair, get_weighted_single_eval_pos_sampler, get_uniform_single_eval_pos_sampler
-import priors
-from priors.real import TabDS
-import encoders
+import tabpfn.priors as priors
+from tabpfn.priors.real import TabDS
+import tabpfn.encoders as encoders
 import tabpfn.positional_encodings as positional_encodings
 from tabpfn.utils import init_dist
 from torch.cuda.amp import autocast, GradScaler
@@ -31,8 +33,6 @@ class Losses():
         num_classes = num_classes.shape[0] if torch.is_tensor(num_classes) else num_classes
         return nn.CrossEntropyLoss(reduction='none', weight=torch.ones(num_classes))
     bce = nn.BCEWithLogitsLoss(reduction='none')
-
-
 
 def train(priordataloader_class, criterion, encoder_generator, emsize=200, nhid=200, nlayers=6, nhead=2, dropout=0.0,
           epochs=10, steps_per_epoch=100, batch_size=200, bptt=10, lr=None, weight_decay=0.0, warmup_epochs=10, input_normalization=False,
@@ -67,21 +67,34 @@ def train(priordataloader_class, criterion, encoder_generator, emsize=200, nhid=
     
     if real_prior:
         X, y = priordataloader_class[0][0], priordataloader_class[0][1]
+        num_classes = len(np.unique(y))
         X_val, y_val = priordataloader_class[1][0], priordataloader_class[1][1]
         X_test, y_test = priordataloader_class[2][0], priordataloader_class[2][1]
+        #shuffle data
+        idx = np.random.permutation(len(X))
+        X, y = X[idx], y[idx]
+        idx = np.random.permutation(len(X_val))
+        X_val, y_val = X_val[idx], y_val[idx]
+        idx = np.random.permutation(len(X_test))
+        X_test, y_test = X_test[idx], y_test[idx]
         #TODO: make num_features a hyperparameter
         num_features = 100
         train_ds = TabDS(X, y, num_features=num_features, aggregate_k_gradients=aggregate_k_gradients)
         dl = DataLoader(
-            train_ds, batch_size=bptt, shuffle=True, num_workers=2,
+            train_ds, batch_size=bptt, shuffle=True, num_workers=1, drop_last=True,
         )
-        val_ds = TabDS(X_val, y_val, num_features=num_features, aggregate_k_gradients=aggregate_k_gradients)
+        while len(dl) % aggregate_k_gradients != 0:
+            bptt += 1
+            dl = DataLoader(
+                train_ds, batch_size=bptt, shuffle=True, num_workers=1, drop_last=True,
+            )
+        val_ds = TabDS(X_val, y_val, num_features=num_features, aggregate_k_gradients=1)
         val_dl = DataLoader(
-            val_ds, batch_size=bptt, shuffle=False, num_workers=2,
+            val_ds, batch_size=bptt, shuffle=False, num_workers=1,
         )
-        test_ds = TabDS(X_test, y_test, num_features=num_features, aggregate_k_gradients=aggregate_k_gradients)
+        test_ds = TabDS(X_test, y_test, num_features=num_features, aggregate_k_gradients=1)
         test_dl = DataLoader(
-            test_ds, batch_size=bptt, shuffle=False, num_workers=2,
+            test_ds, batch_size=bptt, shuffle=False, num_workers=1,
         )
     else:
         dl = priordataloader_class(num_steps=steps_per_epoch, batch_size=batch_size, eval_pos_seq_len_sampler=eval_pos_seq_len_sampler, seq_len_maximum=bptt+(bptt_extra_samples if bptt_extra_samples else 0), device=device, **extra_prior_kwargs_dict)
@@ -101,11 +114,12 @@ def train(priordataloader_class, criterion, encoder_generator, emsize=200, nhid=
     model = TransformerModel(encoder, n_out, emsize, nhead, nhid, nlayers, dropout, style_encoder=style_encoder,
                              y_encoder=y_encoder_generator(1, emsize), input_normalization=input_normalization,
                              pos_encoder=(pos_encoder_generator or positional_encodings.NoPositionalEncoding)(emsize, bptt*2),
-                             decoder=decoder, init_method=initializer, efficient_eval_masking=efficient_eval_masking, prefix_size=prefix_size, **model_extra_args
+                             decoder=decoder, init_method=initializer, efficient_eval_masking=efficient_eval_masking, prefix_size=prefix_size,
+                             n_classes=num_classes, **model_extra_args
                              )
     model.criterion = criterion
     if load_weights_from_this_state_dict is not None:
-        if load_weights_from_this_state_dict.get('prefix_embedding.weight', None) is None:
+        if load_weights_from_this_state_dict.get('prefix_embedding.weight', None) is None and model.state_dict().get('prefix_embedding.weight', None) is not None:
             load_weights_from_this_state_dict['prefix_embedding.weight'] = model.state_dict()['prefix_embedding.weight']
         model.load_state_dict(load_weights_from_this_state_dict)
     if initialize_with_model is not None:
@@ -139,26 +153,70 @@ def train(priordataloader_class, criterion, encoder_generator, emsize=200, nhid=
     # check that everything uses up-to-date APIs
     utils.check_compatibility(dl)
 
-    def real_data_eval():
-        print("Evaluate on real data")
+    eval_model = None
+
+    def real_data_eval(cl=1000, X=None, y=None, X_val=None, y_val=None, eval_model=None, val_dl=None):
+        from tabpfn import TabPFNClassifier
+        print("Evaluating on real data")
+
+        #Pad data with zero features until 100 features are reached
+        if X.shape[1] < 100:
+            zero_features = np.zeros((X.shape[0], 100 - X.shape[1]))
+            X = np.concatenate((X, zero_features), axis=1)
+            zero_val_features = np.zeros((X_val.shape[0], 100 - X_val.shape[1]))
+            X_val = np.concatenate((X_val, zero_val_features), axis=1)
+
+        eval_model = TabPFNClassifier(device='cuda', 
+                                      N_ensemble_configurations=1, 
+                                      base_path="/home/benfeuer/TabPFN-pt/tabpfn", 
+                                      model_string=extra_prior_kwargs_dict.get('model_string'), 
+                                      feature_shift_decoder=False,
+                                      no_preprocess_mode=True,
+                                      batch_size_inference=1000, 
+                                      multiclass_decoder="None",
+                                      n_classes=num_classes,
+                                      prefix_size=prefix_size,
+                                      )
+        eval_model.fit(X[:cl, ...], y[:cl, ...], overwrite_warning=True)
+        preds = eval_model.predict(X_val)
+        correct = np.sum(preds == y_val)
+        total = len(y_val)
+        tpc_acc = np.round(correct / total, 3)
+
         train_data, train_targets, _ = next(iter(dl))
         single_eval_pos = len(train_targets)
         with torch.no_grad():
             correct = 0
-            total = len(val_ds)
+            total = len(val_dl.dataset)
+            prediction_list = []
+            target_list = []
             for batch, (data, targets, _) in enumerate(val_dl):
                 batch_data = tuple([torch.cat((train_data[0], data[0]), dim=0), torch.cat((train_data[1], data[1]), dim=0)])
                 #print("Batch data shape: ", batch_data[0].shape)
                 #print("Single eval pos: ", single_eval_pos)
+                # output = checkpoint(model, tuple(e.to(device) if torch.is_tensor(e) else e for e in batch_data) if isinstance(batch_data, tuple) else batch_data.to(device), single_eval_pos)
                 output = model(tuple(e.to(device) if torch.is_tensor(e) else e for e in batch_data) if isinstance(batch_data, tuple) else batch_data.to(device)
                     , single_eval_pos=single_eval_pos)
                 #outputs_to_measure = output[single_eval_pos:, :]
                 #Compare predictions to targets
                 _, predicted = torch.max(output.cpu().data, 1)
+                prediction_list.append(predicted)
+                target_list.append(targets)
                 # print("Predicted: ", predicted.shape)
                 # print("Targets: ", targets.shape)
-                correct += (predicted == targets).sum().item()
-        return np.round(correct / total, 3)
+            predictions = torch.cat(prediction_list, dim=0)
+            targets = torch.cat(target_list, dim=0)
+            # Save predictions and targets to file
+            np.save("predictions_tpc.npy", preds)
+            np.save("predictions_raw.npy", predictions)
+            np.save("targets_tpc.npy", y_val)
+            np.save("targets_raw.npy", targets)
+            correct += (predictions == targets).sum().item()
+        raw_model_acc = np.round(correct / total, 3)
+        print("Raw model accuracy: ", raw_model_acc)
+        print("Loaded model accuracy: ", tpc_acc)
+        return raw_model_acc
+    
     def train_epoch():
         if do_prompt_tuning:
             model.freeze_parameters_except_prefix()
@@ -169,6 +227,8 @@ def train(priordataloader_class, criterion, encoder_generator, emsize=200, nhid=
         nan_steps = 0
         ignore_steps = 0
         before_get_batch = time.time()
+        # print("DL and agg")
+        # print(len(dl), aggregate_k_gradients, len(dl) % aggregate_k_gradients)
         assert len(dl) % aggregate_k_gradients == 0, 'Please set the number of steps per epoch s.t. `aggregate_k_gradients` divides it.'
         for batch, (data, targets, single_eval_pos) in enumerate(dl):
             if isinstance(data, list):
@@ -280,25 +340,41 @@ def train(priordataloader_class, criterion, encoder_generator, emsize=200, nhid=
             epoch_start_time = time.time()
             total_loss, total_positional_losses, time_to_get_batch, forward_time, step_time, nan_share, ignore_share =\
                 train_epoch()
+            val_score = None
+            val_score_nc = None
+            test_score = None
             if real_prior \
                 and (epoch - 1) % validation_period == 0:
-                val_score = real_data_eval()
+                val_score = real_data_eval(cl=extra_prior_kwargs_dict.get('num_eval_fitting_samples'), X=X, y=y, X_val=X_val, y_val=y_val, eval_model=eval_model, val_dl=val_dl)
+                test_score = real_data_eval(cl=extra_prior_kwargs_dict.get('num_eval_fitting_samples'), X=X, y=y, X_val=X_test, y_val=y_test, eval_model=eval_model, val_dl=test_dl)
+                if do_prompt_tuning:
+                    #TODO: will this work with context length 0? Should this be a hyperparameter?
+                    val_score_nc = real_data_eval(cl=10, X=X, y=y, X_val=X_val, y_val=y_val)                    
             elif hasattr(dl, 'validate') and epoch % validation_period == 0:
                 with torch.no_grad():
                     val_score = dl.validate(model)
-            else:
-                val_score = None
 
             if verbose:
+                get_time = (time.time() - epoch_start_time)
                 print('-' * 89)
                 print(
-                    f'| end of epoch {epoch:3d} | time: {(time.time() - epoch_start_time):5.2f}s | mean loss {total_loss:5.2f} | '
-                    f"| pos losses {','.join([f'{l:5.2f}' for l in total_positional_losses])} | lr {scheduler.get_last_lr()[0]}"
+                    f'| end of epoch {epoch:3d} | time: {get_time:5.2f}s | mean loss {total_loss:5.2f} | '
+                    #f"| pos losses {','.join([f'{l:5.2f}' for l in total_positional_losses])} | lr {scheduler.get_last_lr()[0]}"
                     f' | data time {time_to_get_batch:5.2f} | step time {step_time:5.2f}'
                     f' | forward time {forward_time:5.2f}' 
                     f' | nan share {nan_share:5.2f} | ignore share (for classification tasks) {ignore_share:5.4f}'
-                    + (f' | val score {val_score}' if val_score is not None else ''))
+                    + (f' | val score {val_score}' if val_score is not None else '')
+                    + (f' | val score nc {val_score_nc}' if val_score_nc is not None else '')
+                    + (f' | test score {test_score}' if test_score is not None else '')
+                )
                 print('-' * 89)
+                if val_score is not None:
+                    # save the log to a json file
+                    mstr = extra_prior_kwargs_dict.get('model_string')
+                    log_path = os.path.join(extra_prior_kwargs_dict.get('save_path'), f'{mstr}_log_{epoch}.json')
+                    print("Saving log to json file, path is: ", log_path)
+                    with open(log_path, 'w') as f:
+                        json.dump({'time' : get_time, 'epoch': epoch, 'mean_loss' : total_loss, 'val_score': val_score, 'val_score_nc' : val_score_nc, "test_score" : test_score}, f, indent=4)
 
             # stepping with wallclock time based scheduler
             if epoch_callback is not None and rank == 0:

@@ -34,9 +34,11 @@ from sklearn.compose import ColumnTransformer
 from sklearn.feature_selection import SelectKBest, mutual_info_classif
 from sklearn.impute import SimpleImputer
 from sklearn.pipeline import Pipeline
-from sklearn.preprocessing import OneHotEncoder, QuantileTransformer
+from sklearn.preprocessing import OneHotEncoder, QuantileTransformer, RobustScaler, PowerTransformer
 
 import torch
+
+from tabpfn.utils import normalize_data, to_ranking_low_mem, remove_outliers, NOP, normalize_by_used_features_f
 
 class TabularDataset(object):
     def __init__(
@@ -485,9 +487,52 @@ def data_prep(X, y):
 
 
 class TabDS(Dataset):
+    def preprocess_input(self, eval_xs, preprocess_transform):
+        import warnings
+
+        if preprocess_transform != 'none':
+            if preprocess_transform == 'power' or preprocess_transform == 'power_all':
+                pt = PowerTransformer(standardize=True)
+            elif preprocess_transform == 'quantile' or preprocess_transform == 'quantile_all':
+                pt = QuantileTransformer(output_distribution='normal')
+            elif preprocess_transform == 'robust' or preprocess_transform == 'robust_all':
+                pt = RobustScaler(unit_variance=True)
+        eval_position = eval_xs.shape[0]
+        eval_xs = normalize_data(eval_xs, normalize_positions=eval_position)
+
+        warnings.simplefilter('error')
+        if preprocess_transform != 'none':
+            eval_xs = eval_xs.cpu().numpy()
+            feats = set(range(eval_xs.shape[1]))
+            for col in feats:
+                try:
+                    pt.fit(eval_xs[0:eval_position, col:col + 1])
+                    trans = pt.transform(eval_xs[:, col:col + 1])
+                    # print(scipy.stats.spearmanr(trans[~np.isnan(eval_xs[:, col:col+1])], eval_xs[:, col:col+1][~np.isnan(eval_xs[:, col:col+1])]))
+                    eval_xs[:, col:col + 1] = trans
+                except:
+                    pass
+            eval_xs = torch.tensor(eval_xs).float()
+        warnings.simplefilter('default')
+
+        eval_xs = eval_xs.unsqueeze(1)
+
+        eval_xs = remove_outliers(eval_xs, normalize_positions=eval_position)
+        # Rescale X
+        #hard-coded
+        max_features = 100
+        eval_xs = normalize_by_used_features_f(eval_xs, eval_xs.shape[-1], max_features,
+                                            normalize_with_sqrt=False)
+        eval_xs = eval_xs.squeeze(1)
+        return eval_xs
+
     def __init__(self, X, Y, num_features, aggregate_k_gradients=1):
         #convert to tensor
+        choices = ['power_all', 'none']
+        #pick random choice
+        choice = np.random.choice(choices)
         self.X = torch.from_numpy(X.copy().astype(np.float32))
+        # self.X = self.preprocess_input(torch.from_numpy(X.copy().astype(np.float32)), choice)
         self.y_float = torch.from_numpy(Y.copy().astype(np.float32))
         if len(self.X.shape) > num_features:
             raise ValueError(f"X.shape[1] = {self.X.shape[1]} > num_features = {num_features}")
@@ -495,10 +540,10 @@ class TabDS(Dataset):
             # pad with zero features
             self.X = torch.cat([self.X, torch.zeros(self.X.shape[0], num_features - self.X.shape[1])], dim=1)
         self.y = torch.from_numpy(Y.copy().astype(np.int64))
-        if len(self.X[0]) % aggregate_k_gradients != 0:
-            # trim to multiple of aggregate_k_gradients
-            self.y = self.y[:-(len(self.y) % aggregate_k_gradients)]
-            self.X = self.X[:len(self.y), :]
+        # if len(self.X[0]) % aggregate_k_gradients != 0:
+        #     # trim to multiple of aggregate_k_gradients
+        #     self.y = self.y[:-(len(self.y) % aggregate_k_gradients)]
+        #     self.X = self.X[:len(self.y), :]
         print(f"TabDS: X.shape = {self.X.shape}, y.shape = {self.y.shape}")
 
     def __len__(self):

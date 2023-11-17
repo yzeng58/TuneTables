@@ -2,6 +2,8 @@ import time
 import os
 from pathlib import Path
 from contextlib import nullcontext
+import typing as tp
+import math
 
 import torch
 from tqdm import tqdm
@@ -11,17 +13,30 @@ import numpy as np
 from torch import nn
 
 from torch.utils.checkpoint import checkpoint
-from tabpfn.utils import normalize_data, torch_nanmean, to_ranking_low_mem, remove_outliers
-from tabpfn.scripts.tabular_baselines import get_scoring_string
-from tabpfn.scripts import tabular_metrics
-from tabpfn.scripts.transformer_prediction_interface import *
-from tabpfn.scripts.baseline_prediction_interface import *
+from utils import normalize_data, torch_nanmean, to_ranking_low_mem, remove_outliers
+from .tabular_baselines import get_scoring_string
+from scripts import tabular_metrics
+from .transformer_prediction_interface import *
+from .baseline_prediction_interface import *
 """
 ===============================
 PUBLIC FUNCTIONS FOR EVALUATION
 ===============================
 """
 
+def predict_wrapper(model, X: np.ndarray, max_rows : int) -> tp.Tuple[np.ndarray, np.ndarray]:
+    if max_rows > 0 and X.shape[0] > max_rows:
+        X_ens = []
+        X_preds = []
+        for idx, i in enumerate(range(0, X.shape[0], max_rows)):
+            print(f"Fitting samples {idx+1} of {math.ceil(X.shape[0]/max_rows)}")
+            X_ens.append(X[i:i+max_rows])
+            preds = model.predict(X_ens[-1])
+            X_preds.append(preds)
+        predictions = np.concatenate(X_preds, axis=0)
+    else:
+        predictions = model.predict(X)
+    return predictions
 
 def eval_model(i, e, valid_datasets, test_datasets, eval_positions, bptt, add_name, base_path, device='cpu', eval_addition='', **kwargs):
     metrics_test, config_sample, model_path = eval_model_on_ds(i, e, test_datasets, eval_positions, bptt, add_name, base_path, device=device, eval_addition=eval_addition, **kwargs)
