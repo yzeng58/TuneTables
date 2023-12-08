@@ -98,6 +98,8 @@ class TransformerModel(nn.Module):
             # Freeze all parameters except those in prefix_embedding
             if 'prefix_embedding' not in name:
                 param.requires_grad = False
+            else:
+                param.requires_grad = True
 
     def init_weights(self):
         initrange = 1.
@@ -114,6 +116,10 @@ class TransformerModel(nn.Module):
             for attn in attns:
                 nn.init.zeros_(attn.out_proj.weight)
                 nn.init.zeros_(attn.out_proj.bias)
+
+    def init_prefix_weights(self):
+        initrange = 1.
+        self.prefix_embedding.weight.data.uniform_(-initrange, initrange)
 
     def forward(self, src, src_mask=None, single_eval_pos=None):
         assert isinstance(src, tuple), 'inputs (src) have to be given as (x,y) or (style,x,y) tuple'
@@ -150,7 +156,7 @@ class TransformerModel(nn.Module):
             torch.tensor([], device=x_src.device)
         global_src = torch.tensor([], device=x_src.device) if self.global_att_embeddings is None else \
             self.global_att_embeddings.weight.unsqueeze(1).repeat(1, x_src.shape[1], 1)
-
+        # print("Shapes of prefix embedding, x_src, y_src: ", self.prefix_embedding.weight.shape, x_src.shape, y_src.shape)
         if src_mask is not None: assert self.global_att_embeddings is None or isinstance(src_mask, tuple)
         if src_mask is None:
             if self.global_att_embeddings is None:
@@ -270,3 +276,19 @@ class TransformerEncoderDiffInit(Module):
             output = self.norm(output)
 
         return output
+
+# class BoostedTransformer(TransformerModel):
+#     def __init__(self, encoder, n_out, ninp, nhead, nhid, nlayers, dropout=0.0, style_encoder=None, y_encoder=None,
+#                  pos_encoder=None, decoder=None, input_normalization=False, init_method=None, pre_norm=False,
+#                  activation='gelu', recompute_attn=False, num_global_att_tokens=0, full_attention=False,
+#                  all_layers_same_init=False, efficient_eval_masking=True, prefix_size=0, n_classes=2,
+#                  embed_path="embeddings", n_iters=10, boost_lr=1e-3):
+#         if prefix_size <= 0:
+#             raise ValueError("BoostedTransformer requires a positive prefix_size")
+#         super().__init__(encoder, n_out, ninp, nhead, nhid, nlayers, dropout=dropout, style_encoder=style_encoder, y_encoder=y_encoder, pos_encoder=pos_encoder, decoder=decoder, input_normalization=input_normalization, init_method=init_method, pre_norm=pre_norm, activation=activation, recompute_attn=recompute_attn, num_global_att_tokens=num_global_att_tokens, full_attention=full_attention, all_layers_same_init=all_layers_same_init, efficient_eval_masking=efficient_eval_masking, prefix_size=prefix_size, n_classes=n_classes)
+
+
+#     def forward(self, src, src_mask=None, single_eval_pos=None):
+#         super().forward(src, src_mask, single_eval_pos)
+
+#     def fit():

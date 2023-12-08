@@ -6,25 +6,30 @@ import datetime
 import yaml
 import json
 from contextlib import nullcontext
-
+import copy
 
 import torch
 from torch import nn
 from torch.utils.data import DataLoader
+from torch import autograd
+from torch.utils.data import Subset
 
 import tabpfn.utils as utils
-from tabpfn.transformer import TransformerModel
+from transformer import TransformerModel
 from tabpfn.scripts.tabular_evaluation import predict_wrapper
 from tabpfn.utils import get_cosine_schedule_with_warmup, get_openai_lr, StoreDictKeyPair, get_weighted_single_eval_pos_sampler, get_uniform_single_eval_pos_sampler
 import tabpfn.priors as priors
 from tabpfn.priors.real import TabDS
 import tabpfn.encoders as encoders
 import tabpfn.positional_encodings as positional_encodings
-from tabpfn.utils import init_dist
+from utils import init_dist, seed_all, EmbeddingConcatenator
+
 from torch.cuda.amp import autocast, GradScaler
 from torch import nn
 
 import numpy as np
+
+import uncertainty_metrics.numpy as um
 
 class Losses():
     gaussian = nn.GaussianNLLLoss(full=True, reduction='none')
@@ -39,8 +44,10 @@ def train(priordataloader_class, criterion, encoder_generator, emsize=200, nhid=
           y_encoder_generator=None, pos_encoder_generator=None, decoder=None, extra_prior_kwargs_dict={}, scheduler=get_cosine_schedule_with_warmup,
           load_weights_from_this_state_dict=None, validation_period=10, single_eval_pos_gen=None, bptt_extra_samples=None, gpu_device='cuda:0',
           aggregate_k_gradients=1, verbose=True, style_encoder_generator=None, epoch_callback=None,
-          initializer=None, initialize_with_model=None, train_mixed_precision=False, efficient_eval_masking=True, **model_extra_args
+          initializer=None, initialize_with_model=None, train_mixed_precision=False, efficient_eval_masking=True, 
+          boosting=False, boosting_lr=1e-3, boosting_n_iters=10, rand_init_ensemble=False, do_concat="", **model_extra_args
           ):
+    seed_all(extra_prior_kwargs_dict.get('rand_seed'))
     device = gpu_device if torch.cuda.is_available() else 'cpu:0'
     print(f'Using {device} device')
     using_dist, rank, device = init_dist(device)
@@ -155,7 +162,7 @@ def train(priordataloader_class, criterion, encoder_generator, emsize=200, nhid=
 
     eval_model = None
 
-    def real_data_eval(cl=1000, X=None, y=None, X_val=None, y_val=None, eval_model=None, val_dl=None):
+    def tpc_data_eval(cl=1000, X=None, y=None, X_val=None, y_val=None, eval_model=None, val_dl=None):
         from tabpfn import TabPFNClassifier
         print("Evaluating on real data")
 
@@ -182,88 +189,67 @@ def train(priordataloader_class, criterion, encoder_generator, emsize=200, nhid=
         correct = np.sum(preds == y_val)
         total = len(y_val)
         tpc_acc = np.round(correct / total, 3)
-
-        train_data, train_targets, _ = next(iter(dl))
-        single_eval_pos = len(train_targets)
+        print("Loaded model accuracy: ", tpc_acc)
+        return tpc_acc
+    
+    def real_data_eval(r_model, cl=1000, val_dl=None):
+        train_data, _, _ = next(iter(dl))
+        train_data[0] = train_data[0][:cl, ...]
+        train_data[1] = train_data[1][:cl, ...]
+        single_eval_pos = len(train_data[0])
         with torch.no_grad():
             correct = 0
             total = len(val_dl.dataset)
             prediction_list = []
             target_list = []
+            output_list = []
             for batch, (data, targets, _) in enumerate(val_dl):
                 batch_data = tuple([torch.cat((train_data[0], data[0]), dim=0), torch.cat((train_data[1], data[1]), dim=0)])
-                #print("Batch data shape: ", batch_data[0].shape)
-                #print("Single eval pos: ", single_eval_pos)
-                # output = checkpoint(model, tuple(e.to(device) if torch.is_tensor(e) else e for e in batch_data) if isinstance(batch_data, tuple) else batch_data.to(device), single_eval_pos)
-                output = model(tuple(e.to(device) if torch.is_tensor(e) else e for e in batch_data) if isinstance(batch_data, tuple) else batch_data.to(device)
+                output = r_model(tuple(e.to(device) if torch.is_tensor(e) else e for e in batch_data) if isinstance(batch_data, tuple) else batch_data.to(device)
                     , single_eval_pos=single_eval_pos)
-                #outputs_to_measure = output[single_eval_pos:, :]
-                #Compare predictions to targets
+                output_list.append(output)
                 _, predicted = torch.max(output.cpu().data, 1)
                 prediction_list.append(predicted)
                 target_list.append(targets)
-                # print("Predicted: ", predicted.shape)
-                # print("Targets: ", targets.shape)
+            outputs = torch.cat(output_list, dim=0)
             predictions = torch.cat(prediction_list, dim=0)
             targets = torch.cat(target_list, dim=0)
-            # Save predictions and targets to file
-            np.save("predictions_tpc.npy", preds)
-            np.save("predictions_raw.npy", predictions)
-            np.save("targets_tpc.npy", y_val)
-            np.save("targets_raw.npy", targets)
             correct += (predictions == targets).sum().item()
         raw_model_acc = np.round(correct / total, 3)
         print("Raw model accuracy: ", raw_model_acc)
-        print("Loaded model accuracy: ", tpc_acc)
-        return raw_model_acc
+        return raw_model_acc, outputs.cpu(), targets.cpu()
     
-    def train_epoch():
+    def train_epoch(model, optimizer, boost_this_epoch=False):
+        model.train()  # Turn on the train mode
         if do_prompt_tuning:
             model.freeze_parameters_except_prefix()
-        model.train()  # Turn on the train mode
         total_loss = 0.
         total_positional_losses = 0.
         total_positional_losses_recorded = 0
         nan_steps = 0
         ignore_steps = 0
         before_get_batch = time.time()
-        # print("DL and agg")
-        # print(len(dl), aggregate_k_gradients, len(dl) % aggregate_k_gradients)
         assert len(dl) % aggregate_k_gradients == 0, 'Please set the number of steps per epoch s.t. `aggregate_k_gradients` divides it.'
+        # print("Training Dataset size: ", len(dl.dataset))
         for batch, (data, targets, single_eval_pos) in enumerate(dl):
             if isinstance(data, list):
                 data = tuple(data)
-            #print(f"Batch {batch} of {len(dl)}")
-            #data is a Tuple of length 3: (style, x, y)?
-            # print("Length of data tuple: ", len(data))
-            #Data[1] shape: torch.Size([1152, 1, 100]), positive and negative values, [ 34.3708, -18.9162, -18.4063,  ...,   0.0000,   0.0000,   0.0000], padded with zeros at the end
-            #Data[2] == Targets(there are some holdout points)
-            #Targets shape: torch.Size([1152, 1]), values are integer class labels
-            """
-            tensor([[0.],
-            [2.],
-            [3.],
-            ...,
-            [2.],
-            [1.],
-            [0.]], device='cuda:0')
-            """
-            # print("Data1: ", data[1])
-            # print("Data2: ", data[2])
-            # print("Data2 shape", data[2].shape)
-            # print("Targets: ", targets)
-            # #print("Data shape: ", data.shape)
-            # print("Targets shape: ", targets.shape)
             if isinstance(single_eval_pos, torch.Tensor) and single_eval_pos.numel() == 0:
                 single_eval_pos = None
             if using_dist and not (batch % aggregate_k_gradients == aggregate_k_gradients - 1):
                 cm = model.no_sync()
             else:
                 cm = nullcontext()
+
+            if extra_prior_kwargs_dict.get('permute_feature_position_in_ensemble', False):
+                data = tuple([data[0][:, torch.randperm(data[0].shape[1])], data[1]])
+
             with cm:
                 time_to_get_batch = time.time() - before_get_batch
                 before_forward = time.time()
-                if bptt_extra_samples is None:
+                if boosting:
+                    single_eval_pos = len(targets) // 2
+                elif bptt_extra_samples is None:
                     single_eval_pos = single_eval_pos_gen() if callable(single_eval_pos_gen) else single_eval_pos_gen
                 else:
                     single_eval_pos = targets.shape[0] - bptt_extra_samples
@@ -272,7 +258,7 @@ def train(priordataloader_class, criterion, encoder_generator, emsize=200, nhid=
                     # If style is set to None, it should not be transferred to device
                     output = model(tuple(e.to(device) if torch.is_tensor(e) else e for e in data) if isinstance(data, tuple) else data.to(device)
                                    , single_eval_pos=single_eval_pos)
-
+                    assert output.requires_grad, "Output does not require gradients"
                     forward_time = time.time() - before_forward
 
                     if single_eval_pos is not None:
@@ -280,7 +266,6 @@ def train(priordataloader_class, criterion, encoder_generator, emsize=200, nhid=
                     if isinstance(criterion, nn.GaussianNLLLoss):
                         assert output.shape[-1] == 2, \
                             'need to write a little bit of code to handle multiple regression targets at once'
-
                         mean_pred = output[..., 0]
                         var_pred = output[..., 1].abs()
                         losses = criterion(mean_pred.flatten(), targets.to(device).flatten(), var=var_pred.flatten())
@@ -290,17 +275,52 @@ def train(priordataloader_class, criterion, encoder_generator, emsize=200, nhid=
                         losses = criterion(output.reshape(-1, n_out), targets.to(device).long().flatten())
                     else:
                         losses = criterion(output, targets)
-                    if len(output.shape) == 2:
-                        output = output.unsqueeze(1)
-                    # print("Losses shape: ", losses.shape)
-                    # print("Outputs shape: ", output.shape)
-                    losses = losses.view(*output.shape[0:2])
-                    loss, nan_share = utils.torch_nanmean(losses.mean(0), return_nanshare=True)
-                    loss = loss / aggregate_k_gradients
+                    if boosting:
+                        loss = losses.mean()
+                        nan_share = torch.tensor([0])
+                    else:
+                        if len(output.shape) == 2:
+                            output = output.unsqueeze(1)
+                        # print("Losses shape: ", losses.shape)
+                        # print("Outputs shape: ", output.shape)
+                        losses = losses.view(*output.shape[0:2])
+
+                        loss, nan_share = utils.torch_nanmean(losses.mean(0), return_nanshare=True)
+                        loss = loss / aggregate_k_gradients
 
                 if scaler: loss = scaler.scale(loss)
-                loss.backward()
+                if boosting and boost_this_epoch:
+                    cur_grads = []
+                    # Backward pass for each prediction/target pair
+                    if prior_grad_dict is None:
+                        prior_grad_iter = None
+                    else:
+                        prior_grad_iter = prior_grad_dict[batch].to(output.device)
+                    output_grad = autograd.grad(loss, output)[0]
+                    # print("Output grad shape: ", output_grad.shape)
+                    gradient_dict[batch] = output_grad.detach().cpu().clone()
+                    # cur_grads.append(output_grad.detach().cpu().clone())
 
+                    if prior_grad_iter is not None:
+                        grad_shape = output_grad.shape
+                        flat_grad = output_grad.flatten()
+                        grad_signs = torch.sign(flat_grad)
+                        flat_prior_grad = prior_grad_iter.flatten()
+                        cur_weight = 0.65
+                        flat_grad_new = torch.sqrt(cur_weight * torch.pow(flat_grad, 2) + (1 - cur_weight) * torch.pow(flat_prior_grad, 2))
+                        # ones = torch.ones_like(flat_grad)
+                        # print("Flat grad shape: ", flat_grad.shape)
+                        # print("Flat prior grad shape: ", flat_prior_grad.shape)
+                        # flat_grad_new = torch.pow(flat_grad, ones + torch.log(torch.abs(flat_prior_grad)))
+                        flat_grad_new_signs = torch.sign(flat_grad_new)
+                        flat_grad_new[flat_grad_new_signs != grad_signs] *= -1
+                        output_grad = flat_grad_new.reshape(grad_shape)
+
+                    output.backward(output_grad)
+                    # gradient_dict[batch] = torch.cat(cur_grads, dim=0)
+                else:
+                    loss.backward()
+                
                 if batch % aggregate_k_gradients == aggregate_k_gradients - 1:
                     if scaler: scaler.unscale_(optimizer)
                     torch.nn.utils.clip_grad_norm_(model.parameters(), 1.)
@@ -326,30 +346,127 @@ def train(priordataloader_class, criterion, encoder_generator, emsize=200, nhid=
                         nn.functional.one_hot(torch.tensor(single_eval_pos), bptt)
                 nan_steps += nan_share
                 ignore_steps += (targets == -100).float().mean()
-
-
             before_get_batch = time.time()
-        return total_loss / steps_per_epoch, (total_positional_losses / total_positional_losses_recorded).tolist(),\
+        #Total positional losses is a torch tensor of size bptt (batch size)
+        # print("Total positional losses: ")
+        # print(total_positional_losses)
+        # print(total_positional_losses.shape)
+        # print(total_positional_losses_recorded)
+        # print(total_positional_losses_recorded.shape)
+        if boosting:
+            total_positional_losses = torch.zeros(bptt)
+            total_positional_losses_recorded = torch.ones(bptt)
+        return total_loss / max(steps_per_epoch, 1), (total_positional_losses / total_positional_losses_recorded).tolist(),\
                time_to_get_batch, forward_time, step_time, nan_steps.cpu().item()/(batch+1),\
                ignore_steps.cpu().item()/(batch+1)
 
-    total_loss = float('inf')
-    total_positional_losses = float('inf')
-    try:
+    def concat_embedding(ec, model, method):
+        #extract embedding parameters
+        device = ec.model.prefix_embedding.weight.device
+        if method == "duplicate":
+            ec.concatenated_embedding = torch.cat([ec.original_embedding, ec.original_embedding], dim=0).to(device)
+            print("concatenated embedding shape: {}".format(ec.concatenated_embedding.shape))
+            ec.concatenated_y_embedding = torch.cat([ec.original_y_embedding, ec.original_y_embedding], dim=0).to(device)
+            ec.prefix_size = ec.original_prefix_size * 2
+        elif method.startswith("rand-init"):
+            num_to_concat = min(int(method.split("-")[-1]), len(ec.prefix_weights)+1)                
+            print("Concatenating {} embeddings".format(num_to_concat))
+            if num_to_concat == 1:
+                ec.concatenated_embedding = ec.original_embedding
+                ec.concatenated_y_embedding = ec.original_y_embedding
+                ec.prefix_size = ec.original_prefix_size
+            else:
+                ec.concatenated_embedding = torch.cat([ec.original_embedding.to(device)] + [ec.prefix_weights[i]['prefix_weights'].to(device) for i in range(num_to_concat-1)], dim=0).to(device)
+                ec.concatenated_y_embedding = torch.cat([ec.original_y_embedding.to(device)] + [ec.prefix_weights[i]['prefix_y_labels'].to(device) for i in range(num_to_concat-1)], dim=0).to(device)
+                if "size-ctl" in method:
+                    #select random sample of size prefix_size
+                    if "perm" in method:
+                        sel = torch.randperm(ec.concatenated_embedding.shape[0])[:ec.original_prefix_size].to(device)
+                    else:
+                        total_emb_size = ec.original_prefix_size
+                        emb_size = total_emb_size // num_to_concat
+                        orig_emb_size = ec.original_embedding.shape[0]
+                        start_pos = [j * orig_emb_size for j in range(num_to_concat)]
+                        sel = torch.cat([torch.arange(i, i+emb_size) for i in start_pos], dim=0).to(device)
+
+                    ec.concatenated_embedding = ec.concatenated_embedding[sel]
+                    ec.concatenated_y_embedding = ec.concatenated_y_embedding[sel]
+                    ec.prefix_size = sel.shape[0]
+                else:
+                    ec.prefix_size = ec.original_prefix_size * num_to_concat
+        else:
+            raise NotImplementedError("Method {} not implemented!".format(method))
+        model.prefix_embedding.weight = nn.Parameter(ec.concatenated_embedding)
+        model.prefix_y_embedding = ec.concatenated_y_embedding
+        model.prefix_size = ec.prefix_size
+        return model
+
+    def restore_embedding(ec, model):
+        model.prefix_embedding.weight = nn.Parameter(ec.original_embedding)
+        model.prefix_y_embedding = ec.original_y_embedding
+        model.prefix_size = ec.original_prefix_size
+        model.freeze_parameters_except_prefix()
+        return model
+    
+    def save_prefix_weights(model, path, i, do_concat, prefix_weights_l):
+        # Save prefix weights
+        prefix_weights = model.state_dict()['prefix_embedding.weight'].cpu().numpy()
+        prefix_fn = f"prefix_weights_{i}.npy"
+        prefix_save_path = os.path.join(path, prefix_fn)
+        np.save(prefix_save_path, prefix_weights)
+        prefix_y_labels = model.prefix_y_embedding.cpu().numpy()
+        prefix_y_fn = f"prefix_y_labels_{i}.npy"
+        prefix_y_save_path = os.path.join(path, prefix_y_fn)
+        np.save(prefix_y_save_path, prefix_y_labels)
+        if do_concat:
+            prefix_weights_l.append({"prefix_weights": torch.from_numpy(prefix_weights).float(), "prefix_y_labels": torch.from_numpy(prefix_y_labels)})
+            print("Prefix weights list length: ", len(prefix_weights_l))
+        return prefix_weights_l
+
+    def update_ensemble_acc(boosting_acc):
+        ece = np.round(um.ece(labels_np, probs_np, num_bins=30), 3)
+        tace = np.round(um.tace(labels_np, probs_np, num_bins=30), 3)
+        new_res = {
+            "accuracy": boosting_acc,
+            "ece": ece,
+            "tace": tace,
+        }
+        return new_res
+
+    def train_test_loop(t_model, t_optim):
+        return_outputs = None
+        return_targets = None
+        res_dict = None
         for epoch in (range(1, epochs + 1) if epochs is not None else itertools.count(1)):
+            boost_this_epoch = True if epoch == 1 else False
             epoch_start_time = time.time()
             total_loss, total_positional_losses, time_to_get_batch, forward_time, step_time, nan_share, ignore_share =\
-                train_epoch()
+                train_epoch(t_model, t_optim, boost_this_epoch)
             val_score = None
             val_score_nc = None
             test_score = None
             if real_prior \
                 and (epoch - 1) % validation_period == 0:
-                val_score = real_data_eval(cl=extra_prior_kwargs_dict.get('num_eval_fitting_samples'), X=X, y=y, X_val=X_val, y_val=y_val, eval_model=eval_model, val_dl=val_dl)
-                test_score = real_data_eval(cl=extra_prior_kwargs_dict.get('num_eval_fitting_samples'), X=X, y=y, X_val=X_test, y_val=y_test, eval_model=eval_model, val_dl=test_dl)
+                val_score, val_outputs, val_targets = real_data_eval(r_model=t_model, cl=bptt, val_dl=val_dl)
+                np_outputs = val_outputs.cpu().numpy().astype(np.float32)
+                np_targets = val_targets.cpu().numpy().astype(np.int32)
+                val_ece = np.round(um.ece(np_targets, np_outputs, num_bins=30), 3)
+                val_tace = np.round(um.tace(np_targets, np_outputs, num_bins=30), 3)
+                test_score, test_outputs, test_targets = real_data_eval(r_model=t_model, cl=bptt, val_dl=test_dl)
+                return_outputs = val_outputs
+                return_targets = val_targets
                 if do_prompt_tuning:
                     #TODO: will this work with context length 0? Should this be a hyperparameter?
-                    val_score_nc = real_data_eval(cl=10, X=X, y=y, X_val=X_val, y_val=y_val)                    
+                    #val_score_nc, outputs = tpc_data_eval(cl=10, X=X, y=y, X_val=X_val, y_val=y_val, eval_model=eval_model, val_dl=val_dl)
+                    if do_concat != "":
+                        ec = EmbeddingConcatenator(t_model, do_concat, prefix_weights_l)
+                        t_model = concat_embedding(ec, t_model, do_concat)
+                        val_score_nc, val_outputs, val_targets = real_data_eval(r_model=ec.get_model(), cl=10, val_dl=val_dl)
+                        t_model = restore_embedding(ec, t_model)
+                        # Update optimizer parameters to include new embedding
+                        t_optim = torch.optim.AdamW(t_model.parameters(), lr=lr, weight_decay=weight_decay)
+                    else:
+                        val_score_nc, val_outputs, val_targets = real_data_eval(r_model=t_model, cl=10, val_dl=val_dl)              
             elif hasattr(dl, 'validate') and epoch % validation_period == 0:
                 with torch.no_grad():
                     val_score = dl.validate(model)
@@ -366,23 +483,107 @@ def train(priordataloader_class, criterion, encoder_generator, emsize=200, nhid=
                     + (f' | val score {val_score}' if val_score is not None else '')
                     + (f' | val score nc {val_score_nc}' if val_score_nc is not None else '')
                     + (f' | test score {test_score}' if test_score is not None else '')
+                    + (f' | val ece {val_ece}' if val_score is not None else '')
+                    + (f' | val tace {val_tace}' if val_score is not None else '')
                 )
                 print('-' * 89)
                 if val_score is not None:
                     # save the log to a json file
+                    res_dict = {'time' : get_time, 'epoch': epoch, 'mean_loss' : total_loss, 'val_score': val_score, 'val_score_nc' : val_score_nc, "test_score" : test_score, "val_ece" : val_ece, "val_tace" : val_tace}
                     mstr = extra_prior_kwargs_dict.get('model_string')
-                    log_path = os.path.join(extra_prior_kwargs_dict.get('save_path'), f'{mstr}_log_{epoch}.json')
+                    boost_iter = f"boost_iter_{cur_boost_iter}" if is_ensemble else ""
+                    log_path = os.path.join(extra_prior_kwargs_dict.get('save_path'), f'{mstr}_{boost_iter}_log_{epoch}.json')
                     print("Saving log to json file, path is: ", log_path)
                     with open(log_path, 'w') as f:
-                        json.dump({'time' : get_time, 'epoch': epoch, 'mean_loss' : total_loss, 'val_score': val_score, 'val_score_nc' : val_score_nc, "test_score" : test_score}, f, indent=4)
-
+                        json.dump(res_dict, f, indent=4)
             # stepping with wallclock time based scheduler
             if epoch_callback is not None and rank == 0:
                 epoch_callback(model, epoch / epochs)
             scheduler.step()
+        return return_outputs, return_targets, res_dict
+    
+    # main training loop
+    bagging = extra_prior_kwargs_dict.get("bagging", False)
+    if bagging:
+        dl_backup = dl
+        split_indices = np.array_split(np.arange(len(dl_backup.dataset)), boosting_n_iters)
+    is_ensemble = (boosting or bagging or rand_init_ensemble)
+    prefix_weights_l = []
+    cur_boost_iter = 0
+    total_loss = float('inf')
+    total_positional_losses = float('inf')
+    output_dict = {}
+    i = 0
+    ensembling_acc = dict()
+    try:
+        print("Starting training loop \n \n")
+        if bagging:
+            subset_dataset = Subset(dl_backup.dataset, split_indices[i])
+            dl = DataLoader(
+                subset_dataset, batch_size=bptt, shuffle=True, num_workers=1, drop_last=True,
+            )
+        prior_grad_dict = None
+        gradient_dict = {}
+        output_dict[i], test_targets, results_dict = train_test_loop(model, optimizer)
+        prior_grad_dict = gradient_dict
+        probs_np = output_dict[0].cpu().numpy()
+        labels_np = test_targets.cpu().numpy()
+        if is_ensemble:
+            ensembling_acc[i] = update_ensemble_acc(results_dict.get('val_score', 0))
+        with open(os.path.join(extra_prior_kwargs_dict.get('save_path'), 'ensembling_acc.json'), 'w') as f:
+            json.dump(ensembling_acc, f, indent=4)
+        if do_prompt_tuning:
+            prefix_weights_l = save_prefix_weights(model, extra_prior_kwargs_dict.get('save_path'), i, do_concat, prefix_weights_l)
     except KeyboardInterrupt:
         pass
+    
+    # boosting logic
+    if is_ensemble:
+        print("Beginning ensembling")
+        for i in range(1, boosting_n_iters):
+            if bagging:
+                subset_dataset = Subset(dl_backup.dataset, split_indices[i])
+                dl = DataLoader(
+                    subset_dataset, batch_size=bptt, shuffle=True, num_workers=1, drop_last=True,
+                )
+            cur_boost_iter = i
+            seed_all(extra_prior_kwargs_dict.get('rand_seed') + i)
+            print("Ensembling iteration: ", i+1, " of ", boosting_n_iters, "\n \n")
+            model.init_prefix_weights()
+            output_dict[i], _, results_dict = train_test_loop(model, optimizer)
+            prior_grad_dict = gradient_dict
+            # Evaluate average model
+            if extra_prior_kwargs_dict.get('average_ensemble'):
+                current_outs = torch.zeros_like(output_dict[0])
+                for j in range(i + 1):
+                    current_outs += output_dict[j]
+                current_outs /= (i + 1)
+            # Evaluate additive model
+            else:
+                current_outs = output_dict[0]
+                for j in range(1, i + 1):
+                    boost_res = torch.mul(boosting_lr, output_dict[j])
+                    current_outs += boost_res
+            _, current_preds = torch.max(current_outs.cpu().data, 1)
+            total = len(test_targets)
+            correct = (current_preds == test_targets).sum().item()
+            boosting_acc = np.round(correct / total, 3)
+            probs_np = current_outs.cpu().numpy()
+            labels_np = test_targets.cpu().numpy()
+            if boosting_acc <= ensembling_acc[i-1]["accuracy"]:
+                print("Ensembling accuracy did not improve, ignoring previous iteration")
+                output_dict[i] = torch.zeros_like(output_dict[i])
+                ensembling_acc[i] = ensembling_acc[i-1]
+            else:
+                print("Ensembling accuracy is now: ", boosting_acc)
+                ensembling_acc[i] = update_ensemble_acc(boosting_acc)
+            if do_prompt_tuning:
+                prefix_weights_l = save_prefix_weights(model, extra_prior_kwargs_dict.get('save_path'), i, do_concat, prefix_weights_l)
+        # Save ensembling accuracy
+        with open(os.path.join(extra_prior_kwargs_dict.get('save_path'), 'ensembling_acc.json'), 'w') as f:
+            json.dump(ensembling_acc, f, indent=4)
 
+    # break down training and return
     if rank == 0: # trivially true for non-parallel training
         if isinstance(model, torch.nn.parallel.DistributedDataParallel):
             model = model.module

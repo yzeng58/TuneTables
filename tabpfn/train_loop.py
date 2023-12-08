@@ -2,15 +2,20 @@ import time
 from datetime import datetime
 import argparse
 import json
+import os
 
-from tabpfn.scripts.model_builder import get_model, save_model
-from tabpfn.scripts.model_configs import *
-from tabpfn.priors.utils import uniform_int_sampler_f
+from scripts.model_builder import get_model, save_model
+from scripts.model_configs import *
+from priors.utils import uniform_int_sampler_f
 from notebook_utils import *
 
 def train_function(config_sample, i=0, add_name=''):
-    start_time = time.time()
-    save_every_k = 5
+
+    if config_sample['boosting'] or config_sample['rand_init_ensemble'] or config_sample['bagging']:
+        #don't save checkpoints for ensembling, just prefixes
+        save_every_k = config_sample['epochs'] + 1
+    else:
+        save_every_k = config_sample['save_every_k_epochs']
     epochs = []
     
     def save_callback(model, epoch):
@@ -21,16 +26,24 @@ def train_function(config_sample, i=0, add_name=''):
         if len(epochs) % save_every_k == 0:
             print('Saving model..')
             config_sample['epoch_in_training'] = epoch
-            save_model(model, config_sample['base_path'], f'models_diff/prior_diff_real_checkpoint{add_name}_n_{i}_epoch_{model.last_saved_epoch}.cpkt',
+            save_model(model, config_sample['base_path'], f'prior_diff_real_checkpoint{add_name}_n_{i}_epoch_{model.last_saved_epoch}.cpkt',
                            config_sample)
             model.last_saved_epoch = model.last_saved_epoch + 1 # TODO: Rename to checkpoint
     
+    def no_callback(model, epoch):
+        pass
+
+    if config_sample['boosting'] or config_sample['rand_init_ensemble'] or config_sample['bagging']:
+        my_callback = no_callback
+    else:
+        my_callback = save_callback
+
     model = get_model(config_sample
                       , config_sample["device"]
                       , should_train=True
                       , verbose=1
                       , state_dict=config_sample["state_dict"]
-                      , epoch_callback = save_callback)
+                      , epoch_callback = my_callback)
     
     return
 
@@ -62,6 +75,16 @@ def train_loop():
     parser.add_argument('--epochs', type=int, default=400, help='Number of epochs to train for.')
     parser.add_argument('--num_eval_fitting_samples', type=int, default=1000, help='How many samples from the training set to draw when fitting the eval set.')
     parser.add_argument('--split', type=int, default=0, help='Which split to use (0-9?).')
+    parser.add_argument('--boosting', action='store_true', help='Whether to use boosting.')
+    parser.add_argument('--bagging', action='store_true', help='Whether to produce a bagged ensemble.')
+    parser.add_argument('--rand_init_ensemble', action='store_true', help='Ensemble over random initialization.')
+    parser.add_argument('--ensemble_lr', type=float, default=0.5, help='Additive learning factor for boosting / ensembling.')
+    parser.add_argument('--ensemble_size', type=int, default=5, help='Number of ensemble members.')
+    parser.add_argument('--aggregate_k_gradients', type=int, default=8, help='How many gradients to aggregate.')
+    parser.add_argument('--average_ensemble', action='store_true', help='Whether to average the ensemble.')
+    parser.add_argument('--permute_feature_position_in_ensemble', action='store_true', help='Whether to ensemble over feature position permutations.')
+    parser.add_argument('--concat_method', type=str, default="", help='concatenation method (duplicate, empty = none)')
+    parser.add_argument('--save_every_k_epochs', type=int, default=10, help='How often to save new checkpoints.')
     args = parser.parse_args()
 
     config, model_string = reload_config(longer=1)
@@ -70,6 +93,10 @@ def train_loop():
     config['tuned_prompt_size'] = args.tuned_prompt_size
     config['num_eval_fitting_samples'] = args.num_eval_fitting_samples
     config['split'] = args.split
+
+    # concatenation
+    config['concat_method'] = args.concat_method
+
     if args.prior_type == 'prior_bag':
         config['prior_type'], config['differentiable'], config['flexible'] = 'prior_bag', True, True
     else:
@@ -131,8 +158,8 @@ def train_loop():
     config['differentiable_hps_as_style'] = False
     config['max_eval_pos'] = 1000
 
-    config['random_feature_rotation'] = True
-    config['rotate_normalized_labels'] = True
+    config['random_feature_rotation'] = False
+    config['rotate_normalized_labels'] = False
 
     config["mix_activations"] = False # False heisst eig True
 
@@ -142,8 +169,8 @@ def train_loop():
     config['canonical_y_encoder'] = False
 
         
-    config['aggregate_k_gradients'] = 8
-    config['batch_size'] = 8*config['aggregate_k_gradients']
+    config['aggregate_k_gradients'] = args.aggregate_k_gradients
+    # config['batch_size'] = 8*config['aggregate_k_gradients']
     config['num_steps'] = 1024//config['aggregate_k_gradients']
     config['epochs'] = args.epochs
     config['total_available_time_in_s'] = None #60*60*22 # 22 hours for some safety...
@@ -155,14 +182,42 @@ def train_loop():
     config_sample = evaluate_hypers(config)
 
     config_sample['batch_size'] = 4
+    config_sample['save_every_k_epochs'] = args.save_every_k_epochs
+
+    #Boosting parameters
+    config_sample['boosting'] = args.boosting
+    config_sample['boosting_lr'] = args.ensemble_lr
+    config_sample['boosting_n_iters'] = args.ensemble_size
+    if config_sample['boosting']:
+        config_sample['min_eval_pos'] = config_sample['max_eval_pos'] = config_sample['bptt'] = 1024
+
+    #Random initialization of ensemble
+    config_sample['rand_init_ensemble'] = args.rand_init_ensemble
+    config_sample['average_ensemble'] = args.average_ensemble
+    config_sample['permute_feature_position_in_ensemble'] = args.permute_feature_position_in_ensemble
+
+    #Bagging parameters
+    config_sample['bagging'] = args.bagging
 
     print("Saving config ...")
     config_sample_copy = config_sample.copy()
-    config_sample_copy['num_classes'] = 0
-    config_sample_copy['num_features_used'] = 0
-    config_sample_copy['differentiable_hyperparameters'] = {}
-    config_sample_copy['state_dict'] = None
+
+    def make_serializable(config_sample):
+        if isinstance(config_sample, torch.Tensor):
+            config_sample = "tensor"
+        if isinstance(config_sample, dict):
+            config_sample = {k: make_serializable(config_sample[k]) for k in config_sample}
+        if isinstance(config_sample, list):
+            config_sample = [make_serializable(v) for v in config_sample]
+        if callable(config_sample):
+            config_sample = str(config_sample)
+        return config_sample
     
+    config_sample_copy = make_serializable(config_sample_copy)
+    
+    os.mkdir(f'{config_sample["base_path"]}/{model_string}')
+    config_sample['base_path'] = f'{config_sample["base_path"]}/{model_string}'
+
     with open(f'{config_sample["base_path"]}/config_diff_real_{model_string}_n_{0}.json', 'w') as f:
         json.dump(config_sample_copy, f, indent=4)
 

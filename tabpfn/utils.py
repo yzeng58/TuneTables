@@ -8,6 +8,15 @@ import itertools
 import torch
 from torch import nn
 from torch.optim.lr_scheduler import LambdaLR
+import numpy as np
+
+def seed_all(seed = 0):
+    torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.benchmark = False
+    # torch.use_deterministic_algorithms(True, warn_only=True)
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
 
 # copied from huggingface
 def get_cosine_schedule_with_warmup(optimizer, num_warmup_steps, num_training_steps, num_cycles=0.5, last_epoch=-1):
@@ -95,6 +104,8 @@ def get_uniform_single_eval_pos_sampler(max_len, min_len=0):
     """
     return lambda: random.choices(range(min_len, max_len))[0]
 
+def get_fixed_batch_sampler(max_len):
+    return lambda: random.choices([max_len])[0]
 
 class SeqBN(nn.Module):
     def __init__(self, d_model):
@@ -311,3 +322,44 @@ def normalize_by_used_features_f(x, num_features_used, num_features, normalize_w
     if normalize_with_sqrt:
         return x / (num_features_used / num_features)**(1 / 2)
     return x / (num_features_used / num_features)
+
+class EmbeddingConcatenator():
+    def __init__(self, model, method, prefix_weights) -> None:
+        self.model = model
+        self.original_prefix_size = model.prefix_size
+        self.original_embedding = self.model.prefix_embedding.weight.data
+        self.original_y_embedding = self.model.prefix_y_embedding
+        self.prefix_weights = prefix_weights
+        self.prefix_size = None
+        self.concatenated_embedding = None
+        self.concatenated_y_embedding = None
+        self.method = method
+
+    def concat_embedding(self):
+        if self.concatenated_embedding is not None:
+            return
+        #extract embedding parameters
+        if self.method == "duplicate":
+            self.concatenated_embedding = torch.cat([self.original_embedding, self.original_embedding], dim=0).to(self.model.prefix_embedding.weight.device)
+            print("concatenated embedding shape: {}".format(self.concatenated_embedding.shape))
+            self.concatenated_y_embedding = torch.cat([self.original_y_embedding, self.original_y_embedding], dim=0).to(self.model.prefix_embedding.weight.device)
+            self.prefix_size = self.original_prefix_size * 2
+        else:
+            raise NotImplementedError("Method {} not implemented!".format(self.method))
+    
+    def get_model(self):
+        return self.model
+
+    def replace_embedding(self):
+        if self.concatenated_embedding is None:
+            raise ValueError("Please concat embedding first!")
+        # self.model._state_dict()['prefix_embedding.weight'] = self.concatenated_embedding
+        self.model.prefix_embedding.weight = nn.Parameter(self.concatenated_embedding)
+        self.model.prefix_y_embedding = self.concatenated_y_embedding
+        self.model.prefix_size = self.prefix_size
+
+    def restore_embedding(self):
+        self.model.prefix_embedding.weight = nn.Parameter(self.original_embedding)
+        self.model.prefix_y_embedding = self.original_y_embedding
+        self.model.prefix_size = self.original_prefix_size
+        self.model.freeze_parameters_except_prefix()

@@ -4,7 +4,7 @@ from functools import partial
 import tabpfn.encoders as encoders
 
 from tabpfn.transformer import TransformerModel
-from tabpfn.utils import get_uniform_single_eval_pos_sampler
+from utils import get_uniform_single_eval_pos_sampler, get_fixed_batch_sampler
 import priors
 from train import train, Losses
 
@@ -15,6 +15,8 @@ def save_model(model, path, filename, config_sample):
     config_sample = {**config_sample}
 
     def make_serializable(config_sample):
+        if isinstance(config_sample, torch.Tensor):
+            config_sample = "tensor"
         if isinstance(config_sample, dict):
             config_sample = {k: make_serializable(config_sample[k]) for k in config_sample}
         if isinstance(config_sample, list):
@@ -30,8 +32,18 @@ def save_model(model, path, filename, config_sample):
     #del config_sample['num_classes']
 
     config_sample = make_serializable(config_sample)
-    print("Saving to ", os.path.join(path, filename))
-    torch.save((model.state_dict(), None, config_sample), os.path.join(path, filename))
+    target_path = os.path.join(path, filename)
+    if not os.path.exists(target_path):
+        os.makedirs(target_path)
+    #Change permissions to allow group access
+    os.chmod(target_path, 0o775)
+    try:
+        #TODO: something about the target path is making the model unhappy
+        torch.save((model.state_dict(), None, config_sample), target_path)
+    except:
+        target_path = os.path.join("/home/benfeuer/TabPFN-pt/tabpfn/models_diff", filename)
+        torch.save((model.state_dict(), None, config_sample), target_path)
+
 
 
 import subprocess as sp
@@ -210,7 +222,9 @@ def get_model(config, device, should_train=True, verbose=False, state_dict=None,
     verbose_train, verbose_prior = verbose >= 1, verbose >= 2
     config['verbose'] = verbose_prior
 
-    if 'aggregate_k_gradients' not in config or config['aggregate_k_gradients'] is None:
+    if config['boosting']:
+        config['aggregate_k_gradients'] = 1
+    elif 'aggregate_k_gradients' not in config or config['aggregate_k_gradients'] is None:
         config['aggregate_k_gradients'] = math.ceil(config['batch_size'] * ((config['nlayers'] * config['emsize'] * config['bptt'] * config['bptt']) / 10824640000))
 
     config['num_steps'] = math.ceil(config['num_steps'] * config['aggregate_k_gradients'])
@@ -322,9 +336,14 @@ def get_model(config, device, should_train=True, verbose=False, state_dict=None,
                         , 'prompt_tuning': config.get('prompt_tuning', False)
                         , 'tuned_prompt_size': config.get('tuned_prompt_size', 0)
                         , 'model_string': config.get('model_string', '')
-                        , 'save_path': config.get('save_path', '.')
+                        , 'save_path': config.get('base_path', '.')
+                        , 'rand_seed': config.get('rand_seed', 135798642)
+                        , 'average_ensemble': config.get('average_ensemble', False)
+                        , 'permute_feature_position_in_ensemble': config.get('permute_feature_position_in_ensemble', False)
+                        , 'bagging': config.get('bagging', False)
                         , **extra_kwargs
     }
+    print("Extra prior kwargs dict:", epkd)
     if config['prior_type'] == 'real':
         dataset_built = False
         for i, split_dictionary in enumerate(dataset.split_indeces):
@@ -356,8 +375,11 @@ def get_model(config, device, should_train=True, verbose=False, state_dict=None,
         if not dataset_built:
             raise Exception(f"Split {config['split']} not found in dataset!")
     else:
-        dataloader = model_proto.DataLoader  
-
+        dataloader = model_proto.DataLoader
+    if not config['boosting']:
+        sep_samp = get_uniform_single_eval_pos_sampler(config.get('max_eval_pos', config['bptt']), min_len=config.get('min_eval_pos', 0))
+    else:
+        sep_samp = get_fixed_batch_sampler(config.get('max_eval_pos', config['bptt']))
     model = train(dataloader
                   , loss
                   , encoder
@@ -376,7 +398,7 @@ def get_model(config, device, should_train=True, verbose=False, state_dict=None,
                   , gpu_device=device
                   , dropout=config['dropout']
                   , steps_per_epoch=config['num_steps']
-                  , single_eval_pos_gen=get_uniform_single_eval_pos_sampler(config.get('max_eval_pos', config['bptt']), min_len=config.get('min_eval_pos', 0))
+                  , single_eval_pos_gen=sep_samp
                   , load_weights_from_this_state_dict=state_dict
                   , aggregate_k_gradients=config['aggregate_k_gradients']
                   , recompute_attn=config['recompute_attn']
@@ -384,7 +406,13 @@ def get_model(config, device, should_train=True, verbose=False, state_dict=None,
                   , bptt_extra_samples = config['bptt_extra_samples']
                   , extra_prior_kwargs_dict=epkd
                   , lr=config['lr']
-                  , verbose=verbose_train,
-                  weight_decay=config.get('weight_decay', 0.0))
+                  , verbose=verbose_train
+                  , boosting = config['boosting']
+                  , boosting_lr = config.get('boosting_lr', 1e-3)
+                  , boosting_n_iters = config.get('boosting_n_iters', 10)
+                  , rand_init_ensemble = config.get('rand_init_ensemble', False)
+                  , do_concat = config.get('concat_method', '')
+                  , weight_decay=config.get('weight_decay', 0.0)
+                  )
 
     return model
