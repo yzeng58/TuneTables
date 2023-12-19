@@ -363,3 +363,13 @@ class EmbeddingConcatenator():
         self.model.prefix_y_embedding = self.original_y_embedding
         self.model.prefix_size = self.original_prefix_size
         self.model.freeze_parameters_except_prefix()
+
+
+def get_wandb_api_key(api_key_file="./wandb_api_key.txt"):
+    # todo: if we make a config folder, put wandb_api_key.txt into the config folder
+    try:
+        return os.environ["WANDB_API_KEY"]
+    except KeyError:
+        with open(api_key_file, "r") as f:
+            key = f.read()
+        return key.strip()

@@ -41,7 +41,9 @@ def save_model(model, path, filename, config_sample):
         #TODO: something about the target path is making the model unhappy
         torch.save((model.state_dict(), None, config_sample), target_path)
     except:
-        target_path = os.path.join("/home/benfeuer/TabPFN-pt/tabpfn/models_diff", filename)
+        # todo: make target_path a parameter that can be passed in
+        #target_path = os.path.join("/home/benfeuer/TabPFN-pt/tabpfn/models_diff", filename)
+        target_path = os.path.join("/home/colin/TabPFN-pt/tabpfn/models_diff", filename)
         torch.save((model.state_dict(), None, config_sample), target_path)
 
 

@@ -232,6 +232,7 @@ def train(priordataloader_class, criterion, encoder_generator, emsize=200, nhid=
         assert len(dl) % aggregate_k_gradients == 0, 'Please set the number of steps per epoch s.t. `aggregate_k_gradients` divides it.'
         # print("Training Dataset size: ", len(dl.dataset))
         for batch, (data, targets, single_eval_pos) in enumerate(dl):
+            #print('starting batch', batch, 'of', len(dl))
             if isinstance(data, list):
                 data = tuple(data)
             if isinstance(single_eval_pos, torch.Tensor) and single_eval_pos.numel() == 0:
@@ -438,6 +439,7 @@ def train(priordataloader_class, criterion, encoder_generator, emsize=200, nhid=
         return_targets = None
         res_dict = None
         for epoch in (range(1, epochs + 1) if epochs is not None else itertools.count(1)):
+            print('epoch', epoch, 'of', epochs)
             boost_this_epoch = True if epoch == 1 else False
             epoch_start_time = time.time()
             total_loss, total_positional_losses, time_to_get_batch, forward_time, step_time, nan_share, ignore_share =\
@@ -496,9 +498,12 @@ def train(priordataloader_class, criterion, encoder_generator, emsize=200, nhid=
                     print("Saving log to json file, path is: ", log_path)
                     with open(log_path, 'w') as f:
                         json.dump(res_dict, f, indent=4)
-            # stepping with wallclock time based scheduler
+            
+            # todo: res_dict only changes once every 10 epochs?
             if epoch_callback is not None and rank == 0:
-                epoch_callback(model, epoch / epochs)
+                epoch_callback(model, epoch / epochs, res_dict)
+
+            # stepping with wallclock time based scheduler
             scheduler.step()
         return return_outputs, return_targets, res_dict
     

@@ -3,11 +3,13 @@ from datetime import datetime
 import argparse
 import json
 import os
+import wandb
 
 from scripts.model_builder import get_model, save_model
 from scripts.model_configs import *
 from priors.utils import uniform_int_sampler_f
 from notebook_utils import *
+from utils import get_wandb_api_key
 
 def train_function(config_sample, i=0, add_name=''):
 
@@ -17,8 +19,8 @@ def train_function(config_sample, i=0, add_name=''):
     else:
         save_every_k = config_sample['save_every_k_epochs']
     epochs = []
-    
-    def save_callback(model, epoch):
+
+    def save_callback(model, epoch, values_to_log):
         #NOTE: I think the 'epoch' value is actually 1 / config['epochs']
         epochs.append(epoch)
         if not hasattr(model, 'last_saved_epoch'):
@@ -29,7 +31,12 @@ def train_function(config_sample, i=0, add_name=''):
             save_model(model, config_sample['base_path'], f'prior_diff_real_checkpoint{add_name}_n_{i}_epoch_{model.last_saved_epoch}.cpkt',
                            config_sample)
             model.last_saved_epoch = model.last_saved_epoch + 1 # TODO: Rename to checkpoint
-    
+
+        # save to wandb
+        if config_sample['wandb_log'] and len(epochs) % config_sample['wandb_log_test_interval'] == 0:
+            print('debug. logging.')
+            wandb.log(values_to_log, step=len(epochs), commit=True)
+
     def no_callback(model, epoch):
         pass
 
@@ -38,6 +45,7 @@ def train_function(config_sample, i=0, add_name=''):
     else:
         my_callback = save_callback
 
+    # todo: get_model shouldn't be the method that trains the model
     model = get_model(config_sample
                       , config_sample["device"]
                       , should_train=True
@@ -65,9 +73,9 @@ def reload_config(config_type='causal', task_type='multiclass', longer=0):
 
 def train_loop():
     parser = argparse.ArgumentParser(description='Train a model.')
-    parser.add_argument('--resume', type=str, default=None, help='Path to model checkpoint to resume from.')
+    parser.add_argument('--resume', type=str, default="/home/colin/TabPFN-pt/tabpfn/models_diff/prior_diff_real_checkpoint_n_0_epoch_42.cpkt", help='Path to model checkpoint to resume from.')
     parser.add_argument('--save_path', type=str, default=".", help='Path to save new checkpoints.')
-    parser.add_argument('--prior_type', type=str, default="prior_bag", help='Type of prior to use (real, prior_bag).')
+    parser.add_argument('--prior_type', type=str, default="real", help='Type of prior to use (real, prior_bag).')
     parser.add_argument('--data_path', type=str, default=".", help='Path to data.')
     parser.add_argument('--prompt_tuning', action='store_true', help='Whether to tune the prompt.')
     parser.add_argument('--tuned_prompt_size', type=int, default=0, help='Size of the tuned prompt.')
@@ -199,6 +207,15 @@ def train_loop():
     #Bagging parameters
     config_sample['bagging'] = args.bagging
 
+    # wandb
+    # todo: for now, these params are hard-coded. We should put them somewhere else
+    config_sample['wandb_log'] = True
+    config_sample['wandb_name'] = 'tabpfn_pt_airlines'
+    config_sample['wandb_group'] = 'abacus'
+    config_sample['wandb_project'] = 'tabpfn'
+    config_sample['wandb_entity'] = 'crwhite14'
+    config_sample['wandb_log_test_interval'] = 1
+
     print("Saving config ...")
     config_sample_copy = config_sample.copy()
 
@@ -221,9 +238,17 @@ def train_loop():
     with open(f'{config_sample["base_path"]}/config_diff_real_{model_string}_n_{0}.json', 'w') as f:
         json.dump(config_sample_copy, f, indent=4)
 
+    if config_sample['wandb_log']:
+        wandb.login(key=get_wandb_api_key())
+        wandb.init(config=config_sample, name=config_sample['wandb_name'], group=config_sample['wandb_group'],
+                project=config_sample['wandb_project'], entity=config_sample['wandb_entity'])
+
     print("Training model ...")
 
     train_function(config_sample, 0, model_string)
+
+    if config_sample['wandb_log']:
+        wandb.finish()
 
     print("Done")
 

@@ -33,7 +33,7 @@ from sklearn.gaussian_process import GaussianProcessClassifier
 from sklearn.gaussian_process.kernels import RBF
 
 import numpy as np
-np.warnings.filterwarnings('ignore', category=np.VisibleDeprecationWarning) 
+#np.warnings.filterwarnings('ignore', category=np.VisibleDeprecationWarning) 
 
 import torch
 import itertools
