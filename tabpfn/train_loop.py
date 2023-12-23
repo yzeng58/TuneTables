@@ -34,7 +34,6 @@ def train_function(config_sample, i=0, add_name=''):
 
         # save to wandb
         if config_sample['wandb_log'] and len(epochs) % config_sample['wandb_log_test_interval'] == 0:
-            print('debug. logging.')
             wandb.log(values_to_log, step=len(epochs), commit=True)
 
     def no_callback(model, epoch):
@@ -215,6 +214,9 @@ def train_loop():
     config_sample['wandb_project'] = 'tabpfn'
     config_sample['wandb_entity'] = 'crwhite14'
     config_sample['wandb_log_test_interval'] = 1
+
+    # todo: allow this to be set
+    config_sample['rand_seed'] = 668
 
     print("Saving config ...")
     config_sample_copy = config_sample.copy()

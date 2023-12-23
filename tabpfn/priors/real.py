@@ -290,6 +290,7 @@ class SubsetMaker(object):
         :param subset_rows_method: method to use for selecting rows
         :return: subset of X, y
         """
+        print('setting numpy seed to', seed)
         np.random.seed(seed)
 
         if X.shape[1] > self.subset_features > 0:

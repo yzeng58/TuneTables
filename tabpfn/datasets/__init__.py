@@ -30,6 +30,7 @@ def get_openml_classification(did, max_samples, multiclass=True, shuffled=True):
         X = torch.tensor(X).reshape(2, -1, X.shape[1]).transpose(0, 1).reshape(-1, X.shape[1]).flip([0]).float()
     else:
         order = np.arange(y.shape[0])
+        print('setting numpy seed to 13')
         np.random.seed(13)
         np.random.shuffle(order)
         X, y = torch.tensor(X[order]), torch.tensor(y[order])

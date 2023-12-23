@@ -470,6 +470,7 @@ def transformer_predict(model, eval_xs, eval_ys, eval_position,
     preprocess_transform_configurations = ['none', 'power_all'] if preprocess_transform == 'mix' else [preprocess_transform]
 
     if seed is not None:
+        print('setting torch seed to', seed)
         torch.manual_seed(seed)
 
     feature_shift_configurations = torch.randperm(eval_xs.shape[2]) if feature_shift_decoder else [0]
@@ -478,6 +479,7 @@ def transformer_predict(model, eval_xs, eval_ys, eval_position,
     ensemble_configurations = list(itertools.product(class_shift_configurations, feature_shift_configurations))
     #default_ensemble_config = ensemble_configurations[0]
 
+    print('setting random.Random seed to', seed)
     rng = random.Random(seed)
     rng.shuffle(ensemble_configurations)
     ensemble_configurations = list(itertools.product(ensemble_configurations, preprocess_transform_configurations, styles_configurations))

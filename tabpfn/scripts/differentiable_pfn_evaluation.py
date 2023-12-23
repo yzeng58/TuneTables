@@ -117,6 +117,7 @@ def evaluate_point_model(model
     :param kwargs:
     :return:
     """
+    print('setting torch, numpy, random seed to 0')
     torch.manual_seed(0)
     np.random.seed(0)
     random.seed(0)

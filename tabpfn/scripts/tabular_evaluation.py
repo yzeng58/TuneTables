@@ -212,12 +212,14 @@ def generate_valid_split(X, y, bptt, eval_position, is_classification, split_num
     """
     done, seed = False, 13
 
+    print('setting torch seed to', split_number)
     torch.manual_seed(split_number)
     perm = torch.randperm(X.shape[0]) if split_number > 1 else torch.arange(0, X.shape[0])
     X, y = X[perm], y[perm]
     while not done:
         if seed > 20:
             return None, None # No split could be generated in 7 passes, return None
+        print('setting random.seed to', seed)
         random.seed(seed)
         i = random.randint(0, len(X) - bptt) if len(X) - bptt > 0 else 0
         y_ = y[i:i + bptt]
