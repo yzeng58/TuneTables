@@ -79,6 +79,9 @@ def train_loop():
     parser.add_argument('--prompt_tuning', action='store_true', help='Whether to tune the prompt.')
     parser.add_argument('--tuned_prompt_size', type=int, default=0, help='Size of the tuned prompt.')
     parser.add_argument('--lr', type=float, default=0.0001, help='Learning rate.')
+    parser.add_argument('--batch_size', type=int, default=4, help='Batch size.')
+    parser.add_argument('--bptt', type=int, default=1152, help='Batch per train time.')
+    parser.add_argument('--seed', type=int, default=100, help='Random seed.')
     parser.add_argument('--epochs', type=int, default=400, help='Number of epochs to train for.')
     parser.add_argument('--num_eval_fitting_samples', type=int, default=1000, help='How many samples from the training set to draw when fitting the eval set.')
     parser.add_argument('--split', type=int, default=0, help='Which split to use (0-9?).')
@@ -92,6 +95,7 @@ def train_loop():
     parser.add_argument('--permute_feature_position_in_ensemble', action='store_true', help='Whether to ensemble over feature position permutations.')
     parser.add_argument('--concat_method', type=str, default="", help='concatenation method (duplicate, empty = none)')
     parser.add_argument('--save_every_k_epochs', type=int, default=10, help='How often to save new checkpoints.')
+    parser.add_argument('--wandb_name', type=str, default='tabpfn_pt_airlines', help='Name for wandb logging.')
     args = parser.parse_args()
 
     config, model_string = reload_config(longer=1)
@@ -172,8 +176,9 @@ def train_loop():
 
     config['emsize'] = 512
     config['nhead'] = config['emsize'] // 128
-    config['bptt'] = 1024+128
+    config['bptt'] = args.bptt
     config['canonical_y_encoder'] = False
+    config['rand_seed'] = args.seed
 
         
     config['aggregate_k_gradients'] = args.aggregate_k_gradients
@@ -188,7 +193,7 @@ def train_loop():
     #TODO: check whether config_sample should be iterated within train_function
     config_sample = evaluate_hypers(config)
 
-    config_sample['batch_size'] = 4
+    config_sample['batch_size'] = args.batch_size
     config_sample['save_every_k_epochs'] = args.save_every_k_epochs
 
     #Boosting parameters
@@ -207,16 +212,14 @@ def train_loop():
     config_sample['bagging'] = args.bagging
 
     # wandb
-    # todo: for now, these params are hard-coded. We should put them somewhere else
+    # todo: for now, most are hard-coded
     config_sample['wandb_log'] = True
-    config_sample['wandb_name'] = 'tabpfn_pt_airlines'
+    config_sample['wandb_name'] = args.wandb_name
     config_sample['wandb_group'] = 'abacus'
     config_sample['wandb_project'] = 'tabpfn'
     config_sample['wandb_entity'] = 'crwhite14'
     config_sample['wandb_log_test_interval'] = 1
 
-    # todo: allow this to be set
-    config_sample['rand_seed'] = 668
 
     print("Saving config ...")
     config_sample_copy = config_sample.copy()
