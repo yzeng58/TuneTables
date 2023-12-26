@@ -542,7 +542,13 @@ def train(priordataloader_class, criterion, encoder_generator, emsize=200, nhid=
     bagging = extra_prior_kwargs_dict.get("bagging", False)
     if bagging:
         dl_backup = dl
-        split_indices = np.array_split(np.arange(len(dl_backup.dataset)), boosting_n_iters)
+        split_size = 0.5
+        split_indices = []
+        for i in range(boosting_n_iters):
+            np.random.seed(extra_prior_kwargs_dict.get('rand_seed') + i)
+            split_indices.append(np.random.choice(np.arange(len(dl_backup.dataset)), size=int(split_size * len(dl_backup.dataset)), replace=False))
+        # dl_backup = dl
+        # split_indices = np.array_split(np.arange(len(dl_backup.dataset)), boosting_n_iters)
     is_ensemble = (boosting or bagging or rand_init_ensemble)
     prefix_weights_l = []
     cur_boost_iter = 0
