@@ -216,7 +216,6 @@ def train(priordataloader_class, criterion, encoder_generator, emsize=200, nhid=
             targets = torch.cat(target_list, dim=0)
             correct += (predictions == targets).sum().item()
         raw_model_acc = np.round(correct / total, 3)
-        print("Raw model accuracy: ", raw_model_acc)
         return raw_model_acc, outputs.cpu(), targets.cpu()
     
     def train_epoch(model, optimizer, boost_this_epoch=False):
@@ -455,6 +454,10 @@ def train(priordataloader_class, criterion, encoder_generator, emsize=200, nhid=
                 val_ece = np.round(um.ece(np_targets, np_outputs, num_bins=30), 3)
                 val_tace = np.round(um.tace(np_targets, np_outputs, num_bins=30), 3)
                 test_score, test_outputs, test_targets = real_data_eval(r_model=t_model, cl=bptt, val_dl=test_dl)
+                np_outputs_t = test_outputs.cpu().numpy().astype(np.float32)
+                np_targets_t = test_targets.cpu().numpy().astype(np.int32)
+                test_ece = np.round(um.ece(np_targets_t, np_outputs_t, num_bins=30), 3)
+                test_tace = np.round(um.tace(np_targets_t, np_outputs_t, num_bins=30), 3)
                 return_outputs = val_outputs
                 return_targets = val_targets
                 if do_prompt_tuning:
@@ -463,12 +466,24 @@ def train(priordataloader_class, criterion, encoder_generator, emsize=200, nhid=
                     if do_concat != "":
                         ec = EmbeddingConcatenator(t_model, do_concat, prefix_weights_l)
                         t_model = concat_embedding(ec, t_model, do_concat)
-                        val_score_nc, val_outputs, val_targets = real_data_eval(r_model=ec.get_model(), cl=10, val_dl=val_dl)
+                        val_score_nc, val_outputs, val_targets = real_data_eval(r_model=ec.get_model(), cl=0, val_dl=val_dl)
+
+                        test_score_nc, test_outputs, test_targets = real_data_eval(r_model=ec.get_model(), cl=0, val_dl=test_dl)
+
                         t_model = restore_embedding(ec, t_model)
                         # Update optimizer parameters to include new embedding
                         t_optim = torch.optim.AdamW(t_model.parameters(), lr=lr, weight_decay=weight_decay)
                     else:
-                        val_score_nc, val_outputs, val_targets = real_data_eval(r_model=t_model, cl=10, val_dl=val_dl)              
+                        val_score_nc, val_outputs, val_targets = real_data_eval(r_model=t_model, cl=0, val_dl=val_dl)
+                        test_score_nc, test_outputs, test_targets = real_data_eval(r_model=t_model, cl=0, val_dl=test_dl)
+                    np_outputs_nc = val_outputs.cpu().numpy().astype(np.float32)
+                    np_targets_nc = val_targets.cpu().numpy().astype(np.int32)
+                    val_ece_nc = np.round(um.ece(np_targets_nc, np_outputs_nc, num_bins=30), 3)
+                    val_tace_nc = np.round(um.tace(np_targets_nc, np_outputs_nc, num_bins=30), 3)
+                    np_outputs_nc_t = test_outputs.cpu().numpy().astype(np.float32)
+                    np_targets_nc_t = test_targets.cpu().numpy().astype(np.int32)
+                    test_ece_nc = np.round(um.ece(np_targets_nc_t, np_outputs_nc_t, num_bins=30), 3)
+                    test_tace_nc = np.round(um.tace(np_targets_nc_t, np_outputs_nc_t, num_bins=30), 3)
             elif hasattr(dl, 'validate') and epoch % validation_period == 0:
                 with torch.no_grad():
                     val_score = dl.validate(model)
@@ -485,13 +500,29 @@ def train(priordataloader_class, criterion, encoder_generator, emsize=200, nhid=
                     + (f' | val score {val_score}' if val_score is not None else '')
                     + (f' | val score nc {val_score_nc}' if val_score_nc is not None else '')
                     + (f' | test score {test_score}' if test_score is not None else '')
+                    + (f' | test score nc {test_score_nc}' if test_score_nc is not None else '')
                     + (f' | val ece {val_ece}' if val_score is not None else '')
                     + (f' | val tace {val_tace}' if val_score is not None else '')
                 )
                 print('-' * 89)
                 if val_score is not None:
                     # save the log to a json file
-                    res_dict = {'time' : get_time, 'epoch': epoch, 'mean_loss' : total_loss, 'val_score': val_score, 'val_score_nc' : val_score_nc, "test_score" : test_score, "val_ece" : val_ece, "val_tace" : val_tace}
+                    res_dict = {'time' : get_time, 
+                                'epoch': epoch, 
+                                'mean_loss' : total_loss, 
+                                'val_score': val_score, 
+                                'val_score_nc' : val_score_nc, 
+                                "test_score" : test_score, 
+                                "test_score_nc" : test_score_nc, 
+                                "val_ece" : val_ece, 
+                                "val_tace" : val_tace,
+                                "test_ece" : test_ece,
+                                "test_tace" : test_tace,
+                                "val_ece_nc" : val_ece_nc,
+                                "val_tace_nc" : val_tace_nc,
+                                "test_ece_nc" : test_ece_nc,
+                                "test_tace_nc" : test_tace_nc,
+                                }
                     mstr = extra_prior_kwargs_dict.get('model_string')
                     boost_iter = f"boost_iter_{cur_boost_iter}" if is_ensemble else ""
                     log_path = os.path.join(extra_prior_kwargs_dict.get('save_path'), f'{mstr}_{boost_iter}_log_{epoch}.json')
