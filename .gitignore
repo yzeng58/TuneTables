@@ -2,6 +2,9 @@
 */wandb_api_key.txt
 */wandb/
 
+# datasets
+tabpfn/datasets/*
+
 # results and outfiles
 *.out
 */results_*/

@@ -36,7 +36,7 @@ def train_function(config_sample, i=0, add_name=''):
         if config_sample['wandb_log'] and len(epochs) % config_sample['wandb_log_test_interval'] == 0:
             wandb.log(values_to_log, step=len(epochs), commit=True)
 
-    def no_callback(model, epoch):
+    def no_callback(model, epoch, values_to_log):
         pass
 
     if config_sample['boosting'] or config_sample['rand_init_ensemble'] or config_sample['bagging']:
@@ -96,6 +96,7 @@ def train_loop():
     parser.add_argument('--concat_method', type=str, default="", help='concatenation method (duplicate, empty = none)')
     parser.add_argument('--save_every_k_epochs', type=int, default=10, help='How often to save new checkpoints.')
     parser.add_argument('--wandb_name', type=str, default='tabpfn_pt_airlines', help='Name for wandb logging.')
+    parser.add_argument('--wandb_log', action='store_true', help='Whether to log to wandb.')
     args = parser.parse_args()
 
     config, model_string = reload_config(longer=1)
@@ -213,7 +214,7 @@ def train_loop():
 
     # wandb
     # todo: for now, most are hard-coded
-    config_sample['wandb_log'] = True
+    config_sample['wandb_log'] = args.wandb_log
     config_sample['wandb_name'] = args.wandb_name
     config_sample['wandb_group'] = 'abacus'
     config_sample['wandb_project'] = 'tabpfn'
