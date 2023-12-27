@@ -381,8 +381,10 @@ def train(priordataloader_class, criterion, encoder_generator, emsize=200, nhid=
                 if "size-ctl" in method:
                     #select random sample of size prefix_size
                     if "perm" in method:
+                        # random permutation
                         sel = torch.randperm(ec.concatenated_embedding.shape[0])[:ec.original_prefix_size].to(device)
                     else:
+                        #first-k-samples
                         total_emb_size = ec.original_prefix_size
                         emb_size = total_emb_size // num_to_concat
                         orig_emb_size = ec.original_embedding.shape[0]
@@ -423,13 +425,18 @@ def train(priordataloader_class, criterion, encoder_generator, emsize=200, nhid=
             print("Prefix weights list length: ", len(prefix_weights_l))
         return prefix_weights_l
 
-    def update_ensemble_acc(boosting_acc):
+    def update_ensemble_acc(boosting_acc, boosting_acc_nc):
         ece = np.round(um.ece(labels_np, probs_np, num_bins=30), 3)
         tace = np.round(um.tace(labels_np, probs_np, num_bins=30), 3)
+        nc_ece = np.round(um.ece(labels_np_nc, probs_np_nc, num_bins=30), 3)
+        nc_tace = np.round(um.tace(labels_np_nc, probs_np_nc, num_bins=30), 3)
         new_res = {
-            "accuracy": boosting_acc,
-            "ece": ece,
-            "tace": tace,
+            "val_acc": boosting_acc,
+            "val_acc_nc": boosting_acc_nc,
+            "val_ece": ece,
+            "val_tace": tace,
+            "val_ece_nc": nc_ece,
+            "val_tace_nc": nc_tace,
         }
         return new_res
 
@@ -443,9 +450,7 @@ def train(priordataloader_class, criterion, encoder_generator, emsize=200, nhid=
             epoch_start_time = time.time()
             total_loss, total_positional_losses, time_to_get_batch, forward_time, step_time, nan_share, ignore_share =\
                 train_epoch(t_model, t_optim, boost_this_epoch)
-            val_score = None
-            val_score_nc = None
-            test_score = None
+            val_score = val_score_nc = val_score_concat = val_score_nc_concat = test_score = test_score_nc = test_ece = test_tace = val_ece = val_tace = None
             if real_prior \
                 and (epoch - 1) % validation_period == 0:
                 val_score, val_outputs, val_targets = real_data_eval(r_model=t_model, cl=bptt, val_dl=val_dl)
@@ -458,26 +463,28 @@ def train(priordataloader_class, criterion, encoder_generator, emsize=200, nhid=
                 np_targets_t = test_targets.cpu().numpy().astype(np.int32)
                 test_ece = np.round(um.ece(np_targets_t, np_outputs_t, num_bins=30), 3)
                 test_tace = np.round(um.tace(np_targets_t, np_outputs_t, num_bins=30), 3)
-                return_outputs = val_outputs
-                return_targets = val_targets
+                return_outputs = [np_outputs]
+                return_targets = [np_targets]
                 if do_prompt_tuning:
                     #TODO: will this work with context length 0? Should this be a hyperparameter?
                     #val_score_nc, outputs = tpc_data_eval(cl=10, X=X, y=y, X_val=X_val, y_val=y_val, eval_model=eval_model, val_dl=val_dl)
                     if do_concat != "":
                         ec = EmbeddingConcatenator(t_model, do_concat, prefix_weights_l)
                         t_model = concat_embedding(ec, t_model, do_concat)
-                        val_score_nc, val_outputs, val_targets = real_data_eval(r_model=ec.get_model(), cl=0, val_dl=val_dl)
-
-                        test_score_nc, test_outputs, test_targets = real_data_eval(r_model=ec.get_model(), cl=0, val_dl=test_dl)
-
+                        val_score_concat, _, _ = real_data_eval(r_model=ec.get_model(), cl=bptt, val_dl=val_dl)
+                        val_score_nc_concat, _, _ = real_data_eval(r_model=ec.get_model(), cl=0, val_dl=val_dl)
                         t_model = restore_embedding(ec, t_model)
                         # Update optimizer parameters to include new embedding
                         t_optim = torch.optim.AdamW(t_model.parameters(), lr=lr, weight_decay=weight_decay)
                     else:
-                        val_score_nc, val_outputs, val_targets = real_data_eval(r_model=t_model, cl=0, val_dl=val_dl)
-                        test_score_nc, test_outputs, test_targets = real_data_eval(r_model=t_model, cl=0, val_dl=test_dl)
+                        val_score_nc_concat = ""
+                        val_score_concat = ""
+                    val_score_nc, val_outputs, val_targets = real_data_eval(r_model=t_model, cl=0, val_dl=val_dl)
+                    test_score_nc, test_outputs, test_targets = real_data_eval(r_model=t_model, cl=0, val_dl=test_dl)
                     np_outputs_nc = val_outputs.cpu().numpy().astype(np.float32)
                     np_targets_nc = val_targets.cpu().numpy().astype(np.int32)
+                    return_outputs.append(np_outputs_nc)
+                    return_targets.append(np_targets_nc)
                     val_ece_nc = np.round(um.ece(np_targets_nc, np_outputs_nc, num_bins=30), 3)
                     val_tace_nc = np.round(um.tace(np_targets_nc, np_outputs_nc, num_bins=30), 3)
                     np_outputs_nc_t = test_outputs.cpu().numpy().astype(np.float32)
@@ -503,6 +510,14 @@ def train(priordataloader_class, criterion, encoder_generator, emsize=200, nhid=
                     + (f' | test score nc {test_score_nc}' if test_score_nc is not None else '')
                     + (f' | val ece {val_ece}' if val_score is not None else '')
                     + (f' | val tace {val_tace}' if val_score is not None else '')
+                    + (f' | test ece {test_ece}' if test_score is not None else '')
+                    + (f' | test tace {test_tace}' if test_score is not None else '')
+                    + (f' | val ece nc {val_ece_nc}' if val_score_nc is not None else '')
+                    + (f' | val tace nc {val_tace_nc}' if val_score_nc is not None else '')
+                    + (f' | test ece nc {test_ece_nc}' if test_score_nc is not None else '')
+                    + (f' | test tace nc {test_tace_nc}' if test_score_nc is not None else '')
+                    + (f' | val score concat {val_score_concat}' if val_score_concat is not None else '')
+                    + (f' | val score nc concat {val_score_nc_concat}' if val_score_nc_concat is not None else '')
                 )
                 print('-' * 89)
                 if val_score is not None:
@@ -522,9 +537,11 @@ def train(priordataloader_class, criterion, encoder_generator, emsize=200, nhid=
                                 "val_tace_nc" : val_tace_nc,
                                 "test_ece_nc" : test_ece_nc,
                                 "test_tace_nc" : test_tace_nc,
+                                "val_score_concat" : val_score_concat,
+                                "val_score_nc_concat" : val_score_nc_concat,
                                 }
                     mstr = extra_prior_kwargs_dict.get('model_string')
-                    boost_iter = f"boost_iter_{cur_boost_iter}" if is_ensemble else ""
+                    boost_iter = f"ensemble_iter_{cur_boost_iter}" if is_ensemble else ""
                     log_path = os.path.join(extra_prior_kwargs_dict.get('save_path'), f'{mstr}_{boost_iter}_log_{epoch}.json')
                     print("Saving log to json file, path is: ", log_path)
                     with open(log_path, 'w') as f:
@@ -568,12 +585,16 @@ def train(priordataloader_class, criterion, encoder_generator, emsize=200, nhid=
         gradient_dict = {}
         output_dict[i], test_targets, results_dict = train_test_loop(model, optimizer)
         prior_grad_dict = gradient_dict
-        probs_np = output_dict[0].cpu().numpy()
-        labels_np = test_targets.cpu().numpy()
+        # probs np and labels np are used by update_ensemble_acc for ECE and TACE
+        probs_np = output_dict[0][0]
+        labels_np = test_targets[0]
+        probs_np_nc = output_dict[0][1]
+        labels_np_nc = test_targets[1]
         if is_ensemble:
-            ensembling_acc[i] = update_ensemble_acc(results_dict.get('val_score', 0))
-        with open(os.path.join(extra_prior_kwargs_dict.get('save_path'), 'ensembling_acc.json'), 'w') as f:
-            json.dump(ensembling_acc, f, indent=4)
+            ensembling_acc[i] = update_ensemble_acc(results_dict.get('val_score', 0), results_dict.get('val_score_nc', 0))
+            if not do_concat:
+                with open(os.path.join(extra_prior_kwargs_dict.get('save_path'), 'ensembling_acc.json'), 'w') as f:
+                    json.dump(ensembling_acc, f, indent=4)
         if do_prompt_tuning:
             prefix_weights_l = save_prefix_weights(model, extra_prior_kwargs_dict.get('save_path'), i, do_concat, prefix_weights_l)
     except KeyboardInterrupt:
@@ -581,7 +602,6 @@ def train(priordataloader_class, criterion, encoder_generator, emsize=200, nhid=
     
     # boosting logic
     if is_ensemble:
-        print("Beginning ensembling")
         for i in range(1, boosting_n_iters):
             if bagging:
                 subset_dataset = Subset(dl_backup.dataset, split_indices[i])
@@ -592,38 +612,49 @@ def train(priordataloader_class, criterion, encoder_generator, emsize=200, nhid=
             seed_all(extra_prior_kwargs_dict.get('rand_seed') + i)
             print("Ensembling iteration: ", i+1, " of ", boosting_n_iters, "\n \n")
             model.init_prefix_weights()
-            output_dict[i], _, results_dict = train_test_loop(model, optimizer)
+            output_dict[i], test_targets, results_dict = train_test_loop(model, optimizer)
             prior_grad_dict = gradient_dict
-            # Evaluate average model
-            if extra_prior_kwargs_dict.get('average_ensemble'):
-                current_outs = torch.zeros_like(output_dict[0])
-                for j in range(i + 1):
-                    current_outs += output_dict[j]
-                current_outs /= (i + 1)
-            # Evaluate additive model
-            else:
-                current_outs = output_dict[0]
-                for j in range(1, i + 1):
-                    boost_res = torch.mul(boosting_lr, output_dict[j])
-                    current_outs += boost_res
-            _, current_preds = torch.max(current_outs.cpu().data, 1)
-            total = len(test_targets)
-            correct = (current_preds == test_targets).sum().item()
-            boosting_acc = np.round(correct / total, 3)
-            probs_np = current_outs.cpu().numpy()
-            labels_np = test_targets.cpu().numpy()
-            if boosting_acc <= ensembling_acc[i-1]["accuracy"]:
-                print("Ensembling accuracy did not improve, ignoring previous iteration")
-                output_dict[i] = torch.zeros_like(output_dict[i])
+
+            #No need to save ensembled results if we are concatenating; regular results are accurate
+            if do_concat != "":
+                 continue
+
+            current_outs = dict()
+            current_preds = dict()
+            boosting_accs = dict()
+            # Evaluate average model on all available benchmarks
+            for m in range(len(output_dict[0])):
+                total = len(test_targets[m])
+                if extra_prior_kwargs_dict.get('average_ensemble'):
+                        current_outs[m] = torch.zeros_like(torch.from_numpy(output_dict[0][m]))
+                        for j in range(i + 1):
+                            current_outs[m] += output_dict[j][m]
+                        current_outs[m] /= (i + 1)
+                # Evaluate additive model
+                else:
+                    current_outs[m] = output_dict[0][m]
+                    for j in range(1, i + 1):
+                        boost_res = torch.mul(boosting_lr, torch.from_numpy(output_dict[j][m]))
+                        current_outs[m] += boost_res
+                _, current_preds[m] = torch.max(current_outs[m].cpu().data, 1)
+                correct = (current_preds[m] == torch.from_numpy(test_targets[m])).sum().item()
+                boosting_accs[m] = np.round(correct / total, 3)
+            #TODO: this should not be hard-coded
+            probs_np = current_outs[0]
+            labels_np = test_targets[0]
+            probs_np_nc = current_outs[1]
+            labels_np_nc = test_targets[1]
+            #TODO: This ignores nc results
+            if boosting_accs[0] <= ensembling_acc[i-1]["val_acc"]:
+                output_dict[i][0] = torch.zeros_like(torch.from_numpy(output_dict[i][0]))
                 ensembling_acc[i] = ensembling_acc[i-1]
             else:
-                print("Ensembling accuracy is now: ", boosting_acc)
-                ensembling_acc[i] = update_ensemble_acc(boosting_acc)
+                ensembling_acc[i] = update_ensemble_acc(boosting_accs[0], boosting_accs[1])
             if do_prompt_tuning:
                 prefix_weights_l = save_prefix_weights(model, extra_prior_kwargs_dict.get('save_path'), i, do_concat, prefix_weights_l)
-        # Save ensembling accuracy
-        with open(os.path.join(extra_prior_kwargs_dict.get('save_path'), 'ensembling_acc.json'), 'w') as f:
-            json.dump(ensembling_acc, f, indent=4)
+            # Save ensembled accuracy
+            with open(os.path.join(extra_prior_kwargs_dict.get('save_path'), 'ensembling_acc.json'), 'w') as f:
+                json.dump(ensembling_acc, f, indent=4)
 
     # break down training and return
     if rank == 0: # trivially true for non-parallel training
