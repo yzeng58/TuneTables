@@ -663,6 +663,8 @@ def train(priordataloader_class, criterion, encoder_generator, emsize=200, nhid=
             dl = None
         return total_loss, total_positional_losses, model.to('cpu'), dl
 
+    return results_dict
+
 def _parse_args(config_parser, parser):
     # Do we have a config file to parse?
     args_config, remaining = config_parser.parse_known_args()

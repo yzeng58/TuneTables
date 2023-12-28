@@ -42,8 +42,8 @@ def save_model(model, path, filename, config_sample):
         torch.save((model.state_dict(), None, config_sample), target_path)
     except:
         # todo: make target_path a parameter that can be passed in
-        target_path = os.path.join("/home/benfeuer/TabPFN-pt/tabpfn/models_diff", filename)
-        # target_path = os.path.join("/home/colin/TabPFN-pt/tabpfn/models_diff", filename)
+        #target_path = os.path.join("/home/benfeuer/TabPFN-pt/tabpfn/models_diff", filename)
+        target_path = os.path.join("/home/colin/TabPFN-pt/tabpfn/models_diff", filename)
         torch.save((model.state_dict(), None, config_sample), target_path)
 
 
@@ -382,7 +382,7 @@ def get_model(config, device, should_train=True, verbose=False, state_dict=None,
         sep_samp = get_uniform_single_eval_pos_sampler(config.get('max_eval_pos', config['bptt']), min_len=config.get('min_eval_pos', 0))
     else:
         sep_samp = get_fixed_batch_sampler(config.get('max_eval_pos', config['bptt']))
-    model = train(dataloader
+    model, results_dict = train(dataloader
                   , loss
                   , encoder
                   , style_encoder_generator = encoders.StyleEncoder if use_style else None
@@ -417,4 +417,4 @@ def get_model(config, device, should_train=True, verbose=False, state_dict=None,
                   , weight_decay=config.get('weight_decay', 0.0)
                   )
 
-    return model
+    return model, results_dict
