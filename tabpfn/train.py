@@ -554,7 +554,7 @@ def train(priordataloader_class, criterion, encoder_generator, emsize=200, nhid=
             # stepping with wallclock time based scheduler
             scheduler.step()
         return return_outputs, return_targets, res_dict
-    
+
     # main training loop
     bagging = extra_prior_kwargs_dict.get("bagging", False)
     if bagging:
@@ -599,7 +599,7 @@ def train(priordataloader_class, criterion, encoder_generator, emsize=200, nhid=
             prefix_weights_l = save_prefix_weights(model, extra_prior_kwargs_dict.get('save_path'), i, do_concat, prefix_weights_l)
     except KeyboardInterrupt:
         pass
-    
+
     # boosting logic
     if is_ensemble:
         for i in range(1, boosting_n_iters):
@@ -661,9 +661,11 @@ def train(priordataloader_class, criterion, encoder_generator, emsize=200, nhid=
         if isinstance(model, torch.nn.parallel.DistributedDataParallel):
             model = model.module
             dl = None
-        return total_loss, total_positional_losses, model.to('cpu'), dl
+        # todo: model_builder.py expects two outputs: model, results_dict
+        #return total_loss, total_positional_losses, model.to('cpu'), dl
+        return model, results_dict
 
-    return results_dict
+    return model, results_dict
 
 def _parse_args(config_parser, parser):
     # Do we have a config file to parse?
