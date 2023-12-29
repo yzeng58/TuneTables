@@ -17,7 +17,7 @@ from sklearn.utils.multiclass import check_classification_targets
 from sklearn.utils import column_or_1d
 from sklearn.preprocessing import LabelEncoder
 from pathlib import Path
-from tabpfn.scripts.model_builder import load_model, load_model_only_inference
+from scripts.model_builder import load_model, load_model_only_inference
 import os
 import pickle
 import io
@@ -477,14 +477,14 @@ def transformer_predict(model, eval_xs, eval_ys, eval_position,
     class_shift_configurations = torch.randperm(len(torch.unique(eval_ys))) if multiclass_decoder == 'permutation' else [0]
 
     ensemble_configurations = list(itertools.product(class_shift_configurations, feature_shift_configurations))
-    #default_ensemble_config = ensemble_configurations[0]
+    # default_ensemble_config = ensemble_configurations[0]
 
     print('setting random.Random seed to', seed)
     rng = random.Random(seed)
     rng.shuffle(ensemble_configurations)
     ensemble_configurations = list(itertools.product(ensemble_configurations, preprocess_transform_configurations, styles_configurations))
     ensemble_configurations = ensemble_configurations[0:N_ensemble_configurations]
-    #if N_ensemble_configurations == 1:
+    # if N_ensemble_configurations == 1:
     #    ensemble_configurations = [default_ensemble_config]
 
     output = None
@@ -493,6 +493,7 @@ def transformer_predict(model, eval_xs, eval_ys, eval_position,
     inputs, labels = [], []
     start = time.time()
     for ensemble_configuration in ensemble_configurations:
+        print('ensemble_configuration', ensemble_configuration)
         (class_shift_configuration, feature_shift_configuration), preprocess_transform_configuration, styles_configuration = ensemble_configuration
 
         style_ = style[styles_configuration:styles_configuration+1, :] if style is not None else style
@@ -500,13 +501,13 @@ def transformer_predict(model, eval_xs, eval_ys, eval_position,
 
         eval_xs_, eval_ys_ = eval_xs.clone(), eval_ys.clone()
 
-        # if preprocess_transform_configuration in eval_xs_transformed:
-        #     eval_xs_ = eval_xs_transformed[preprocess_transform_configuration].clone()
-        # else:
-        #     eval_xs_ = preprocess_input(eval_xs_, preprocess_transform=preprocess_transform_configuration)
-        #     if no_grad:
-        #         eval_xs_ = eval_xs_.detach()
-        #     eval_xs_transformed[preprocess_transform_configuration] = eval_xs_
+        if preprocess_transform_configuration in eval_xs_transformed:
+            eval_xs_ = eval_xs_transformed[preprocess_transform_configuration].clone()
+        else:
+            eval_xs_ = preprocess_input(eval_xs_, preprocess_transform=preprocess_transform_configuration)
+            if no_grad:
+                eval_xs_ = eval_xs_.detach()
+            eval_xs_transformed[preprocess_transform_configuration] = eval_xs_
 
         eval_ys_ = ((eval_ys_ + class_shift_configuration) % num_classes).float()
 

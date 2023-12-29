@@ -1,4 +1,5 @@
 from pathlib import Path
+import argparse
 
 from functools import partial
 import tabpfn.encoders as encoders
@@ -62,7 +63,6 @@ def load_model_only_inference(path, filename, device, prefix_size, n_classes):
     Loads a saved model from the specified position. This function only restores inference capabilities and
     cannot be used for further training.
     """
-
     model_state, optimizer_state, config_sample = torch.load(os.path.join(path, filename), map_location='cpu')
     config_sample['prefix_size'] = prefix_size
     #TODO: check this, it was set to true in the training script
@@ -75,7 +75,7 @@ def load_model_only_inference(path, filename, device, prefix_size, n_classes):
         encoder = partial(encoders.Linear, replace_nan_by_zero=True)
 
     n_out = config_sample['max_num_classes']
-
+    print("max classes is", n_out)
     device = device if torch.cuda.is_available() else 'cpu:0'
     encoder = encoder(config_sample['num_features'], config_sample['emsize'])
 
@@ -85,14 +85,14 @@ def load_model_only_inference(path, filename, device, prefix_size, n_classes):
 
     assert config_sample['max_num_classes'] > 2
     loss = torch.nn.CrossEntropyLoss(reduction='none', weight=torch.ones(int(config_sample['max_num_classes'])))
-    pos_enc = positional_encodings.NoPositionalEncoding(config_sample['emsize'], config_sample['bptt']*2)
+    # pos_enc = positional_encodings.NoPositionalEncoding(config_sample['emsize'], config_sample['bptt']*2)
     model = TransformerModel(encoder, n_out, config_sample['emsize'], 
                              config_sample['nhead'], nhid, 
                              config_sample['nlayers'], 
                              recompute_attn=config_sample['recompute_attn'],
                              y_encoder=y_encoder_generator(1, config_sample['emsize']),
                              dropout=config_sample['dropout'], 
-                             pos_encoder=pos_enc,
+                             # pos_encoder=pos_enc,
                              efficient_eval_masking=config_sample['efficient_eval_masking'], 
                              prefix_size=config_sample.get('prefix_size', 0),
                              n_classes=n_classes,
@@ -104,6 +104,7 @@ def load_model_only_inference(path, filename, device, prefix_size, n_classes):
     module_prefix = 'module.'
     model_state = {k.replace(module_prefix, ''): v for k, v in model_state.items()}
     if model_state.get('prefix_embedding.weight', None) is None and model.state_dict().get('prefix_embedding.weight', None) is not None:
+            print('Loading prefix embedding')
             model_state['prefix_embedding.weight'] = model.state_dict()['prefix_embedding.weight']
     model.load_state_dict(model_state)
     model.to(device)
@@ -343,9 +344,16 @@ def get_model(config, device, should_train=True, verbose=False, state_dict=None,
                         , 'average_ensemble': config.get('average_ensemble', False)
                         , 'permute_feature_position_in_ensemble': config.get('permute_feature_position_in_ensemble', False)
                         , 'bagging': config.get('bagging', False)
+                        , 'tuned_prompt_label_balance': config.get('tuned_prompt_label_balance', 'equal')
+                        , 'ens_random_feature_rotation': config.get('ens_random_feature_rotation', False)
+                        , 'zs_eval_ensemble': config.get('zs_eval_ensemble', 0)
+                        , 'pad_features': config.get('pad_features', False)
                         , **extra_kwargs
     }
     print("Extra prior kwargs dict:", epkd)
+
+    args = argparse.Namespace(**config)
+
     if config['prior_type'] == 'real':
         dataset_built = False
         for i, split_dictionary in enumerate(dataset.split_indeces):
@@ -365,7 +373,7 @@ def get_model(config, device, should_train=True, verbose=False, state_dict=None,
                 verbose=False,
                 scaler="None",
                 one_hot_encode=False,
-                args=None,
+                args=args,
             )
             X_train, y_train = processed_data["data_train"]
             X_val, y_val = processed_data["data_val"]
@@ -402,6 +410,7 @@ def get_model(config, device, should_train=True, verbose=False, state_dict=None,
                   , steps_per_epoch=config['num_steps']
                   , single_eval_pos_gen=sep_samp
                   , load_weights_from_this_state_dict=state_dict
+                  , validation_period=config['validation_period']
                   , aggregate_k_gradients=config['aggregate_k_gradients']
                   , recompute_attn=config['recompute_attn']
                   , epoch_callback=epoch_callback

@@ -59,8 +59,9 @@ def reload_config(config_type='causal', task_type='multiclass', longer=0):
     
     model_string = ''
     
-    #TODO: check this, it was set to true in the script
+    #TODO: check this, it was set to true in the script; seems to have no effect on zs accuracy
     config['recompute_attn'] = True
+    # config['recompute_attn'] = False
 
     config['max_num_classes'] = 10
     config['num_classes'] = uniform_int_sampler_f(2, config['max_num_classes'])
@@ -73,15 +74,16 @@ def reload_config(config_type='causal', task_type='multiclass', longer=0):
 def train_loop():
     parser = argparse.ArgumentParser(description='Train a model.')
     parser.add_argument('--resume', type=str, default="/home/colin/TabPFN-pt/tabpfn/models_diff/prior_diff_real_checkpoint_n_0_epoch_42.cpkt", help='Path to model checkpoint to resume from.')
-    parser.add_argument('--save_path', type=str, default=".", help='Path to save new checkpoints.')
+    parser.add_argument('--save_path', type=str, default="./logs", help='Path to save new checkpoints.')
     parser.add_argument('--prior_type', type=str, default="real", help='Type of prior to use (real, prior_bag).')
     parser.add_argument('--data_path', type=str, default=".", help='Path to data.')
     parser.add_argument('--prompt_tuning', action='store_true', help='Whether to tune the prompt.')
     parser.add_argument('--tuned_prompt_size', type=int, default=0, help='Size of the tuned prompt.')
+    parser.add_argument('--tuned_prompt_label_balance', type=str, default='equal', help='Label balance for the tuned prompt (equal, proportional).')
     parser.add_argument('--lr', type=float, default=0.0001, help='Learning rate.')
     parser.add_argument('--batch_size', type=int, default=4, help='Batch size.')
     parser.add_argument('--bptt', type=int, default=1152, help='Batch per train time.')
-    parser.add_argument('--seed', type=int, default=100, help='Random seed.')
+    parser.add_argument('--seed', type=int, default=135798642, help='Random seed.')
     parser.add_argument('--epochs', type=int, default=400, help='Number of epochs to train for.')
     parser.add_argument('--num_eval_fitting_samples', type=int, default=1000, help='How many samples from the training set to draw when fitting the eval set.')
     parser.add_argument('--split', type=int, default=0, help='Which split to use (0-9?).')
@@ -90,21 +92,30 @@ def train_loop():
     parser.add_argument('--rand_init_ensemble', action='store_true', help='Ensemble over random initialization.')
     parser.add_argument('--ensemble_lr', type=float, default=0.5, help='Additive learning factor for boosting / ensembling.')
     parser.add_argument('--ensemble_size', type=int, default=5, help='Number of ensemble members.')
-    parser.add_argument('--aggregate_k_gradients', type=int, default=8, help='How many gradients to aggregate.')
+    parser.add_argument('--ensemble_random_feature_rotation', action='store_true', help='Whether to randomly rotate features in the ensemble.')
+    parser.add_argument('--aggregate_k_gradients', type=int, default=1, help='How many gradients to aggregate.')
     parser.add_argument('--average_ensemble', action='store_true', help='Whether to average the ensemble.')
     parser.add_argument('--permute_feature_position_in_ensemble', action='store_true', help='Whether to ensemble over feature position permutations.')
     parser.add_argument('--concat_method', type=str, default="", help='concatenation method (duplicate, empty = none)')
     parser.add_argument('--save_every_k_epochs', type=int, default=10, help='How often to save new checkpoints.')
+    parser.add_argument('--validation_period', type=int, default=4, help='How often to validate.')
     parser.add_argument('--wandb_name', type=str, default='tabpfn_pt_airlines', help='Name for wandb logging.')
     parser.add_argument('--wandb_log', action='store_true', help='Whether to log to wandb.')
+    parser.add_argument('--feature_subset_method', type=str, default='mutual_information', help='Method for feature subset selection ("mutual_information, random").')
+    parser.add_argument('--pad_features', action='store_true', help='Whether to pad features to the maximum number of features.')
+    parser.add_argument('--zs-eval-ensemble', type=int, default=0, help='Whether to do ensembled zero-shot evaluation.')
     args = parser.parse_args()
 
     config, model_string = reload_config(longer=1)
     config['model_string'] = model_string
     config['prompt_tuning'] = args.prompt_tuning
     config['tuned_prompt_size'] = args.tuned_prompt_size
+    config['tuned_prompt_label_balance'] = args.tuned_prompt_label_balance
     config['num_eval_fitting_samples'] = args.num_eval_fitting_samples
     config['split'] = args.split
+    config['zs_eval_ensemble'] = args.zs_eval_ensemble
+    config['pad_features'] = args.pad_features
+    config['validation_period'] = args.validation_period
 
     # concatenation
     config['concat_method'] = args.concat_method
@@ -171,6 +182,7 @@ def train_loop():
     config['max_eval_pos'] = 1000
 
     config['random_feature_rotation'] = False
+    config['ens_random_feature_rotation'] = args.ensemble_random_feature_rotation
     config['rotate_normalized_labels'] = False
 
     config["mix_activations"] = False # False heisst eig True
@@ -189,6 +201,9 @@ def train_loop():
     config['total_available_time_in_s'] = None #60*60*22 # 22 hours for some safety...
 
     config['train_mixed_precision'] = True
+
+    # Seems to have no effect on ZS accuracy
+    # config['efficient_eval_masking'] = False
     config['efficient_eval_masking'] = True
 
     #TODO: check whether config_sample should be iterated within train_function
@@ -211,6 +226,12 @@ def train_loop():
 
     #Bagging parameters
     config_sample['bagging'] = args.bagging
+
+    #Feature subset selection
+    config_sample['subset_features'] = 100
+    config_sample['subset_rows'] = -1
+    config_sample['subset_features_method'] = args.feature_subset_method
+    config_sample['subset_rows_method'] = 'random'
 
     # wandb
     # todo: for now, most are hard-coded

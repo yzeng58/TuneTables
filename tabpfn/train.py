@@ -19,7 +19,7 @@ from transformer import TransformerModel
 from tabpfn.scripts.tabular_evaluation import predict_wrapper
 from tabpfn.utils import get_cosine_schedule_with_warmup, get_openai_lr, StoreDictKeyPair, get_weighted_single_eval_pos_sampler, get_uniform_single_eval_pos_sampler
 import tabpfn.priors as priors
-from tabpfn.priors.real import TabDS
+from priors.real import TabDS, get_train_dataloader
 import tabpfn.encoders as encoders
 import tabpfn.positional_encodings as positional_encodings
 from utils import init_dist, seed_all, EmbeddingConcatenator
@@ -51,6 +51,9 @@ def train(priordataloader_class, criterion, encoder_generator, emsize=200, nhid=
     device = gpu_device if torch.cuda.is_available() else 'cpu:0'
     print(f'Using {device} device')
     using_dist, rank, device = init_dist(device)
+
+    num_features = extra_prior_kwargs_dict.get('num_features', 100)
+
     if extra_prior_kwargs_dict.get('prior_type') == 'real':
         real_prior = True
     else:
@@ -72,11 +75,37 @@ def train(priordataloader_class, criterion, encoder_generator, emsize=200, nhid=
         else:
             return single_eval_pos, bptt
     
+    def make_dataloaders(bptt=bptt):
+        train_ds = TabDS(X, y, num_features=num_features, pad_features=extra_prior_kwargs_dict.get("pad_features", True), aggregate_k_gradients=aggregate_k_gradients)
+        dl, bptt = get_train_dataloader(train_ds, 
+                                  bptt=bptt, 
+                                  shuffle=False, 
+                                  num_workers=1, 
+                                  drop_last=True, 
+                                  agg_k_grads=aggregate_k_gradients
+                                )
+        val_ds = TabDS(X_val, y_val, num_features=num_features, pad_features=extra_prior_kwargs_dict.get("pad_features", True), aggregate_k_gradients=1)
+        val_dl = DataLoader(
+            val_ds, batch_size=32, shuffle=False, num_workers=1,
+        )
+        test_ds = TabDS(X_test, y_test, num_features=num_features, pad_features=extra_prior_kwargs_dict.get("pad_features", True), aggregate_k_gradients=1)
+        test_dl = DataLoader(
+            test_ds, batch_size=32, shuffle=False, num_workers=1,
+        )
+        return dl, val_dl, test_dl, bptt
+
     if real_prior:
+        #load data
         X, y = priordataloader_class[0][0], priordataloader_class[0][1]
-        num_classes = len(np.unique(y))
         X_val, y_val = priordataloader_class[1][0], priordataloader_class[1][1]
         X_test, y_test = priordataloader_class[2][0], priordataloader_class[2][1]
+
+        num_classes = len(np.unique(y))
+        if do_prompt_tuning and extra_prior_kwargs_dict.get('tuned_prompt_label_balance', 'equal') == 'proportional':
+            label_weights = np.bincount(y) / len(y)
+            label_weights = torch.from_numpy(label_weights).float().to(device)
+        else:
+            label_weights = None
         #shuffle data
         idx = np.random.permutation(len(X))
         X, y = X[idx], y[idx]
@@ -84,28 +113,47 @@ def train(priordataloader_class, criterion, encoder_generator, emsize=200, nhid=
         X_val, y_val = X_val[idx], y_val[idx]
         idx = np.random.permutation(len(X_test))
         X_test, y_test = X_test[idx], y_test[idx]
-        #TODO: make num_features a hyperparameter
-        num_features = 100
-        train_ds = TabDS(X, y, num_features=num_features, aggregate_k_gradients=aggregate_k_gradients)
-        dl = DataLoader(
-            train_ds, batch_size=bptt, shuffle=True, num_workers=1, drop_last=True,
-        )
-        while len(dl) % aggregate_k_gradients != 0:
-            bptt += 1
-            dl = DataLoader(
-                train_ds, batch_size=bptt, shuffle=True, num_workers=1, drop_last=True,
-            )
-        val_ds = TabDS(X_val, y_val, num_features=num_features, aggregate_k_gradients=1)
-        val_dl = DataLoader(
-            val_ds, batch_size=bptt, shuffle=False, num_workers=1,
-        )
-        test_ds = TabDS(X_test, y_test, num_features=num_features, aggregate_k_gradients=1)
-        test_dl = DataLoader(
-            test_ds, batch_size=bptt, shuffle=False, num_workers=1,
-        )
+
+        if extra_prior_kwargs_dict.get('zs_eval_ensemble', 0) > 0:
+
+            def tpc_data_eval(cl=1000, X=None, y=None, X_val=None, y_val=None, ens_size=1):
+                    from scripts.transformer_prediction_interface import TabPFNClassifier
+                    print("Evaluating on real data")
+
+                    eval_model = TabPFNClassifier(device='cuda', 
+                                                N_ensemble_configurations=ens_size, 
+                                                base_path="/home/benfeuer/TabPFN-pt/tabpfn", 
+                                                # model_string=extra_prior_kwargs_dict.get('model_string'), 
+                                                # feature_shift_decoder=True,
+                                                # no_preprocess_mode=True,
+                                                # batch_size_inference=10, 
+                                                # multiclass_decoder="permutation",
+                                                # n_classes=num_classes,
+                                                # prefix_size=prefix_size,
+                                                )
+                    eval_model.fit(X[:cl, ...], y[:cl, ...], overwrite_warning=True)
+                    preds = eval_model.predict(X_val)
+                    correct = np.sum(preds == y_val)
+                    total = len(y_val)
+                    tpc_acc = np.round(correct / total, 3)
+                    print("Zero shot TabPFN accuracy: ", tpc_acc)
+                    return tpc_acc
+            
+            print("Val score")
+            val_score = tpc_data_eval(cl=1000, X=X, y=y, X_val=X_val, y_val=y_val, ens_size=extra_prior_kwargs_dict.get('zs_eval_ensemble', 0))
+            print("Test score")
+            test_score = tpc_data_eval(cl=1000, X=X, y=y, X_val=X_test, y_val=y_test, ens_size=extra_prior_kwargs_dict.get('zs_eval_ensemble', 0))
+            with open(os.path.join(extra_prior_kwargs_dict.get('save_path'), 'zs_eval_ensemble.json'), 'w') as f:
+                json.dump({"val_acc": val_score, "test_acc": test_score}, f)
+            exit(0)
+
+        #make dataloaders
+
+        dl, val_dl, test_dl, bptt = make_dataloaders(bptt=bptt)
     else:
         dl = priordataloader_class(num_steps=steps_per_epoch, batch_size=batch_size, eval_pos_seq_len_sampler=eval_pos_seq_len_sampler, seq_len_maximum=bptt+(bptt_extra_samples if bptt_extra_samples else 0), device=device, **extra_prior_kwargs_dict)
         num_features = dl.num_features
+
     encoder = encoder_generator(num_features, emsize)
     #style_def = dl.get_test_batch()[0][0] # the style in batch of the form ((style, x, y), target, single_eval_pos)
     style_def = None
@@ -122,7 +170,7 @@ def train(priordataloader_class, criterion, encoder_generator, emsize=200, nhid=
                              y_encoder=y_encoder_generator(1, emsize), input_normalization=input_normalization,
                              pos_encoder=(pos_encoder_generator or positional_encodings.NoPositionalEncoding)(emsize, bptt*2),
                              decoder=decoder, init_method=initializer, efficient_eval_masking=efficient_eval_masking, prefix_size=prefix_size,
-                             n_classes=num_classes, **model_extra_args
+                             n_classes=num_classes, prefix_label_probs=label_weights, **model_extra_args
                              )
     model.criterion = criterion
     if load_weights_from_this_state_dict is not None:
@@ -161,36 +209,6 @@ def train(priordataloader_class, criterion, encoder_generator, emsize=200, nhid=
     utils.check_compatibility(dl)
 
     eval_model = None
-
-    def tpc_data_eval(cl=1000, X=None, y=None, X_val=None, y_val=None, eval_model=None, val_dl=None):
-        from tabpfn import TabPFNClassifier
-        print("Evaluating on real data")
-
-        #Pad data with zero features until 100 features are reached
-        if X.shape[1] < 100:
-            zero_features = np.zeros((X.shape[0], 100 - X.shape[1]))
-            X = np.concatenate((X, zero_features), axis=1)
-            zero_val_features = np.zeros((X_val.shape[0], 100 - X_val.shape[1]))
-            X_val = np.concatenate((X_val, zero_val_features), axis=1)
-
-        eval_model = TabPFNClassifier(device='cuda', 
-                                      N_ensemble_configurations=1, 
-                                      base_path="/home/benfeuer/TabPFN-pt/tabpfn", 
-                                      model_string=extra_prior_kwargs_dict.get('model_string'), 
-                                      feature_shift_decoder=False,
-                                      no_preprocess_mode=True,
-                                      batch_size_inference=1000, 
-                                      multiclass_decoder="None",
-                                      n_classes=num_classes,
-                                      prefix_size=prefix_size,
-                                      )
-        eval_model.fit(X[:cl, ...], y[:cl, ...], overwrite_warning=True)
-        preds = eval_model.predict(X_val)
-        correct = np.sum(preds == y_val)
-        total = len(y_val)
-        tpc_acc = np.round(correct / total, 3)
-        print("Loaded model accuracy: ", tpc_acc)
-        return tpc_acc
     
     def real_data_eval(r_model, cl=1000, val_dl=None):
         train_data, _, _ = next(iter(dl))
@@ -227,11 +245,15 @@ def train(priordataloader_class, criterion, encoder_generator, emsize=200, nhid=
         total_positional_losses_recorded = 0
         nan_steps = 0
         ignore_steps = 0
+        time_to_get_batch = 0
+        forward_time = 0
+        step_time = 0
         before_get_batch = time.time()
         assert len(dl) % aggregate_k_gradients == 0, 'Please set the number of steps per epoch s.t. `aggregate_k_gradients` divides it.'
         # print("Training Dataset size: ", len(dl.dataset))
+        # print(next(iter(dl)))
         for batch, (data, targets, single_eval_pos) in enumerate(dl):
-            #print('starting batch', batch, 'of', len(dl))
+            # print('starting batch', batch, 'of', len(dl))
             if isinstance(data, list):
                 data = tuple(data)
             if isinstance(single_eval_pos, torch.Tensor) and single_eval_pos.numel() == 0:
@@ -348,14 +370,14 @@ def train(priordataloader_class, criterion, encoder_generator, emsize=200, nhid=
                 ignore_steps += (targets == -100).float().mean()
             before_get_batch = time.time()
         #Total positional losses is a torch tensor of size bptt (batch size)
-        # print("Total positional losses: ")
-        # print(total_positional_losses)
-        # print(total_positional_losses.shape)
-        # print(total_positional_losses_recorded)
-        # print(total_positional_losses_recorded.shape)
         if boosting:
             total_positional_losses = torch.zeros(bptt)
             total_positional_losses_recorded = torch.ones(bptt)
+        if isinstance(total_positional_losses, float):
+            total_positional_losses = torch.zeros(bptt)
+        if isinstance(total_positional_losses_recorded, float):
+            total_positional_losses_recorded = torch.ones(bptt)
+
         return total_loss / max(steps_per_epoch, 1), (total_positional_losses / total_positional_losses_recorded).tolist(),\
                time_to_get_batch, forward_time, step_time, nan_steps.cpu().item()/(batch+1),\
                ignore_steps.cpu().item()/(batch+1)
@@ -428,8 +450,12 @@ def train(priordataloader_class, criterion, encoder_generator, emsize=200, nhid=
     def update_ensemble_acc(boosting_acc, boosting_acc_nc):
         ece = np.round(um.ece(labels_np, probs_np, num_bins=30), 3)
         tace = np.round(um.tace(labels_np, probs_np, num_bins=30), 3)
-        nc_ece = np.round(um.ece(labels_np_nc, probs_np_nc, num_bins=30), 3)
-        nc_tace = np.round(um.tace(labels_np_nc, probs_np_nc, num_bins=30), 3)
+        if do_prompt_tuning:
+            nc_ece = np.round(um.ece(labels_np_nc, probs_np_nc, num_bins=30), 3)
+            nc_tace = np.round(um.tace(labels_np_nc, probs_np_nc, num_bins=30), 3)
+        else:
+            nc_ece = 0
+            nc_tace = 0
         new_res = {
             "val_acc": boosting_acc,
             "val_acc_nc": boosting_acc_nc,
@@ -450,7 +476,7 @@ def train(priordataloader_class, criterion, encoder_generator, emsize=200, nhid=
             epoch_start_time = time.time()
             total_loss, total_positional_losses, time_to_get_batch, forward_time, step_time, nan_share, ignore_share =\
                 train_epoch(t_model, t_optim, boost_this_epoch)
-            val_score = val_score_nc = val_score_concat = val_score_nc_concat = test_score = test_score_nc = test_ece = test_tace = val_ece = val_tace = None
+            val_score = val_score_nc = val_score_concat = val_score_nc_concat = test_score = test_score_nc = test_ece = test_tace = val_ece = val_tace = val_ece_nc = val_tace_nc = test_ece_nc = test_tace_nc = None
             if real_prior \
                 and (epoch - 1) % validation_period == 0:
                 val_score, val_outputs, val_targets = real_data_eval(r_model=t_model, cl=bptt, val_dl=val_dl)
@@ -467,7 +493,6 @@ def train(priordataloader_class, criterion, encoder_generator, emsize=200, nhid=
                 return_targets = [np_targets]
                 if do_prompt_tuning:
                     #TODO: will this work with context length 0? Should this be a hyperparameter?
-                    #val_score_nc, outputs = tpc_data_eval(cl=10, X=X, y=y, X_val=X_val, y_val=y_val, eval_model=eval_model, val_dl=val_dl)
                     if do_concat != "":
                         ec = EmbeddingConcatenator(t_model, do_concat, prefix_weights_l)
                         t_model = concat_embedding(ec, t_model, do_concat)
@@ -578,9 +603,12 @@ def train(priordataloader_class, criterion, encoder_generator, emsize=200, nhid=
         print("Starting training loop \n \n")
         if bagging:
             subset_dataset = Subset(dl_backup.dataset, split_indices[i])
-            dl = DataLoader(
-                subset_dataset, batch_size=bptt, shuffle=True, num_workers=1, drop_last=True,
-            )
+            dl, bptt = get_train_dataloader(subset_dataset, 
+                                            bptt=bptt, 
+                                            shuffle=True, 
+                                            num_workers=1, 
+                                            drop_last=True, 
+                                            agg_k_grads=aggregate_k_gradients)
         prior_grad_dict = None
         gradient_dict = {}
         output_dict[i], test_targets, results_dict = train_test_loop(model, optimizer)
@@ -588,8 +616,9 @@ def train(priordataloader_class, criterion, encoder_generator, emsize=200, nhid=
         # probs np and labels np are used by update_ensemble_acc for ECE and TACE
         probs_np = output_dict[0][0]
         labels_np = test_targets[0]
-        probs_np_nc = output_dict[0][1]
-        labels_np_nc = test_targets[1]
+        if do_prompt_tuning:
+            probs_np_nc = output_dict[0][1]
+            labels_np_nc = test_targets[1]
         if is_ensemble:
             ensembling_acc[i] = update_ensemble_acc(results_dict.get('val_score', 0), results_dict.get('val_score_nc', 0))
             if not do_concat:
@@ -599,17 +628,26 @@ def train(priordataloader_class, criterion, encoder_generator, emsize=200, nhid=
             prefix_weights_l = save_prefix_weights(model, extra_prior_kwargs_dict.get('save_path'), i, do_concat, prefix_weights_l)
     except KeyboardInterrupt:
         pass
-    
+
     # boosting logic
     if is_ensemble:
         for i in range(1, boosting_n_iters):
+            seed_all(extra_prior_kwargs_dict.get('rand_seed') + i)
+            if extra_prior_kwargs_dict.get('ens_random_feature_rotation', True):
+                print("Randomly rotating features")
+                #shuffle features
+                idx = np.random.permutation(X.shape[1])
+                X, X_val, X_test = priordataloader_class[0][0][:, idx], priordataloader_class[1][0][:, idx], priordataloader_class[2][0][:, idx]
+                #make dataloaders
+                dl, val_dl, test_dl, bptt = make_dataloaders()
+                if bagging:
+                    dl_backup = dl
             if bagging:
                 subset_dataset = Subset(dl_backup.dataset, split_indices[i])
                 dl = DataLoader(
                     subset_dataset, batch_size=bptt, shuffle=True, num_workers=1, drop_last=True,
                 )
             cur_boost_iter = i
-            seed_all(extra_prior_kwargs_dict.get('rand_seed') + i)
             print("Ensembling iteration: ", i+1, " of ", boosting_n_iters, "\n \n")
             model.init_prefix_weights()
             output_dict[i], test_targets, results_dict = train_test_loop(model, optimizer)
@@ -642,9 +680,11 @@ def train(priordataloader_class, criterion, encoder_generator, emsize=200, nhid=
             #TODO: this should not be hard-coded
             probs_np = current_outs[0]
             labels_np = test_targets[0]
-            probs_np_nc = current_outs[1]
-            labels_np_nc = test_targets[1]
+            if do_prompt_tuning:
+                probs_np_nc = current_outs[1]
+                labels_np_nc = test_targets[1]
             #TODO: This ignores nc results
+            print("Ensembled val acc: ", boosting_accs[0])
             if boosting_accs[0] <= ensembling_acc[i-1]["val_acc"]:
                 output_dict[i][0] = torch.zeros_like(torch.from_numpy(output_dict[i][0]))
                 ensembling_acc[i] = ensembling_acc[i-1]

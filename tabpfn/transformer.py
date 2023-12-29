@@ -15,7 +15,7 @@ class TransformerModel(nn.Module):
     def __init__(self, encoder, n_out, ninp, nhead, nhid, nlayers, dropout=0.0, style_encoder=None, y_encoder=None,
                  pos_encoder=None, decoder=None, input_normalization=False, init_method=None, pre_norm=False,
                  activation='gelu', recompute_attn=False, num_global_att_tokens=0, full_attention=False,
-                 all_layers_same_init=False, efficient_eval_masking=True, prefix_size=0, n_classes=2):
+                 all_layers_same_init=False, efficient_eval_masking=True, prefix_size=0, n_classes=2, prefix_label_probs=None):
         super().__init__()
         self.model_type = 'Transformer'
         encoder_layer_creator = lambda: TransformerEncoderLayer(ninp, nhead, nhid, dropout, activation=activation,
@@ -37,7 +37,10 @@ class TransformerModel(nn.Module):
         if self.prefix_size > 0:
             self.prefix_embedding = nn.Embedding(prefix_size, ninp)
             #name the parameters in prefix_embedding to avoid confusion with the encoder
-            self.prefix_y_embedding = torch.randint(0, n_classes, (prefix_size, ))
+            if prefix_label_probs is not None:
+                self.prefix_y_embedding = torch.multinomial(prefix_label_probs, prefix_size, replacement=True)
+            else:
+                self.prefix_y_embedding = torch.randint(0, n_classes, (prefix_size, ))
             print('prefix_y_embedding has {} unique classes'.format(len(torch.unique(self.prefix_y_embedding))))
         self.full_attention = full_attention
         self.efficient_eval_masking = efficient_eval_masking

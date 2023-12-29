@@ -415,6 +415,7 @@ def process_data(
         if verbose:
             print("New Shape:", X_train.shape)
 
+    args.num_features = X_train.shape[1]
     # create subset of dataset if needed
     if (
         args is not None
@@ -437,20 +438,20 @@ def process_data(
             X_train,
             y_train,
             split="train",
-            seed=dataset.subset_random_seed,
+            seed=args.rand_seed,
         )
         if args.subset_features < args.num_features:
             X_val, y_val = dataset.ssm.make_subset(
                 X_val,
                 y_val,
                 split="val",
-                seed=dataset.subset_random_seed,
+                seed=args.rand_seed,
             )
             X_test, y_test = dataset.ssm.make_subset(
                 X_test,
                 y_test,
                 split="test",
-                seed=dataset.subset_random_seed,
+                seed=args.rand_seed,
             )
         print("subset created")
 
@@ -527,17 +528,15 @@ class TabDS(Dataset):
         eval_xs = eval_xs.squeeze(1)
         return eval_xs
 
-    def __init__(self, X, Y, num_features, aggregate_k_gradients=1):
+    def __init__(self, X, Y, num_features, pad_features, aggregate_k_gradients=1):
         #convert to tensor
-        choices = ['power_all', 'none']
+        # choices = ['power_all', 'none']
         #pick random choice
-        choice = np.random.choice(choices)
+        # choice = np.random.choice(choices)
         self.X = torch.from_numpy(X.copy().astype(np.float32))
-        # self.X = self.preprocess_input(torch.from_numpy(X.copy().astype(np.float32)), choice)
+        self.X = self.preprocess_input(torch.from_numpy(X.copy().astype(np.float32)), 'none')
         self.y_float = torch.from_numpy(Y.copy().astype(np.float32))
-        if len(self.X.shape) > num_features:
-            raise ValueError(f"X.shape[1] = {self.X.shape[1]} > num_features = {num_features}")
-        if len(self.X.shape) < num_features:
+        if self.X.shape[1] < num_features and pad_features:
             # pad with zero features
             self.X = torch.cat([self.X, torch.zeros(self.X.shape[0], num_features - self.X.shape[1])], dim=1)
         self.y = torch.from_numpy(Y.copy().astype(np.int64))
@@ -553,3 +552,13 @@ class TabDS(Dataset):
     def __getitem__(self, idx):
         #(X,y) data, y target, single_eval_pos
         return tuple([self.X[idx], self.y_float[idx]]), self.y[idx], torch.tensor([])
+
+from torch.utils.data import DataLoader
+
+def get_train_dataloader(ds, bptt=1000, shuffle=True, num_workers=1, drop_last=True, agg_k_grads=1):
+        dl = DataLoader(
+            ds, batch_size=bptt, shuffle=shuffle, num_workers=num_workers, drop_last=drop_last,
+        )
+        if len(dl) % agg_k_grads != 0:
+            raise ValueError(f'Number of batches {len(dl)} not divisible by {agg_k_grads}, please modify aggregation factor.')
+        return dl, bptt
