@@ -73,7 +73,7 @@ def reload_config(config_type='causal', task_type='multiclass', longer=0):
 
 def train_loop():
     parser = argparse.ArgumentParser(description='Train a model.')
-    parser.add_argument('--resume', type=str, default="/home/colin/TabPFN-pt/tabpfn/models_diff/prior_diff_real_checkpoint_n_0_epoch_42.cpkt", help='Path to model checkpoint to resume from.')
+    parser.add_argument('--resume', type=str, default="./models_diff/prior_diff_real_checkpoint_n_0_epoch_42.cpkt", help='Path to model checkpoint to resume from.')
     parser.add_argument('--save_path', type=str, default="./logs", help='Path to save new checkpoints.')
     parser.add_argument('--prior_type', type=str, default="real", help='Type of prior to use (real, prior_bag).')
     parser.add_argument('--data_path', type=str, default=".", help='Path to data.')

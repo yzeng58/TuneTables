@@ -37,14 +37,15 @@ def save_model(model, path, filename, config_sample):
     if not os.path.exists(target_path):
         os.makedirs(target_path)
     #Change permissions to allow group access
-    os.chmod(target_path, 0o775)
+    os.chmod(target_path, 0o777)
+    os.chmod(config_sample['base_path'], 0o777)
     try:
         #TODO: something about the target path is making the model unhappy
         torch.save((model.state_dict(), None, config_sample), target_path)
     except:
-        # todo: make target_path a parameter that can be passed in
-        #target_path = os.path.join("/home/benfeuer/TabPFN-pt/tabpfn/models_diff", filename)
-        target_path = os.path.join("/home/colin/TabPFN-pt/tabpfn/models_diff", filename)
+        # NOTE: This seems to work as long as you run the script from the 'tabpfn' directory
+        target_path = os.path.join("./models_diff", filename)
+        # target_path = os.path.join("/home/colin/TabPFN-pt/tabpfn/models_diff", filename)
         torch.save((model.state_dict(), None, config_sample), target_path)
 
 
