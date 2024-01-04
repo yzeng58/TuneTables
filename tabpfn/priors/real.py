@@ -1,29 +1,8 @@
-# this script is based on the TabSurvey script and function load_data, which returns a specific dataset (X, y).
-# instead, this script "prepares" each dataset implemented in our codebase, by doing the following:
-# - reading the dataset from a file or online source
-# - applying any necessary cleaning (no pre-processing, like encoding or scaling variables)
-# - writes each dataset to its own local directory. each dataset directory will contain:
-# -- a compressed version of the dataset (X.npy and y.npy)
-# -- a json containing metadata
-#
-# example use - initialize the CaliforniaHousing dataset, write it to a local folder, and then read it into a new TabularDataset object:
-#
-# >>> from tabzilla_prepare_data import CaliforniaHousing, TabularDataset
-# >>> from pathlib import Path
-# >>> c = CaliforniaHousing()
-# >>> c.name
-# 'CaliforniaHousing'
-# >>> p = Path("temp/cal-housing").resolve()
-# >>> c.write(p)
-# >>> c2 = TabularDataset.read(p)
-# >>> c2.name
-# 'CaliforniaHousing'
-
-
 import gzip
 import json
 from pathlib import Path
 from typing import Optional
+import faiss
 
 import numpy as np
 from sklearn.preprocessing import LabelEncoder
@@ -35,6 +14,7 @@ from sklearn.feature_selection import SelectKBest, mutual_info_classif
 from sklearn.impute import SimpleImputer
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import OneHotEncoder, QuantileTransformer, RobustScaler, PowerTransformer
+from sklearn.decomposition import PCA
 
 import torch
 
@@ -215,6 +195,47 @@ class TabularDataset(object):
             metadata = self.get_metadata()
             json.dump(self.get_metadata(), f, indent=4)
 
+
+
+class CoresetSampler:
+    def __init__(self, number_of_set_points, number_of_starting_points, rand_seed):
+        self.number_of_set_points = number_of_set_points
+        self.number_of_starting_points = number_of_starting_points
+        self.rng = np.random.default_rng(rand_seed)
+
+    def _compute_batchwise_differences(self, a, b):
+        return np.sum((a[:, None] - b) ** 2, axis=-1)
+
+    def _compute_greedy_coreset_indices(self, features):
+        number_of_starting_points = np.clip(
+            self.number_of_starting_points, None, len(features)
+        )
+        start_points = self.rng.choice(len(features), number_of_starting_points, replace=False).tolist()
+        approximate_distance_matrix = self._compute_batchwise_differences(
+            features, features[start_points]
+        )
+        approximate_coreset_anchor_distances = np.mean(
+            approximate_distance_matrix, axis=-1
+        ).reshape(-1, 1)
+        coreset_indices = []
+        num_coreset_samples = self.number_of_set_points
+
+        for _ in range(num_coreset_samples):
+            select_idx = np.argmax(approximate_coreset_anchor_distances)
+            coreset_indices.append(select_idx)
+            coreset_select_distance = self._compute_batchwise_differences(
+                features, features[select_idx : select_idx + 1]
+            )
+            approximate_coreset_anchor_distances = np.concatenate(
+                [approximate_coreset_anchor_distances, coreset_select_distance],
+                axis=-1,
+            )
+            approximate_coreset_anchor_distances = np.min(
+                approximate_coreset_anchor_distances, axis=1
+            ).reshape(-1, 1)
+
+        return np.array(coreset_indices)
+
 class SubsetMaker(object):
     def __init__(
         self, subset_features, subset_rows, subset_features_method, subset_rows_method
@@ -273,6 +294,57 @@ class SubsetMaker(object):
             X = self.feature_selector.transform(X)
             return X, y
 
+    def pca_subset(self, X, y, action='features', split='train'):
+        if split not in ["train", "val", "test"]:
+            raise ValueError("split must be 'train', 'val', or 'test'")        
+        if split == "train":
+            self.feature_selector = PCA(n_components=self.subset_features)
+            print("Fitting pca selector ...")
+            timer = time.time()
+            X = self.feature_selector.fit_transform(X)
+            print(f"Done fitting pca feature selector in {round(time.time() - timer, 1)} seconds")
+        else:
+            X = self.feature_selector.transform(X)
+        return X, y
+
+    def K_means_sketch(self, X, y, split='train', fit_first_only=False, rand_seed=0, first_only_num = 1000):
+        if split not in ["train", "val", "test"]:
+            raise ValueError("split must be 'train', 'val', or 'test'")
+        if split == "train":
+            rng = np.random.default_rng(rand_seed)
+            addl_steps = int(rng.choice(10, 1))
+            # This function returns the indices of the k samples that are the closest to the k-means centroids
+            X = np.ascontiguousarray(X, dtype=np.float32)
+            if fit_first_only:
+                X = X[:first_only_num]
+            #start the timer
+            timer = time.time()
+            self.kmeans = faiss.Kmeans(X.shape[1], self.subset_rows, niter=15+addl_steps, verbose=False)
+            self.kmeans.train(X)
+            print(f"Done fitting kmeans in {round(time.time() - timer, 1)} seconds")
+            cluster_centers = self.kmeans.centroids
+            index = faiss.IndexFlatL2(X.shape[1])
+            index.add(cluster_centers)
+            _, indices = index.search(cluster_centers, 1)
+            indices = indices.reshape(-1)
+            return X[indices], y[indices]
+        else:
+            return X, y
+
+    def coreset_sketch(self, X, y, split='train', rand_seed=0, number_of_starting_points=5):
+        if split not in ["train", "val", "test"]:
+            raise ValueError("split must be 'train', 'val', or 'test'")
+        if split == "train":        
+            # This function returns the indices of the k samples that are a greedy coreset
+            number_of_set_points = self.subset_rows  # Number of set points for the greedy coreset
+            number_of_starting_points = number_of_starting_points  # Number of starting points for the greedy coreset
+
+            sampler = CoresetSampler(number_of_set_points, number_of_starting_points, rand_seed)
+            indices = sampler._compute_greedy_coreset_indices(X)
+            return X[indices], y[indices]
+        else:
+            return X, y
+
     def make_subset(
         self,
         X,
@@ -290,8 +362,8 @@ class SubsetMaker(object):
         :param subset_rows_method: method to use for selecting rows
         :return: subset of X, y
         """
-        print('setting numpy seed to', seed)
-        np.random.seed(seed)
+        # print('setting numpy seed to', seed)
+        # np.random.seed(seed)
 
         if X.shape[1] > self.subset_features > 0:
             print(
@@ -305,20 +377,28 @@ class SubsetMaker(object):
                 X, y = self.mutual_information_subset(
                     X, y, action="features", split=split
                 )
+            elif self.subset_features_method == "pca":
+                X, y = self.pca_subset(X, y, action='features', split=split)                
             else:
                 raise ValueError(
                     f"subset_features_method not recognized: {self.subset_features_method}"
                 )
         if X.shape[0] > self.subset_rows > 0:
             print(f"making {self.subset_rows}-sized subset of {X.shape[0]} rows ...")
+
             if self.subset_rows_method == "random":
                 X, y = self.random_subset(X, y, action=["rows"])
             elif self.subset_rows_method == "first":
                 X, y = self.first_subset(X, y, action=["rows"])
+            elif self.subset_rows_method == "kmeans":
+                X, y = self.K_means_sketch(X, y, split=split, fit_first_only=False, rand_seed=0)
+            elif self.subset_rows_method == "coreset":
+                X, y = self.coreset_sketch(X, y, split=split, rand_seed=0)
             else:
                 raise ValueError(
                     f"subset_rows_method not recognized: {self.subset_rows_method}"
                 )
+
 
         return X, y
 
@@ -346,6 +426,7 @@ def process_data(
     num_mask[dataset.cat_idx] = 0
     # TODO: Remove this assertion after sufficient testing
     assert num_mask.sum() + len(dataset.cat_idx) == dataset.X.shape[1]
+
 
     X_train, y_train = dataset.X[train_index], dataset.y[train_index]
     X_val, y_val = dataset.X[val_index], dataset.y[val_index]
@@ -424,9 +505,6 @@ def process_data(
             args.subset_features < args.num_features or args.subset_rows < len(X_train)
         )
     ):
-        print(
-            f"making subset with {args.subset_features} features and {args.subset_rows} rows..."
-        )
         if getattr(dataset, "ssm", None) is None:
             dataset.ssm = SubsetMaker(
                 args.subset_features,
@@ -453,8 +531,6 @@ def process_data(
                 split="test",
                 seed=args.rand_seed,
             )
-        print("subset created")
-
     return {
         "data_train": (X_train, y_train),
         "data_val": (X_val, y_val),

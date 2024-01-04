@@ -11,6 +11,17 @@ from priors.utils import uniform_int_sampler_f
 from notebook_utils import *
 from utils import get_wandb_api_key
 
+def make_serializable(config_sample):
+    if isinstance(config_sample, torch.Tensor):
+        config_sample = "tensor"
+    if isinstance(config_sample, dict):
+        config_sample = {k: make_serializable(config_sample[k]) for k in config_sample}
+    if isinstance(config_sample, list):
+        config_sample = [make_serializable(v) for v in config_sample]
+    if callable(config_sample):
+        config_sample = str(config_sample)
+    return config_sample
+
 def train_function(config_sample, i=0, add_name=''):
 
     if config_sample['boosting'] or config_sample['rand_init_ensemble'] or config_sample['bagging']:
@@ -31,10 +42,6 @@ def train_function(config_sample, i=0, add_name=''):
             save_model(model, config_sample['base_path'], f'prior_diff_real_checkpoint{add_name}_n_{i}_epoch_{model.last_saved_epoch}.cpkt',
                            config_sample)
             model.last_saved_epoch = model.last_saved_epoch + 1 # TODO: Rename to checkpoint
-
-        # save to wandb
-        if config_sample['wandb_log'] and len(epochs) % config_sample['wandb_log_test_interval'] == 0:
-            wandb.log(values_to_log, step=len(epochs), commit=True)
 
     def no_callback(model, epoch, values_to_log):
         pass
@@ -83,7 +90,9 @@ def train_loop():
     parser.add_argument('--lr', type=float, default=0.0001, help='Learning rate.')
     parser.add_argument('--batch_size', type=int, default=4, help='Batch size.')
     parser.add_argument('--bptt', type=int, default=1152, help='Batch per train time.')
+    parser.add_argument('--uniform_bptt', action='store_true', help='Whether to use uniform bptt.')
     parser.add_argument('--seed', type=int, default=135798642, help='Random seed.')
+    parser.add_argument('--early_stopping', type=int, default=2, help='Patience (for early stopping).')
     parser.add_argument('--epochs', type=int, default=400, help='Number of epochs to train for.')
     parser.add_argument('--num_eval_fitting_samples', type=int, default=1000, help='How many samples from the training set to draw when fitting the eval set.')
     parser.add_argument('--split', type=int, default=0, help='Which split to use (0-9?).')
@@ -101,9 +110,14 @@ def train_loop():
     parser.add_argument('--validation_period', type=int, default=4, help='How often to validate.')
     parser.add_argument('--wandb_name', type=str, default='tabpfn_pt_airlines', help='Name for wandb logging.')
     parser.add_argument('--wandb_log', action='store_true', help='Whether to log to wandb.')
-    parser.add_argument('--feature_subset_method', type=str, default='mutual_information', help='Method for feature subset selection ("mutual_information, random").')
+    parser.add_argument('--wandb_group', type=str, default='temp', help='Group for wandb logging.')
+    parser.add_argument('--wandb_project', type=str, default='tabpfn-pt', help='Project for wandb logging.')
+    parser.add_argument('--wandb_entity', type=str, default='nyu-dice-lab', help='Entity for wandb logging.')
+    parser.add_argument('--feature_subset_method', type=str, default='mutual_information', help='Method for feature subset selection ("mutual_information, random, first, pca").')
     parser.add_argument('--pad_features', action='store_true', help='Whether to pad features to the maximum number of features.')
     parser.add_argument('--zs-eval-ensemble', type=int, default=0, help='Whether to do ensembled zero-shot evaluation.')
+    parser.add_argument('--min_batches_per_epoch', type=int, default=1, help='Minimum number of batches per epoch.')
+    parser.add_argument('--keep_topk_ensemble', type=int, default=0, help='Whether to keep only the top-k ensemble members.')
     args = parser.parse_args()
 
     config, model_string = reload_config(longer=1)
@@ -116,6 +130,10 @@ def train_loop():
     config['zs_eval_ensemble'] = args.zs_eval_ensemble
     config['pad_features'] = args.pad_features
     config['validation_period'] = args.validation_period
+    config['early_stopping_patience'] = args.early_stopping
+    config['uniform_bptt'] = args.uniform_bptt
+    config['min_batches_per_epoch'] = args.min_batches_per_epoch
+    config['keep_topk_ensemble'] = args.keep_topk_ensemble
 
     # concatenation
     config['concat_method'] = args.concat_method
@@ -142,7 +160,8 @@ def train_loop():
     # config["max_samples"] = 10000 if config["large_datasets"] else 5000
     # config["bptt"] = 10000 if config["large_datasets"] else 3000
     # config["suite"]='cc'
-    # config["max_features"] = 100
+    
+    config["max_features"] = 100
 
     config["device"] = 'cuda'
     config["base_path"] = args.save_path
@@ -236,26 +255,15 @@ def train_loop():
     # wandb
     # todo: for now, most are hard-coded
     config_sample['wandb_log'] = args.wandb_log
-    config_sample['wandb_name'] = args.wandb_name
-    config_sample['wandb_group'] = 'abacus'
-    config_sample['wandb_project'] = 'tabpfn'
-    config_sample['wandb_entity'] = 'crwhite14'
-    config_sample['wandb_log_test_interval'] = 1
+    # config_sample['wandb_name'] = args.wandb_name
+    config_sample['wandb_group'] = args.wandb_group
+    config_sample['wandb_project'] = args.wandb_project
+    config_sample['wandb_entity'] = args.wandb_entity
+    config_sample['wandb_log_test_interval'] = args.validation_period
 
 
     print("Saving config ...")
     config_sample_copy = config_sample.copy()
-
-    def make_serializable(config_sample):
-        if isinstance(config_sample, torch.Tensor):
-            config_sample = "tensor"
-        if isinstance(config_sample, dict):
-            config_sample = {k: make_serializable(config_sample[k]) for k in config_sample}
-        if isinstance(config_sample, list):
-            config_sample = [make_serializable(v) for v in config_sample]
-        if callable(config_sample):
-            config_sample = str(config_sample)
-        return config_sample
     
     config_sample_copy = make_serializable(config_sample_copy)
     
@@ -265,12 +273,12 @@ def train_loop():
     with open(f'{config_sample["base_path"]}/config_diff_real_{model_string}_n_{0}.json', 'w') as f:
         json.dump(config_sample_copy, f, indent=4)
 
+    print("Training model ...")
+
     if config_sample['wandb_log']:
         wandb.login(key=get_wandb_api_key())
-        wandb.init(config=config_sample, name=config_sample['wandb_name'], group=config_sample['wandb_group'],
+        wandb.init(config=config_sample, name=model_string, group=config_sample['wandb_group'],
                 project=config_sample['wandb_project'], entity=config_sample['wandb_entity'])
-
-    print("Training model ...")
 
     train_function(config_sample, 0, model_string)
 
@@ -280,4 +288,13 @@ def train_loop():
     print("Done")
 
 if __name__ == '__main__':
+    import signal
+    import sys
+
+    def signal_handler(sig, frame):
+        signal.signal(sig, signal.SIG_IGN)
+        sys.exit(0)
+    
+    signal.signal(signal.SIGINT, signal_handler)
+
     train_loop()
