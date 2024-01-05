@@ -85,9 +85,35 @@ def train(priordataloader_class, criterion, encoder_generator, emsize=200, nhid=
             return single_eval_pos, single_eval_pos + bptt_extra_samples
         else:
             return single_eval_pos, bptt
+
+    def make_datasets():
+        X, y = priordataloader_class[0][0], priordataloader_class[0][1]
+        X_val, y_val = priordataloader_class[1][0], priordataloader_class[1][1]
+        X_test, y_test = priordataloader_class[2][0], priordataloader_class[2][1]
+        #shuffle data
+        label_perm = np.random.permutation(num_classes)
+        # label_perm = np.arange(num_classes)
+        invert_perm_map = {
+            label_perm[i]: i for i in range(num_classes)
+        }
+        feat_idx = np.random.permutation(X.shape[1])
+        for xd, yd in [(X, y)]:
+            idx = np.random.permutation(xd.shape[0])
+            xd, yd = xd[idx, ...], yd[idx, ...]
+            xd = xd[:, feat_idx, ...]
+            yd = label_perm[yd]
+        for xd, yd in [(X_val, y_val), (X_test, y_test)]:
+            # idx = np.random.permutation(xd.shape[0])
+            # xd, yd = xd[idx, ...], yd[idx, ...]
+            xd = xd[:, feat_idx, ...]
+        return X, y, X_val, y_val, X_test, y_test, invert_perm_map
     
     def make_dataloaders(bptt=bptt):
-        train_ds = TabDS(X, y, num_features=num_features, pad_features=extra_prior_kwargs_dict.get("pad_features", True), aggregate_k_gradients=aggregate_k_gradients)
+        train_ds = TabDS(X, y, num_features=num_features, 
+                         pad_features=extra_prior_kwargs_dict.get("pad_features", True), 
+                         do_preprocess=extra_prior_kwargs_dict.get("do_preprocess", False),
+                         preprocess_type=extra_prior_kwargs_dict.get("preprocess_type", "none"),
+                         aggregate_k_gradients=aggregate_k_gradients)
         dl, bptt = get_train_dataloader(train_ds, 
                                   bptt=bptt, 
                                   shuffle=False, 
@@ -95,66 +121,80 @@ def train(priordataloader_class, criterion, encoder_generator, emsize=200, nhid=
                                   drop_last=True, 
                                   agg_k_grads=aggregate_k_gradients
                                 )
-        val_ds = TabDS(X_val, y_val, num_features=num_features, pad_features=extra_prior_kwargs_dict.get("pad_features", True), aggregate_k_gradients=1)
+        val_ds = TabDS(X_val, y_val, num_features=num_features, 
+                       pad_features=extra_prior_kwargs_dict.get("pad_features", True), 
+                       do_preprocess=extra_prior_kwargs_dict.get("do_preprocess", False),
+                       preprocess_type=extra_prior_kwargs_dict.get("preprocess_type", "none"),
+                       aggregate_k_gradients=1)
         val_dl = DataLoader(
             val_ds, batch_size=min(32, y_val.shape[0]), shuffle=False, num_workers=1,
         )
-        test_ds = TabDS(X_test, y_test, num_features=num_features, pad_features=extra_prior_kwargs_dict.get("pad_features", True), aggregate_k_gradients=1)
+        test_ds = TabDS(X_test, y_test, num_features=num_features, 
+                        pad_features=extra_prior_kwargs_dict.get("pad_features", True),
+                        do_preprocess=extra_prior_kwargs_dict.get("do_preprocess", False), 
+                        preprocess_type=extra_prior_kwargs_dict.get("preprocess_type", "none"),
+                        aggregate_k_gradients=1)
         test_dl = DataLoader(
             test_ds, batch_size=min(32, y_test.shape[0]), shuffle=False, num_workers=1,
         )
-        return dl, val_dl, test_dl, bptt
-
-    if real_prior:
-        #load data
-        X, y = priordataloader_class[0][0], priordataloader_class[0][1]
-        X_val, y_val = priordataloader_class[1][0], priordataloader_class[1][1]
-        X_test, y_test = priordataloader_class[2][0], priordataloader_class[2][1]
-        num_classes = len(np.unique(y))
-        data_for_fitting = None
-        if do_prompt_tuning and extra_prior_kwargs_dict.get('tuned_prompt_label_balance', 'equal') == 'proportional':
-            label_weights = np.bincount(y) / len(y)
-            label_weights = torch.from_numpy(label_weights).float().to(device)
-        else:
-            label_weights = None
-        #shuffle data
-        idx = np.random.permutation(len(X))
-        X, y = X[idx], y[idx]
-        idx = np.random.permutation(len(X_val))
-        X_val, y_val = X_val[idx], y_val[idx]
-        idx = np.random.permutation(len(X_test))
-        X_test, y_test = X_test[idx], y_test[idx]
-
-        #make dataloaders
-        dl, val_dl, test_dl, bptt = make_dataloaders(bptt=bptt)
-
         # Fix the prior data TabPFN will use for fitting when including real data points
         for _, (td, _, _) in enumerate(dl):
             data_for_fitting = td
             break
+        return dl, val_dl, test_dl, bptt, data_for_fitting
+
+    if real_prior:
+        data_for_fitting = None
+        num_classes = len(np.unique(priordataloader_class[0][1]))
+        if do_prompt_tuning and extra_prior_kwargs_dict.get('tuned_prompt_label_balance', 'equal') == 'proportional':
+            label_weights = np.bincount(priordataloader_class[0][1]) / len(priordataloader_class[0][1])
+            label_weights = torch.from_numpy(label_weights).float().to(device)
+        else:
+            label_weights = None
+
+        #load data
+        X, y, X_val, y_val, X_test, y_test, invert_perm_map = make_datasets()
+        #make dataloaders
+        dl, val_dl, test_dl, bptt, data_for_fitting = make_dataloaders(bptt=bptt)
 
         if extra_prior_kwargs_dict.get('zs_eval_ensemble', 0) > 0:
 
             def tpc_data_eval(cl=1000, X=None, y=None, X_val=None, y_val=None, ens_size=1):
+                    print("Num classes: ", num_classes)
                     from scripts.transformer_prediction_interface import TabPFNClassifier
                     results = dict()
                     if cl > len(X):
                         cl = len(X) - 1
                     eval_model = TabPFNClassifier(device='cuda', 
                                                 N_ensemble_configurations=ens_size, 
-                                                base_path="/home/benfeuer/TabPFN-pt/tabpfn", 
+                                                base_path="/home/benfeuer/TabPFN-pt/tabpfn",
+                                                # seed=None,
+                                                seed=extra_prior_kwargs_dict.get('rand_seed', 0),
                                                 )
                     eval_model.fit(X[:cl, ...], y[:cl, ...], overwrite_warning=True)
-                    predictions = eval_model.predict(X_val)
+                    predictions = eval_model.predict(X_val).astype(np.int64)
                     outputs = eval_model.predict_proba(X_val)
+                    #invert permutation of labels
+                    new_output = np.zeros_like(outputs)
+                    for i in range(num_classes):
+                        new_output[:, invert_perm_map[i]] = outputs[:, i]
                     targets = y_val
+                    # print("Predictions shape: ", predictions.shape)
+                    # print("predictions numpy type: ", predictions.dtype)
+                    # print("Predictions: ", predictions[:20, ...])
+                    # print("Targets shape: ", targets.shape)
+                    # print("Targets numpy type: ", targets.dtype)
+                    # print("Targets: ", targets[:20, ...])
                     warnings.filterwarnings("ignore")
                     results['Accuracy'] = np.round(accuracy_score(targets, predictions), 3).item()
                     results['Log_Loss'] = np.round(log_loss(targets, outputs, labels=np.arange(num_classes)), 3).item()
                     results['F1_Weighted'] = np.round(f1_score(targets, predictions, average='weighted'), 3).item()
                     results['F1_Macro'] = np.round(f1_score(targets, predictions, average='macro'), 3).item()
                     try:
-                        results['ROC_AUC'] = np.round(roc_auc_score(targets, predictions, labels=np.arange(num_classes), multi_class='ovr'), 3).item()
+                        if num_classes == 2:
+                            results['ROC_AUC'] = np.round(roc_auc_score(targets, outputs[:, 1], labels=np.arange(num_classes)), 3).item()
+                        else:
+                            results['ROC_AUC'] = np.round(roc_auc_score(targets, outputs, labels=np.arange(num_classes), multi_class='ovr'), 3).item()
                     except Exception as e:
                         print("Error calculating ROC AUC: ", e)
                         results['ROC_AUC'] = 0.0
@@ -240,12 +280,14 @@ def train(priordataloader_class, criterion, encoder_generator, emsize=200, nhid=
 
     master_epoch_count = []
     
-    def real_data_eval(r_model, cl=1000, train_data=None, val_dl=None):
+    def real_data_eval(r_model, cl=1000, train_data=None, val_dl=None, softmax_temperature = torch.log(torch.tensor([0.8]))):
         import copy
         td = copy.deepcopy(train_data)
+        #
         td[0] = td[0][:cl, ...]
         td[1] = td[1][:cl, ...]
         single_eval_pos = len(td[0])
+        softmax_temperature = softmax_temperature.to(device)
         with torch.no_grad():
             # correct = 0
             # total = len(val_dl.dataset)
@@ -256,13 +298,17 @@ def train(priordataloader_class, criterion, encoder_generator, emsize=200, nhid=
                 batch_data = tuple([torch.cat((td[0], data[0]), dim=0), torch.cat((td[1], data[1]), dim=0)])
                 output = r_model(tuple(e.to(device) if torch.is_tensor(e) else e for e in batch_data) if isinstance(batch_data, tuple) else batch_data.to(device)
                     , single_eval_pos=single_eval_pos)
-                invalid_labels = torch.arange(num_classes, 10).to(device)
-                output[:, invalid_labels] = float("-inf")
+                #invert permutation of labels
+                new_output = torch.zeros_like(output)
+                for i in range(num_classes):
+                    new_output[:, invert_perm_map[i]] = output[:, i]
+                output = output[:, 0:num_classes] / torch.exp(softmax_temperature)
+                output = torch.nn.functional.softmax(output, dim=-1)
                 output_list.append(output)
                 _, predicted = torch.max(output.cpu().data, 1)
                 prediction_list.append(predicted)
                 target_list.append(targets)
-            outputs = torch.cat(output_list, dim=0)[:, :num_classes].cpu().numpy()
+            outputs = torch.cat(output_list, dim=0).cpu().numpy()
             predictions = torch.cat(prediction_list, dim=0).cpu().numpy()
             targets = torch.cat(target_list, dim=0).cpu().numpy()
             # assert len(outputs) == len(predictions) == total, "Samples missing from eval: found {}, expected {}".format(len(outputs), total)
@@ -275,12 +321,20 @@ def train(priordataloader_class, criterion, encoder_generator, emsize=200, nhid=
         results['F1_Weighted'] = np.round(f1_score(targets, predictions, average='weighted'), 3).item()
         results['F1_Macro'] = np.round(f1_score(targets, predictions, average='macro'), 3).item()
         try:
-            results['ROC_AUC'] = np.round(roc_auc_score(targets, predictions, labels=np.arange(num_classes), multi_class='ovr'), 3).item()
+            if num_classes == 2:
+                results['ROC_AUC'] = np.round(roc_auc_score(targets, outputs[:, 1], labels=np.arange(num_classes)), 3).item()
+            else:
+                results['ROC_AUC'] = np.round(roc_auc_score(targets, outputs, labels=np.arange(num_classes), multi_class='ovr'), 3).item()
         except Exception as e:
             print("Error calculating ROC AUC: ", e)
             results['ROC_AUC'] = 0.0
         results['ECE'] = np.round(um.ece(targets, outputs, num_bins=30), 3).item()
         results['TACE'] = np.round(um.tace(targets, outputs, num_bins=30), 3).item()
+        # print("Targets shape: ", targets.shape)
+        # print("Targets: ", targets[:20, ...])
+        # print("Predictions shape: ", predictions.shape)
+        # print("Predictions: ", predictions[:20, ...])
+        # raise Exception("Stop here")
         warnings.filterwarnings("default")
 
         return results, outputs, targets
@@ -701,15 +755,12 @@ def train(priordataloader_class, criterion, encoder_generator, emsize=200, nhid=
         for i in range(1, boosting_n_iters):
             master_epoch_count.append(1)
             seed_all(extra_prior_kwargs_dict.get('rand_seed') + i)
-            if extra_prior_kwargs_dict.get('ens_random_feature_rotation', True):
-                # print("Randomly rotating features")
-                #shuffle features
-                idx = np.random.permutation(X.shape[1])
-                X, X_val, X_test = priordataloader_class[0][0][:, idx], priordataloader_class[1][0][:, idx], priordataloader_class[2][0][:, idx]
+            if extra_prior_kwargs_dict.get('reseed_data', True):
+                #load data
+                extra_prior_kwargs_dict['preprocess_type'] = np.random.choice(['none', 'power_all', 'robust_all', 'quantile_all'])
+                X, y, X_val, y_val, X_test, y_test, invert_perm_map = make_datasets()
                 #make dataloaders
-                dl, val_dl, test_dl, bptt = make_dataloaders()
-                if bagging:
-                    dl_backup = dl
+                dl, val_dl, test_dl, bptt, data_for_fitting = make_dataloaders(bptt=bptt)
             if bagging:
                 subset_dataset = Subset(dl_backup.dataset, split_indices[i])
                 dl = DataLoader(

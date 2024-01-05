@@ -12,6 +12,7 @@ base_dict = {
     'lr' : 1e-3,
     'feature_subset_method' : 'mutual_information',
     'wandb_log' : '',
+    'do_preprocess' : '',
 }
 
 pt10_dict = {
@@ -39,6 +40,8 @@ pt100_pca_dict = copy.deepcopy(pt100_dict)
 pt100_pca_dict['feature_subset_method'] = 'pca'
 pt100_rand_dict = copy.deepcopy(pt100_dict)
 pt100_rand_dict['feature_subset_method'] = 'random'
+pt100_powerall_dict = copy.deepcopy(pt100_dict)
+pt100_powerall_dict['preprocess_type'] = 'power_all'
 pt1000_dict = copy.deepcopy(pt10_dict)
 pt1000_dict['tuned_prompt_size'] = 1000
 
@@ -53,6 +56,7 @@ all_tasks = {
     'pt100-prop' : pt100_prop_dict,
     'pt100-pca' : pt100_pca_dict,
     'pt100-rand' : pt100_rand_dict,
+    'pt100-powerall' : pt100_powerall_dict,
     'pt1000': pt1000_dict,
     'pt1000-5ens-bagged-avg' : ens_bagged_avg_dict,
     'pt1000-5ens-bagged-avg-top2' : ens_bagged_avg_top2_dict,
