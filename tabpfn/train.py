@@ -86,8 +86,31 @@ def train(priordataloader_class, criterion, encoder_generator, emsize=200, nhid=
         else:
             return single_eval_pos, bptt
 
+    def loop_translate(a, my_dict):
+        new_a = np.empty(a.shape)
+        if a.ndim == 1:
+            for i,elem in enumerate(a):
+                new_a[i] = my_dict.get(elem)
+        elif a.ndim == 2:
+            # print("In loop translate: ")
+            # print("a shape: ", a.shape)
+            # print("a: ", a[:5, ...])
+            new_a = []
+            for val in list(my_dict.keys()):
+                new_a.append(a[:, val])
+            if isinstance(new_a[0], np.ndarray):
+                new_a = np.stack(new_a, axis=1)
+            else:
+                #torch tensor
+                new_a = torch.stack(new_a, axis=1)
+            # print("new_a shape: ", new_a.shape)
+            # print("new_a: ", new_a[:5, ...])
+        return new_a
+
     def make_datasets():
         X, y = priordataloader_class[0][0], priordataloader_class[0][1]
+        print("In make datasets: ")
+        #print("unique y: ", np.unique(y))
         X_val, y_val = priordataloader_class[1][0], priordataloader_class[1][1]
         X_test, y_test = priordataloader_class[2][0], priordataloader_class[2][1]
         #shuffle data
@@ -96,17 +119,25 @@ def train(priordataloader_class, criterion, encoder_generator, emsize=200, nhid=
         invert_perm_map = {
             label_perm[i]: i for i in range(num_classes)
         }
+        rev_invert_perm_map = {
+            i: label_perm[i] for i in range(num_classes)
+        }
+        # feat_idx = np.arange(X.shape[1])
         feat_idx = np.random.permutation(X.shape[1])
-        for xd, yd in [(X, y)]:
-            idx = np.random.permutation(xd.shape[0])
-            xd, yd = xd[idx, ...], yd[idx, ...]
-            xd = xd[:, feat_idx, ...]
-            yd = label_perm[yd]
-        for xd, yd in [(X_val, y_val), (X_test, y_test)]:
-            # idx = np.random.permutation(xd.shape[0])
-            # xd, yd = xd[idx, ...], yd[idx, ...]
-            xd = xd[:, feat_idx, ...]
-        return X, y, X_val, y_val, X_test, y_test, invert_perm_map
+        idx = np.random.permutation(X.shape[0])
+        X = X[idx, ...]
+        y = y[idx, ...]
+        # print("y: ", y[:20, ...])
+        # print("Label perm: ", label_perm)
+        new_y = loop_translate(y, rev_invert_perm_map)
+        # for i in range(num_classes):
+        #     new_y[i] = y[rev_invert_perm_map[i]]
+        # print("New y: ", new_y[:20, ...])
+        # y = label_perm[y[idx, ...]]
+        X = X[:, feat_idx, ...]
+        X_val = X_val[:, feat_idx, ...]
+        X_test = X_test[:, feat_idx, ...]
+        return X, new_y, X_val, y_val, X_test, y_test, invert_perm_map
     
     def make_dataloaders(bptt=bptt):
         train_ds = TabDS(X, y, num_features=num_features, 
@@ -269,7 +300,7 @@ def train(priordataloader_class, criterion, encoder_generator, emsize=200, nhid=
         lr = get_openai_lr(model)
         print(f"Using OpenAI max lr of {lr}.")
     optimizer = torch.optim.AdamW(model.parameters(), lr=lr, weight_decay=weight_decay)
-    scheduler = scheduler(optimizer, warmup_epochs, epochs if epochs is not None else 100) # when training for fixed time lr schedule takes 100 steps
+    sched_obj = scheduler(optimizer, warmup_epochs, epochs if epochs is not None else 100) # when training for fixed time lr schedule takes 100 steps
 
     scaler = GradScaler() if train_mixed_precision else None
 
@@ -281,7 +312,6 @@ def train(priordataloader_class, criterion, encoder_generator, emsize=200, nhid=
     master_epoch_count = []
     
     def real_data_eval(r_model, cl=1000, train_data=None, val_dl=None, softmax_temperature = torch.log(torch.tensor([0.8]))):
-        import copy
         td = copy.deepcopy(train_data)
         #
         td[0] = td[0][:cl, ...]
@@ -299,18 +329,33 @@ def train(priordataloader_class, criterion, encoder_generator, emsize=200, nhid=
                 output = r_model(tuple(e.to(device) if torch.is_tensor(e) else e for e in batch_data) if isinstance(batch_data, tuple) else batch_data.to(device)
                     , single_eval_pos=single_eval_pos)
                 #invert permutation of labels
-                new_output = torch.zeros_like(output)
-                for i in range(num_classes):
-                    new_output[:, invert_perm_map[i]] = output[:, i]
+                _, predicted = torch.max(output.cpu().data, 1)
+                # print("In real data eval: ")
+                # print("Original preds: ", predicted[:20, ...])
+                new_output = loop_translate(output, invert_perm_map)
+                # new_output = torch.zeros_like(output)
+                # for i in range(num_classes):
+                #     new_output[:, invert_perm_map[i]] = output[:, i]
+                output = new_output
                 output = output[:, 0:num_classes] / torch.exp(softmax_temperature)
                 output = torch.nn.functional.softmax(output, dim=-1)
                 output_list.append(output)
                 _, predicted = torch.max(output.cpu().data, 1)
+                # print("New preds: ", predicted[:20, ...])
+                # print("Targets: ", targets[:20, ...])
                 prediction_list.append(predicted)
                 target_list.append(targets)
             outputs = torch.cat(output_list, dim=0).cpu().numpy()
             predictions = torch.cat(prediction_list, dim=0).cpu().numpy()
             targets = torch.cat(target_list, dim=0).cpu().numpy()
+            # print("Predictions shape: ", predictions.shape)
+            # print("predictions numpy type: ", predictions.dtype)
+            # print("Predictions: ", predictions[:20, ...])
+            # print("Predictions: ", predictions[-20:, ...])
+            # # print("Targets shape: ", targets.shape)
+            # # print("Targets numpy type: ", targets.dtype)
+            # print("Targets: ", targets[:20, ...])
+            # print("Targets: ", targets[-20:, ...])
             # assert len(outputs) == len(predictions) == total, "Samples missing from eval: found {}, expected {}".format(len(outputs), total)
             # correct += (predictions == targets).sum().item()
 
@@ -339,8 +384,16 @@ def train(priordataloader_class, criterion, encoder_generator, emsize=200, nhid=
 
         return results, outputs, targets
     
-    def train_epoch(model, optimizer, boost_this_epoch=False):
-        model.train()  # Turn on the train mode
+    def train_epoch(e_model, e_optimizer, boost_this_epoch=False):
+        e_model.train()  # Turn on the train mode
+        # Confirm that the correct params are frozen and unfrozen
+        if do_prompt_tuning:
+            e_model.freeze_parameters_except_prefix()
+            for n, p in e_model.named_parameters():
+                if "prefix_embedding" not in n:
+                    assert not p.requires_grad, "Non-prefix parameter {} requires grad!".format(n)
+                elif "prefix_embedding" in n:
+                    assert p.requires_grad, "Prefix parameter {} does not require grad!".format(n)
         total_loss = 0.
         total_positional_losses = 0.
         total_positional_losses_recorded = 0
@@ -352,13 +405,18 @@ def train(priordataloader_class, criterion, encoder_generator, emsize=200, nhid=
         before_get_batch = time.time()
         batches_seen = 0
         assert len(dl) % aggregate_k_gradients == 0, 'Please set the number of steps per epoch s.t. `aggregate_k_gradients` divides it.'
+        # if do_prompt_tuning:
+        #     wbu = e_model.prefix_embedding.weight.detach().clone()
+        #     print("Prompt weights before: ", wbu[:10, ...])
+            # print("Prompt requires grad: ", e_model.prefix_embedding.weight.requires_grad)
         for batch, (data, targets, single_eval_pos) in enumerate(dl):
             if isinstance(data, list):
                 data = tuple(data)
             if isinstance(single_eval_pos, torch.Tensor) and single_eval_pos.numel() == 0:
                 single_eval_pos = None
             if using_dist and not (batch % aggregate_k_gradients == aggregate_k_gradients - 1):
-                cm = model.no_sync()
+                print("using dist, No sync")
+                cm = e_model.no_sync()
             else:
                 cm = nullcontext()
 
@@ -377,7 +435,7 @@ def train(priordataloader_class, criterion, encoder_generator, emsize=200, nhid=
 
                 with autocast(enabled=scaler is not None):
                     # If style is set to None, it should not be transferred to device
-                    output = model(tuple(e.to(device) if torch.is_tensor(e) else e for e in data) if isinstance(data, tuple) else data.to(device)
+                    output = e_model(tuple(e.to(device) if torch.is_tensor(e) else e for e in data) if isinstance(data, tuple) else data.to(device)
                                    , single_eval_pos=single_eval_pos)
                     assert output.requires_grad, "Output does not require gradients"
                     forward_time = time.time() - before_forward
@@ -440,20 +498,19 @@ def train(priordataloader_class, criterion, encoder_generator, emsize=200, nhid=
                     output.backward(output_grad)
                     # gradient_dict[batch] = torch.cat(cur_grads, dim=0)
                 else:
-                    loss.backward()
-                
+                    loss.backward()             
                 if batch % aggregate_k_gradients == aggregate_k_gradients - 1:
-                    if scaler: scaler.unscale_(optimizer)
-                    torch.nn.utils.clip_grad_norm_(model.parameters(), 1.)
+                    if scaler: scaler.unscale_(e_optimizer)
+                    torch.nn.utils.clip_grad_norm_(e_model.parameters(), 1.)
                     try:
                         if scaler:
-                            scaler.step(optimizer)
+                            scaler.step(e_optimizer)
                             scaler.update()
                         else:
-                            optimizer.step()
+                            e_optimizer.step()
                     except:
                         print("Invalid optimization step encountered")
-                    optimizer.zero_grad()
+                    e_optimizer.zero_grad()
 
                 step_time = time.time() - before_forward
 
@@ -480,7 +537,10 @@ def train(priordataloader_class, criterion, encoder_generator, emsize=200, nhid=
             total_positional_losses = torch.zeros(bptt)
         if isinstance(total_positional_losses_recorded, float):
             total_positional_losses_recorded = torch.ones(bptt)
-
+        # if do_prompt_tuning:
+        #     wbn = e_model.prefix_embedding.weight.detach().clone()
+        #     print("Prompt weights after: ", wbn[:10, ...])
+            # print("Prompt requires grad: ", e_model.prefix_embedding.weight.requires_grad)
         return total_loss / max(steps_per_epoch, 1), (total_positional_losses / total_positional_losses_recorded).tolist(),\
                time_to_get_batch, forward_time, step_time, nan_steps.cpu().item()/(batch+1),\
                ignore_steps.cpu().item()/(batch+1)
@@ -568,7 +628,7 @@ def train(priordataloader_class, criterion, encoder_generator, emsize=200, nhid=
         }
         return new_res
 
-    def train_test_loop(t_model, t_optim):        
+    def train_test_loop(t_model, t_optim, t_sched, dl, val_dl, test_dl):        
         # Select a fixed training data prior of size bptt
         return_outputs = None
         return_targets = None
@@ -581,13 +641,6 @@ def train(priordataloader_class, criterion, encoder_generator, emsize=200, nhid=
         best_targets = None
         is_best = False
         patience = 0
-
-        # Confirm that parameters except for the prefix are frozen if we are prompt tuning
-        if do_prompt_tuning:
-            t_model.freeze_parameters_except_prefix()
-            for n, p in t_model.named_parameters():
-                if "prefix_embedding" not in n:
-                    assert not p.requires_grad, "Non-prefix parameter {} requires grad!".format(n)
 
         for epoch in (range(1, epochs + 1) if epochs is not None else itertools.count(1)):
             is_best = False
@@ -633,6 +686,7 @@ def train(priordataloader_class, criterion, encoder_generator, emsize=200, nhid=
                         t_model = restore_embedding(ec, t_model)
                         # Update optimizer parameters to include new embedding
                         t_optim = torch.optim.AdamW(t_model.parameters(), lr=lr, weight_decay=weight_decay)
+                        t_sched = scheduler(t_optim, warmup_epochs, epochs if epochs is not None else 100)
                     else:
                         val_score_nc_concat = ""
                         val_score_concat = ""
@@ -685,10 +739,14 @@ def train(priordataloader_class, criterion, encoder_generator, emsize=200, nhid=
                         json.dump(res_dict, f, indent=4)
 
             # stepping with wallclock time based scheduler
-            scheduler.step()
+            t_sched.step()
 
         if do_prompt_tuning and isinstance(best_val_embed, torch.Tensor):
             t_model.prefix_embedding.weight = nn.Parameter(best_val_embed.to(device))
+            #set requires grad to true
+            t_model.prefix_embedding.weight.requires_grad = True
+            t_optim = torch.optim.AdamW(t_model.parameters(), lr=lr, weight_decay=weight_decay)
+            t_sched = scheduler(t_optim, warmup_epochs, epochs if epochs is not None else 100)
             v_scr, val_outputs, val_targets = real_data_eval(r_model=t_model, cl=bptt, train_data=data_for_fitting, val_dl=val_dl)
             if v_scr['Accuracy'] != best_res_dict['Val_Accuracy']:
                 print("Best embedding score {} does not match best score {}!".format(v_scr, best_res_dict['Val_Accuracy']))
@@ -727,7 +785,7 @@ def train(priordataloader_class, criterion, encoder_generator, emsize=200, nhid=
                                             agg_k_grads=aggregate_k_gradients)
         prior_grad_dict = None
         gradient_dict = {}
-        output_dict[i], test_targets, results_dict = train_test_loop(model, optimizer)
+        output_dict[i], test_targets, results_dict = train_test_loop(model, optimizer, sched_obj, dl, val_dl, test_dl)
         res_dict_ensemble[i] = results_dict
         prior_grad_dict = gradient_dict
         # probs np and labels np are used by update_ensemble_acc for ECE and TACE
@@ -769,7 +827,9 @@ def train(priordataloader_class, criterion, encoder_generator, emsize=200, nhid=
             cur_boost_iter = i
             print("Ensembling iteration: ", i+1, " of ", boosting_n_iters, "\n \n")
             model.init_prefix_weights()
-            output_dict[i], test_targets, results_dict = train_test_loop(model, optimizer)
+            optimizer = torch.optim.AdamW(model.parameters(), lr=lr, weight_decay=weight_decay)
+            sched_obj = scheduler(optimizer, warmup_epochs, epochs if epochs is not None else 100)
+            output_dict[i], test_targets, results_dict = train_test_loop(model, optimizer, sched_obj, dl, val_dl, test_dl)
             res_dict_ensemble[i] = results_dict
             if do_prompt_tuning:
                 prefix_weights_l = save_prefix_weights(model, extra_prior_kwargs_dict.get('save_path'), i, do_concat, prefix_weights_l)
