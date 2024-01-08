@@ -109,7 +109,7 @@ def train(priordataloader_class, criterion, encoder_generator, emsize=200, nhid=
 
     def make_datasets():
         X, y = priordataloader_class[0][0], priordataloader_class[0][1]
-        print("In make datasets: ")
+        # print("In make datasets: ")
         #print("unique y: ", np.unique(y))
         X_val, y_val = priordataloader_class[1][0], priordataloader_class[1][1]
         X_test, y_test = priordataloader_class[2][0], priordataloader_class[2][1]
@@ -819,10 +819,12 @@ def train(priordataloader_class, criterion, encoder_generator, emsize=200, nhid=
                 X, y, X_val, y_val, X_test, y_test, invert_perm_map = make_datasets()
                 #make dataloaders
                 dl, val_dl, test_dl, bptt, data_for_fitting = make_dataloaders(bptt=bptt)
+                if bagging:
+                    dl_backup = dl
             if bagging:
                 subset_dataset = Subset(dl_backup.dataset, split_indices[i])
                 dl = DataLoader(
-                    subset_dataset, batch_size=bptt, shuffle=True, num_workers=1, drop_last=True,
+                    subset_dataset, batch_size=bptt, shuffle=False, num_workers=1, drop_last=True,
                 )
             cur_boost_iter = i
             print("Ensembling iteration: ", i+1, " of ", boosting_n_iters, "\n \n")
