@@ -74,6 +74,9 @@ def reload_config(config_type='causal', task_type='multiclass', longer=0):
 def objective(trial):
     config, model_string = reload_config(longer=1)
 
+    print("in objective, config")
+    print(config)
+
     config['bptt'] = trial.suggest_int('bptt', 128, 8192, log=True)
     config['lr'] = trial.suggest_float('lr', .0001, .3)
     config['aggregate_k_gradients'] = trial.suggest_int('aggregate_k_gradients', 1, 8)
@@ -83,7 +86,7 @@ def objective(trial):
     config['tuned_prompt_size'] = 1000
     config['num_eval_fitting_samples'] = 1000
     config['split'] = 0
-    config['data_path'] = "/home/colin/TabPFN-pt/tabpfn/data/openml__airlines__189354"
+    config['data_path'] = "/home/benfeuer/TabPFN-pt/tabpfn/data/openml__airlines__189354"
     config['concat_method'] = ""
 
     prior_type = "real"
@@ -93,7 +96,7 @@ def objective(trial):
         #TODO: check this
         config['prior_type'], config['differentiable'], config['flexible'] = 'real', True, False
 
-    resume = "/home/colin/TabPFN-pt/tabpfn/models_diff/prior_diff_real_checkpoint_n_0_epoch_42.cpkt"
+    resume = "/home/benfeuer/TabPFN-pt/tabpfn/models_diff/prior_diff_real_checkpoint_n_0_epoch_42.cpkt"
     if resume is not None:
         model_state, optimizer_state_load, config_sample_load = torch.load(resume, map_location='cpu')
         module_prefix = 'module.'
@@ -220,12 +223,16 @@ def objective(trial):
     with open(f'{config_sample["base_path"]}/config_diff_real_{model_string}_n_{0}.json', 'w') as f:
         json.dump(config_sample_copy, f, indent=4)
 
+    print("Training model ...")
+
+    print("in objective, nan prob a reason")
+    print(config_sample['nan_prob_a_reason'])
+    print(type(config_sample['nan_prob_a_reason']))
+
     if config_sample['wandb_log']:
         wandb.login(key=get_wandb_api_key())
         wandb.init(config=config_sample, name=config_sample['wandb_name'], group=config_sample['wandb_group'],
                 project=config_sample['wandb_project'], entity=config_sample['wandb_entity'])
-
-    print("Training model ...")
 
     # run training routine
     results_dict = train_function(config_sample, 0, model_string)

@@ -432,7 +432,9 @@ def train(priordataloader_class, criterion, encoder_generator, emsize=200, nhid=
                     single_eval_pos = single_eval_pos_gen() if callable(single_eval_pos_gen) else single_eval_pos_gen
                 else:
                     single_eval_pos = targets.shape[0] - bptt_extra_samples
-
+                # print("Single eval pos: ", single_eval_pos)
+                # print("BPTT extra samples: ", bptt_extra_samples)
+                # print("Batch size: ", targets.shape[0])
                 with autocast(enabled=scaler is not None):
                     # If style is set to None, it should not be transferred to device
                     output = e_model(tuple(e.to(device) if torch.is_tensor(e) else e for e in data) if isinstance(data, tuple) else data.to(device)

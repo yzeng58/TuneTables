@@ -10,7 +10,7 @@ parser = argparse.ArgumentParser(description='Run TabPFN')
 parser.add_argument('--base_path', type=str, default='/home/benfeuer/TabPFN-pt/tabpfn/data', help='Path to TabPFN-pt dataset directory')
 parser.add_argument('--datasets', type=str, default='/home/benfeuer/TabPFN-pt/tabpfn/metadata/subset.txt', help='Path to datasets text file')
 parser.add_argument('--tasks', type=str, default='/home/benfeuer/TabPFN-pt/tabpfn/metadata/subset_tasks.txt', help='Tasks to run')
-parser.add_argument('--bptt', type=int, default=0, help='bptt batch size')
+parser.add_argument('--bptt', type=int, default=-1, help='bptt batch size')
 parser.add_argument('--splits', nargs='+', type=int, default=[0], help='Splits to run')
 
 args = parser.parse_args()
@@ -34,7 +34,7 @@ for dataset in tqdm(datasets):
             # Get task name
             task = task.strip()
             task_str = task
-            if args.bptt > 0:
+            if args.bptt > -1:
                 task_str += '_bptt_' + str(args.bptt)
             task_str += '_split_' + str(split)
             if task.startswith('zs'):
@@ -70,7 +70,7 @@ for dataset in tqdm(datasets):
                     val = str(v)
                     if val != '':
                         addl_args.append(val)
-                if args.bptt > 0:
+                if args.bptt > -1:
                     addl_args.append("--bptt")
                     addl_args.append(str(args.bptt))
                 command = ['python', 'train_loop.py', '--data_path', dataset_path, '--split', str(split), '--wandb_group', dataset.strip() + "_" + task_str] + addl_args

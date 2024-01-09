@@ -13,6 +13,7 @@ base_dict = {
     'feature_subset_method' : 'pca',
     'wandb_log' : '',
     'do_preprocess' : '',
+    'verbose' : '',
 }
 
 pt10_dict = {
@@ -40,6 +41,8 @@ pt10_powerall_dict = copy.deepcopy(pt10_dict)
 pt10_powerall_dict['preprocess_type'] = 'power_all'
 pt100_dict = copy.deepcopy(pt10_dict)
 pt100_dict['tuned_prompt_size'] = 100
+pt100_unif_dict = copy.deepcopy(pt100_dict)
+pt100_unif_dict['uniform_bptt'] = ''
 pt100_prop_dict = copy.deepcopy(pt100_dict)
 pt100_prop_dict['tuned_prompt_label_balance'] = 'proportional'
 pt100_pca_dict = copy.deepcopy(pt100_dict)
@@ -77,6 +80,7 @@ all_tasks = {
     'pt100-pca' : pt100_pca_dict,
     'pt100-rand' : pt100_rand_dict,
     'pt100-powerall' : pt100_powerall_dict,
+    'pt100-uniform' : pt100_unif_dict,
     'pt1000': pt1000_dict,
     'pt1000-powerall' : pt1000_powerall_dict,
     'pt1000-5ens-bagged-avg' : ens_bagged_avg_dict,

@@ -633,9 +633,16 @@ class TabDS(Dataset):
 from torch.utils.data import DataLoader
 
 def get_train_dataloader(ds, bptt=1000, shuffle=True, num_workers=1, drop_last=True, agg_k_grads=1):
+        old_bptt = bptt
         dl = DataLoader(
             ds, batch_size=bptt, shuffle=shuffle, num_workers=num_workers, drop_last=drop_last,
         )
-        if len(dl) % agg_k_grads != 0:
-            raise ValueError(f'Number of batches {len(dl)} not divisible by {agg_k_grads}, please modify aggregation factor.')
+        while len(dl) % agg_k_grads != 0:
+            bptt += 1
+            dl = DataLoader(
+                ds, batch_size=bptt, shuffle=shuffle, num_workers=num_workers, drop_last=drop_last,
+            )
+            # raise ValueError(f'Number of batches {len(dl)} not divisible by {agg_k_grads}, please modify aggregation factor.')
+        if old_bptt != bptt:
+            print(f'Batch size changed from {old_bptt} to {bptt} to be divisible by {agg_k_grads}.')
         return dl, bptt

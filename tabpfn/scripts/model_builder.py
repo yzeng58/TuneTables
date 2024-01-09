@@ -26,12 +26,6 @@ def save_model(model, path, filename, config_sample):
             config_sample = str(config_sample)
         return config_sample
 
-    #if 'num_features_used' in config_sample:
-    #    del config_sample['num_features_used']
-
-    #config_sample['num_classes_as_str'] = str(config_sample['num_classes'])
-    #del config_sample['num_classes']
-
     config_sample = make_serializable(config_sample)
     target_path = os.path.join(path, filename)
     if not os.path.exists(target_path):
@@ -223,17 +217,13 @@ def get_meta_gp_prior_hyperparameters(config):
 
 def get_model(config, device, should_train=True, verbose=False, state_dict=None, epoch_callback=None):
     extra_kwargs = {}
-    verbose_train, verbose_prior = verbose >= 1, verbose >= 2
-    config['verbose'] = verbose_prior
     n_features = config['max_features']
-    if config['boosting']:
-        config['aggregate_k_gradients'] = 1
-    elif 'aggregate_k_gradients' not in config or config['aggregate_k_gradients'] is None:
+
+    if 'aggregate_k_gradients' not in config or config['aggregate_k_gradients'] is None:
         config['aggregate_k_gradients'] = math.ceil(config['batch_size'] * ((config['nlayers'] * config['emsize'] * config['bptt'] * config['bptt']) / 10824640000))
 
     config['num_steps'] = math.ceil(config['num_steps'] * config['aggregate_k_gradients'])
     config['batch_size'] = math.ceil(config['batch_size'] / config['aggregate_k_gradients'])
-    config['recompute_attn'] = config['recompute_attn'] if 'recompute_attn' in config else False
 
     def make_get_batch(model_proto, **extra_kwargs):
         def new_get_batch(batch_size, seq_len, num_features, hyperparameters
@@ -255,6 +245,7 @@ def get_model(config, device, should_train=True, verbose=False, state_dict=None,
         dataset = TabularDataset.read(Path(config['data_path']).resolve())
         prior_hyperparameters = {}
         use_style = False
+
     #Priors == DataLoaders (synthetic)
     if config['prior_type'] == 'prior_bag':
         # Prior bag combines priors
@@ -287,6 +278,7 @@ def get_model(config, device, should_train=True, verbose=False, state_dict=None,
             get_batch_base = make_get_batch(model_proto)
             extra_kwargs['get_batch'] = get_batch_base
             model_proto = priors.flexible_categorical
+    
     if config['prior_type'] == 'real':
         pass
     else:
@@ -314,18 +306,7 @@ def get_model(config, device, should_train=True, verbose=False, state_dict=None,
     else:
         encoder = partial(encoders.Linear, replace_nan_by_zero=True)
 
-    if config['max_num_classes'] == 2:
-        loss = Losses.bce
-    elif config['max_num_classes'] > 2:
-        loss = Losses.ce(config['max_num_classes'])
-
-
-    check_is_compatible = False if 'multiclass_loss_type' not in config else (config['multiclass_loss_type'] == 'compatible')
-    config['multiclass_type'] = config['multiclass_type'] if 'multiclass_type' in config else 'rank'
-    config['mix_activations'] = config['mix_activations'] if 'mix_activations' in config else False
-
-    config['bptt_extra_samples'] = config['bptt_extra_samples'] if 'bptt_extra_samples' in config else None
-    config['eval_positions'] = [int(config['bptt'] * 0.95)] if config['bptt_extra_samples'] is None else [int(config['bptt'])]
+    # check_is_compatible = False if 'multiclass_loss_type' not in config else (config['multiclass_loss_type'] == 'compatible')
 
     epochs = 0 if not should_train else config['epochs']
 
@@ -347,7 +328,7 @@ def get_model(config, device, should_train=True, verbose=False, state_dict=None,
                 train_index,
                 val_index,
                 test_index,
-                verbose=False,
+                verbose=config['verbose'],
                 scaler="None",
                 one_hot_encode=False,
                 args=args,
@@ -357,8 +338,10 @@ def get_model(config, device, should_train=True, verbose=False, state_dict=None,
             X_test, y_test = processed_data["data_test"]
             n_features = X_train.shape[1]
             n_samples = X_train.shape[0]
+            config['num_classes'] = len(set(y_train))
+            config['num_steps'] = len(X_train) // config['bptt']
             if config['bptt'] > n_samples:
-                print("WARNING: bptt is larger than the number of samples in the dataset. This may cause unexpected behavior.")
+                print(f"WARNING: bptt {config['bptt']} is larger than the number of samples in the dataset, {n_samples}. This may cause unexpected behavior.")
             dataloader = [[X_train, y_train], [X_val, y_val], [X_test, y_test]]
             dataset_built = True
             break
@@ -366,6 +349,13 @@ def get_model(config, device, should_train=True, verbose=False, state_dict=None,
             raise Exception(f"Split {config['split']} not found in dataset!")
     else:
         dataloader = model_proto.DataLoader
+
+    if config['max_num_classes'] == 2:
+        loss = Losses.bce
+    elif config['max_num_classes'] > 2:
+        loss = Losses.ce(config['max_num_classes'])
+    elif config['prior_type'] == 'real':
+        loss = Losses.ce(config['num_classes'])
 
     epkd = {
                         'prior_type': config['prior_type']
@@ -388,7 +378,7 @@ def get_model(config, device, should_train=True, verbose=False, state_dict=None,
                         , 'zs_eval_ensemble': config.get('zs_eval_ensemble', 0)
                         , 'pad_features': config.get('pad_features', False)
                         , 'early_stopping_patience': config.get('early_stopping_patience', 2)
-                        , 'num_classes' : len(set(y_train))
+                        , 'num_classes' : config.get('num_classes', 2)
                         , 'min_batches_per_epoch': config.get('min_batches_per_epoch', 10)
                         , 'keep_topk_ensemble': config.get('keep_topk_ensemble', 0)
                         , 'do_preprocess' : config.get('do_preprocess', False)
@@ -396,10 +386,12 @@ def get_model(config, device, should_train=True, verbose=False, state_dict=None,
                         , 'wandb_log': config.get('wandb_log', False)
                         , **extra_kwargs
     }
-    if not config['boosting'] or config.get('uniform_bptt', True):
-        sep_samp = get_uniform_single_eval_pos_sampler(config.get('max_eval_pos', config['bptt']), min_len=config.get('min_eval_pos', 0))
+
+    if config['boosting'] or config.get('uniform_bptt', False):
+        sep_samp = get_fixed_batch_sampler(config.get('bptt', 1024) + config.get('bptt_extra_samples', 128))
     else:
-        sep_samp = get_fixed_batch_sampler(config.get('max_eval_pos', config['bptt']))
+        sep_samp = get_uniform_single_eval_pos_sampler(config.get('max_eval_pos', config['bptt']), min_len=config.get('min_eval_pos', 0))
+        
     model, results_dict = train(dataloader
                   , loss
                   , encoder
@@ -413,7 +405,7 @@ def get_model(config, device, should_train=True, verbose=False, state_dict=None,
                   , nlayers=config['nlayers']
                   , nhid=config['emsize'] * config['nhid_factor']
                   , epochs=epochs
-                  , warmup_epochs=20
+                  , warmup_epochs=config['warmup_epochs']
                   , bptt=config['bptt']
                   , gpu_device=device
                   , dropout=config['dropout']
@@ -427,7 +419,7 @@ def get_model(config, device, should_train=True, verbose=False, state_dict=None,
                   , bptt_extra_samples = config['bptt_extra_samples']
                   , extra_prior_kwargs_dict=epkd
                   , lr=config['lr']
-                  , verbose=verbose_train
+                  , verbose=config['verbose']
                   , boosting = config['boosting']
                   , boosting_lr = config.get('boosting_lr', 1e-3)
                   , boosting_n_iters = config.get('boosting_n_iters', 10)
