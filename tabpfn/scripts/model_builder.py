@@ -1,5 +1,6 @@
 from pathlib import Path
 import argparse
+from datetime import datetime
 
 from functools import partial
 import tabpfn.encoders as encoders
@@ -356,7 +357,7 @@ def get_model(config, device, should_train=True, verbose=False, state_dict=None,
         loss = Losses.ce(config['max_num_classes'])
     elif config['prior_type'] == 'real':
         loss = Losses.ce(config['num_classes'])
-
+    
     epkd = {
                         'prior_type': config['prior_type']
                         , 'num_features': n_features
@@ -367,7 +368,7 @@ def get_model(config, device, should_train=True, verbose=False, state_dict=None,
                         , 'batch_size_per_gp_sample': config.get('batch_size_per_gp_sample', None)
                         , 'prompt_tuning': config.get('prompt_tuning', False)
                         , 'tuned_prompt_size': config.get('tuned_prompt_size', 0)
-                        , 'model_string': config.get('model_string', '')
+                        , 'model_string': config.get('model_string', datetime.now().strftime("%m_%d_%Y_%H_%M_%S"))
                         , 'save_path': config.get('base_path', '.')
                         , 'rand_seed': config.get('rand_seed', 135798642)
                         , 'average_ensemble': config.get('average_ensemble', False)

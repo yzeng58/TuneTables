@@ -107,24 +107,33 @@ def train(priordataloader_class, criterion, encoder_generator, emsize=200, nhid=
             # print("new_a: ", new_a[:5, ...])
         return new_a
 
-    def make_datasets():
+    def make_datasets(do_permute=True):
         X, y = priordataloader_class[0][0], priordataloader_class[0][1]
         # print("In make datasets: ")
         #print("unique y: ", np.unique(y))
         X_val, y_val = priordataloader_class[1][0], priordataloader_class[1][1]
         X_test, y_test = priordataloader_class[2][0], priordataloader_class[2][1]
         #shuffle data
-        label_perm = np.random.permutation(num_classes)
-        # label_perm = np.arange(num_classes)
+        if do_permute:
+            label_perm = np.random.permutation(num_classes)
+        else:
+            label_perm = np.arange(num_classes)
+
         invert_perm_map = {
             label_perm[i]: i for i in range(num_classes)
         }
         rev_invert_perm_map = {
             i: label_perm[i] for i in range(num_classes)
         }
-        # feat_idx = np.arange(X.shape[1])
-        feat_idx = np.random.permutation(X.shape[1])
-        idx = np.random.permutation(X.shape[0])
+        if do_permute:
+            feat_idx = np.random.permutation(X.shape[1])
+        else:
+            feat_idx = np.arange(X.shape[1])
+        
+        if do_permute:
+            idx = np.random.permutation(X.shape[0])
+        else:
+            idx = np.arange(X.shape[0])
         X = X[idx, ...]
         y = y[idx, ...]
         # print("y: ", y[:20, ...])
@@ -184,7 +193,9 @@ def train(priordataloader_class, criterion, encoder_generator, emsize=200, nhid=
             label_weights = None
 
         #load data
-        X, y, X_val, y_val, X_test, y_test, invert_perm_map = make_datasets()
+        not_zs = extra_prior_kwargs_dict.get('zs_eval_ensemble', 0) == 0
+
+        X, y, X_val, y_val, X_test, y_test, invert_perm_map = make_datasets(do_permute=not_zs)
         #make dataloaders
         dl, val_dl, test_dl, bptt, data_for_fitting = make_dataloaders(bptt=bptt)
 

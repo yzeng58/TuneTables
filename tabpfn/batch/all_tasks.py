@@ -37,6 +37,8 @@ ens_randinit_avg_dict['rand_init_ensemble'] = ''
 
 pt10_dict = dict(base_dict, **pt10_dict)
 pt10_dict['save_every_k_epochs'] = base_dict['epochs'] + 1
+pt10_uniform_dict = copy.deepcopy(pt10_dict)
+pt10_uniform_dict['uniform_bptt'] = ''
 pt10_powerall_dict = copy.deepcopy(pt10_dict)
 pt10_powerall_dict['preprocess_type'] = 'power_all'
 pt100_dict = copy.deepcopy(pt10_dict)
@@ -53,6 +55,8 @@ pt100_powerall_dict = copy.deepcopy(pt100_dict)
 pt100_powerall_dict['preprocess_type'] = 'power_all'
 pt1000_dict = copy.deepcopy(pt10_dict)
 pt1000_dict['tuned_prompt_size'] = 1000
+pt1000_unif_dict = copy.deepcopy(pt1000_dict)
+pt1000_unif_dict['uniform_bptt'] = ''
 pt1000_powerall_dict = copy.deepcopy(pt1000_dict)
 pt1000_powerall_dict['preprocess_type'] = 'power_all'
 
@@ -75,6 +79,7 @@ all_tasks = {
     'ft' : base_dict,
     'pt10' : pt10_dict,
     'pt10-powerall' : pt10_powerall_dict,
+    'pt10-uniform' : pt10_uniform_dict,
     'pt100': pt100_dict,
     'pt100-prop' : pt100_prop_dict,
     'pt100-pca' : pt100_pca_dict,
@@ -82,6 +87,7 @@ all_tasks = {
     'pt100-powerall' : pt100_powerall_dict,
     'pt100-uniform' : pt100_unif_dict,
     'pt1000': pt1000_dict,
+    'pt1000-uniform' : pt1000_unif_dict,
     'pt1000-powerall' : pt1000_powerall_dict,
     'pt1000-5ens-bagged-avg' : ens_bagged_avg_dict,
     'pt1000-5ens-randinit-avg' : ens_randinit_avg_dict,

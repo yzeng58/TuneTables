@@ -39,8 +39,12 @@ for dataset in tqdm(datasets):
             task_str += '_split_' + str(split)
             if task.startswith('zs'):
                 ensemble_size = int(task.split('-')[-1])
-                command = ['python', 'train_loop.py', '--data_path', dataset_path, '--split', str(split), '--wandb_group', dataset.strip() + "_" + task_str, '--zs-eval-ensemble', str(ensemble_size)]
-                print("Running command:", ' '.join(command))
+                command = ['python', 'train_loop.py', 
+                           '--data_path', dataset_path,
+                           '--feature_subset_method', 'pca',
+                           '--split', str(split), 
+                           '--wandb_group', dataset.strip() + "_" + task_str, 
+                           '--zs-eval-ensemble', str(ensemble_size)]
             else:
                 # Get task args
                 npp = False
@@ -70,11 +74,11 @@ for dataset in tqdm(datasets):
                     val = str(v)
                     if val != '':
                         addl_args.append(val)
-                if args.bptt > -1:
-                    addl_args.append("--bptt")
-                    addl_args.append(str(args.bptt))
                 command = ['python', 'train_loop.py', '--data_path', dataset_path, '--split', str(split), '--wandb_group', dataset.strip() + "_" + task_str] + addl_args
-                print("Running command:", ' '.join(command))
+            if args.bptt > -1:
+                command.append("--bptt")
+                command.append(str(args.bptt))                
+            print("Running command:", ' '.join(command))
             subprocess.call(command)
             new_outputs = Path('logs').glob('_multiclass*')
             updated_outputs = []
