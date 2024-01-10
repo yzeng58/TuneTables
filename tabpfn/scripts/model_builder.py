@@ -342,7 +342,8 @@ def get_model(config, device, should_train=True, verbose=False, state_dict=None,
             config['num_classes'] = len(set(y_train))
             config['num_steps'] = len(X_train) // config['bptt']
             if config['bptt'] > n_samples:
-                print(f"WARNING: bptt {config['bptt']} is larger than the number of samples in the dataset, {n_samples}. This may cause unexpected behavior.")
+                print(f"WARNING: bptt {config['bptt']} is larger than the number of samples in the dataset, {n_samples}. Setting bptt below {n_samples}")
+                config['bptt'] = n_samples - 1
             dataloader = [[X_train, y_train], [X_val, y_val], [X_test, y_test]]
             dataset_built = True
             break

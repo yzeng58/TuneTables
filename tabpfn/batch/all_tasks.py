@@ -43,6 +43,22 @@ pt10_powerall_dict = copy.deepcopy(pt10_dict)
 pt10_powerall_dict['preprocess_type'] = 'power_all'
 pt100_dict = copy.deepcopy(pt10_dict)
 pt100_dict['tuned_prompt_size'] = 100
+pt100_short_dict = copy.deepcopy(pt100_dict)
+pt100_short_dict['epochs'] = 7
+pt100_short_dict['save_every_k_epochs'] = 12
+pt100_short_dict['early_stopping'] = 7
+pt100_short_dict['validation_period'] = 3
+pt100_short_dict['lr'] = 0.2
+pt100_shorter_dict = copy.deepcopy(pt100_dict)
+pt100_shorter_dict['epochs'] = 4
+pt100_shorter_dict['save_every_k_epochs'] = 5
+pt100_shorter_dict['early_stopping'] = 5
+pt100_shorter_dict['validation_period'] = 3
+pt100_shorter_dict['lr'] = 0.3
+pt100_short_unif_dict = copy.deepcopy(pt100_short_dict)
+pt100_short_unif_dict['uniform_bptt'] = ''
+pt100_shorter_unif_dict = copy.deepcopy(pt100_shorter_dict)
+pt100_shorter_unif_dict['uniform_bptt'] = ''
 pt100_unif_dict = copy.deepcopy(pt100_dict)
 pt100_unif_dict['uniform_bptt'] = ''
 pt100_prop_dict = copy.deepcopy(pt100_dict)
@@ -74,6 +90,8 @@ ens_bagged_avg_top2_reseed_dict['ensemble_size'] = 10
 ens_randinit_avg_top2_reseed_dict = copy.deepcopy(ens_randinit_avg_top2_dict)
 ens_randinit_avg_top2_reseed_dict['reseed_data'] = ''
 ens_randinit_avg_top2_reseed_dict['ensemble_size'] = 10
+ens_randinit_avg_top2_unif_reseed_dict = copy.deepcopy(ens_randinit_avg_top2_reseed_dict)
+ens_randinit_avg_top2_unif_reseed_dict['uniform_bptt'] = ''
 
 all_tasks = {
     'ft' : base_dict,
@@ -86,6 +104,10 @@ all_tasks = {
     'pt100-rand' : pt100_rand_dict,
     'pt100-powerall' : pt100_powerall_dict,
     'pt100-uniform' : pt100_unif_dict,
+    'pt100-uniform-short' : pt100_short_unif_dict,
+    'pt100-uniform-shorter' : pt100_shorter_unif_dict,
+    'pt100-short' : pt100_short_dict,
+    'pt100-shorter' : pt100_shorter_dict,
     'pt1000': pt1000_dict,
     'pt1000-uniform' : pt1000_unif_dict,
     'pt1000-powerall' : pt1000_powerall_dict,
@@ -96,6 +118,7 @@ all_tasks = {
     'pt1000-5ens-randinit-avg-top2' : ens_randinit_avg_top2_dict,
     'pt1000-10ens-bagged-avg-top2-reseed' : ens_bagged_avg_top2_reseed_dict,
     'pt1000-10ens-randinit-avg-top2-reseed' : ens_randinit_avg_top2_reseed_dict,
+    'pt1000-10ens-randinit-avg-top2-unif-reseed' : ens_randinit_avg_top2_unif_reseed_dict,
 }
 
 def get_all_tasks():
