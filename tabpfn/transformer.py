@@ -104,6 +104,16 @@ class TransformerModel(nn.Module):
             else:
                 param.requires_grad = True
 
+    def freeze_parameters_except_named(self, param_strings):
+        for name, param in self.named_parameters():
+            # Freeze all parameters except those in prefix_embedding
+            grad_reqd = False
+            for s in param_strings:
+                if s in name:
+                    grad_reqd = True
+                    break
+            param.requires_grad = grad_reqd
+
     def init_weights(self):
         initrange = 1.
         # if isinstance(self.encoder,EmbeddingEncoder):

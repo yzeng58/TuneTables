@@ -73,6 +73,11 @@ pt1000_dict = copy.deepcopy(pt10_dict)
 pt1000_dict['tuned_prompt_size'] = 1000
 pt1000_unif_dict = copy.deepcopy(pt1000_dict)
 pt1000_unif_dict['uniform_bptt'] = ''
+pt1000_unif_highep_lowlr_dict = copy.deepcopy(pt1000_unif_dict)
+pt1000_unif_highep_lowlr_dict['epochs'] = 101
+pt1000_unif_highep_lowlr_dict['lr'] = 0.01
+pt1000_unif_highep_lowlr_dict['save_every_k_epochs'] = 31
+pt1000_unif_highep_lowlr_dict['validation_period'] = 5
 pt1000_powerall_dict = copy.deepcopy(pt1000_dict)
 pt1000_powerall_dict['preprocess_type'] = 'power_all'
 
@@ -110,6 +115,7 @@ all_tasks = {
     'pt100-shorter' : pt100_shorter_dict,
     'pt1000': pt1000_dict,
     'pt1000-uniform' : pt1000_unif_dict,
+    'pt1000-uniform-highep-lowlr' : pt1000_unif_highep_lowlr_dict,
     'pt1000-powerall' : pt1000_powerall_dict,
     'pt1000-5ens-bagged-avg' : ens_bagged_avg_dict,
     'pt1000-5ens-randinit-avg' : ens_randinit_avg_dict,

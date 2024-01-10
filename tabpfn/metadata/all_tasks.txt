@@ -12,6 +12,8 @@ pt100-prop
 pt100-rand
 pt100-pca
 pt1000
+pt1000-uniform
+pt1000-uniform-highep-lowlr
 pt1000-5ens-bagged-avg
 pt1000-5ens-bagged-avg-top2
 pt1000-10ens-randinit-avg-top2-reseed

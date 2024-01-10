@@ -135,7 +135,7 @@ def reload_config(config_type='causal', task_type='multiclass', longer=0, args=N
     config = get_prior_config(config_type=config_type)
         
     #hard-coded limits of original TabPFN model
-    config['max_num_classes'] = 10
+    config['max_num_classes'] = args.max_num_classes
     config["max_features"] = 100
 
     #prompt tuning
@@ -294,6 +294,7 @@ def parse_args():
     parser.add_argument('--optuna_objective', type=str, default='Val_Accuracy', help='Objective for optuna.')
     parser.add_argument('--verbose', action='store_true', help='Whether to print more information during training.')
     parser.add_argument('--shuffle_every_epoch', action='store_true', help='Whether to shuffle the order of the data every epoch (can help when bptt is large).')
+    parser.add_argument('--max_num_classes', type=int, default=100, help='Maximum number of classes to use.')
     args = parser.parse_args()
     return args
 

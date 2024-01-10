@@ -1,2 +1,2 @@
-pt100-uniform-short
-pt100-uniform-shorter
+pt100-prop
+pt1000-uniform-highep-lowlr

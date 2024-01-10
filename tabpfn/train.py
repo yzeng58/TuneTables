@@ -280,17 +280,44 @@ def train(priordataloader_class, criterion, encoder_generator, emsize=200, nhid=
                              )
     model.criterion = criterion    
     if load_weights_from_this_state_dict is not None:
+        encoder_mismatch = False
+        decoder_mismatch = False
+        if num_classes > 10:
+            #initialize a new decoder head
+            decoder_mismatch = True
+            # decoder_weight = load_weights_from_this_state_dict['decoder.2.weight'].cpu().numpy()
+            # target_size = model.state_dict()['decoder.2.weight'].shape
+            # # project decoder_weight to target_size by copying the first 10 classes
+            # new_decoder_weight = np.zeros(target_size)
+            # new_decoder_weight[:10, ...] = decoder_weight[:10, ...]
+            # new_decoder_weight[10:, ...] = decoder_weight[0, ...]
+            # load_weights_from_this_state_dict['decoder.2.weight'] = torch.from_numpy(new_decoder_weight).to(device)
+
+            load_weights_from_this_state_dict['decoder.2.weight'] = model.state_dict()['decoder.2.weight']
+            load_weights_from_this_state_dict['decoder.2.bias'] = model.state_dict()['decoder.2.bias']
+            load_weights_from_this_state_dict['criterion.weight'] = model.state_dict()['criterion.weight']
         if load_weights_from_this_state_dict.get('prefix_embedding.weight', None) is None and model.state_dict().get('prefix_embedding.weight', None) is not None:
             load_weights_from_this_state_dict['prefix_embedding.weight'] = model.state_dict()['prefix_embedding.weight']
         if load_weights_from_this_state_dict.get('encoder.weight', None) is not None:
             load_shape = load_weights_from_this_state_dict.get('encoder.weight', None).shape
             model_shape = model.state_dict().get('encoder.weight', None).shape
             if load_shape != model_shape:
+                encoder_mismatch = True
                 print("Encoder weight shape mismatch: ", load_shape, model_shape, "Using randomly initialized encoder weights from model instead")
                 load_weights_from_this_state_dict['encoder.weight'] = model.state_dict()['encoder.weight']
         model.load_state_dict(load_weights_from_this_state_dict)
     if initialize_with_model is not None:
         model.init_from_small_model(initialize_with_model)
+
+    params_to_optimize = []
+    if do_prompt_tuning:
+        params_to_optimize.append("prefix_embedding")
+    if encoder_mismatch:
+        params_to_optimize.append("encoder")
+    if decoder_mismatch:
+        params_to_optimize.append("decoder.2")
+        params_to_optimize.append("criterion")
+    print("Params to optimize: ", params_to_optimize)
 
     print(f"Using a Transformer with {sum(p.numel() for p in model.parameters())/1000/1000:.{2}f} M parameters")
 
@@ -401,12 +428,14 @@ def train(priordataloader_class, criterion, encoder_generator, emsize=200, nhid=
         e_model.train()  # Turn on the train mode
         # Confirm that the correct params are frozen and unfrozen
         if do_prompt_tuning:
-            e_model.freeze_parameters_except_prefix()
+            e_model.freeze_parameters_except_named(params_to_optimize)
             for n, p in e_model.named_parameters():
-                if "prefix_embedding" not in n:
-                    assert not p.requires_grad, "Non-prefix parameter {} requires grad!".format(n)
-                elif "prefix_embedding" in n:
-                    assert p.requires_grad, "Prefix parameter {} does not require grad!".format(n)
+                grad_reqd = False
+                for s in params_to_optimize:
+                    if s in n:
+                        grad_reqd = True
+                assert p.requires_grad == grad_reqd, "Parameter {} does not have the correct grad requirement!".format(n)
+
         total_loss = 0.
         total_positional_losses = 0.
         total_positional_losses_recorded = 0
@@ -611,7 +640,7 @@ def train(priordataloader_class, criterion, encoder_generator, emsize=200, nhid=
         model.prefix_embedding.weight = nn.Parameter(ec.original_embedding)
         model.prefix_y_embedding = ec.original_y_embedding
         model.prefix_size = ec.original_prefix_size
-        model.freeze_parameters_except_prefix()
+        model.freeze_parameters_except_named(params_to_optimize)
         return model
     
     def save_prefix_weights(model, path, i, do_concat, prefix_weights_l):
