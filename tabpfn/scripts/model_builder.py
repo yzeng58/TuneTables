@@ -385,6 +385,7 @@ def get_model(config, device, should_train=True, verbose=False, state_dict=None,
                         , 'do_preprocess' : config.get('do_preprocess', False)
                         , 'preprocess_type' : config.get('preprocess_type', 'none')
                         , 'wandb_log': config.get('wandb_log', False)
+                        , 'shuffle_every_epoch': config.get('shuffle_every_epoch', False)
                         , **extra_kwargs
     }
 

@@ -420,6 +420,8 @@ def train(priordataloader_class, criterion, encoder_generator, emsize=200, nhid=
         #     wbu = e_model.prefix_embedding.weight.detach().clone()
         #     print("Prompt weights before: ", wbu[:10, ...])
             # print("Prompt requires grad: ", e_model.prefix_embedding.weight.requires_grad)
+        shuffle_every_epoch = extra_prior_kwargs_dict.get('shuffle_every_epoch', False)
+        permute_feature_pos = extra_prior_kwargs_dict.get('permute_feature_position_in_ensemble', False)
         for batch, (data, targets, single_eval_pos) in enumerate(dl):
             if isinstance(data, list):
                 data = tuple(data)
@@ -431,9 +433,12 @@ def train(priordataloader_class, criterion, encoder_generator, emsize=200, nhid=
             else:
                 cm = nullcontext()
 
-            if extra_prior_kwargs_dict.get('permute_feature_position_in_ensemble', False):
+            if permute_feature_pos:
                 data = tuple([data[0][:, torch.randperm(data[0].shape[1])], data[1]])
-
+            elif shuffle_every_epoch:
+                seed_all(extra_prior_kwargs_dict.get('rand_seed', 0) + len(master_epoch_count))
+                perm_idx = torch.randperm(data[0].shape[0])
+                data = tuple([data[0][perm_idx, ...], data[1][perm_idx, ...]])
             with cm:
                 time_to_get_batch = time.time() - before_get_batch
                 before_forward = time.time()

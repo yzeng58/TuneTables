@@ -293,6 +293,7 @@ def parse_args():
     parser.add_argument('--preprocess_type', type=str, default='none', help='Type of preprocessing to use (none, power_all, quantile_all, robust_all).')
     parser.add_argument('--optuna_objective', type=str, default='Val_Accuracy', help='Objective for optuna.')
     parser.add_argument('--verbose', action='store_true', help='Whether to print more information during training.')
+    parser.add_argument('--shuffle_every_epoch', action='store_true', help='Whether to shuffle the order of the data every epoch (can help when bptt is large).')
     args = parser.parse_args()
     return args
 

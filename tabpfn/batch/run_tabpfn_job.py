@@ -12,6 +12,7 @@ parser.add_argument('--datasets', type=str, default='/home/benfeuer/TabPFN-pt/ta
 parser.add_argument('--tasks', type=str, default='/home/benfeuer/TabPFN-pt/tabpfn/metadata/subset_tasks.txt', help='Tasks to run')
 parser.add_argument('--bptt', type=int, default=-1, help='bptt batch size')
 parser.add_argument('--splits', nargs='+', type=int, default=[0], help='Splits to run')
+parser.add_argument('--shuffle_every_epoch', action='store_true', help='Whether to shuffle the order of the data every epoch (can help when bptt is large).')
 
 args = parser.parse_args()
 
@@ -36,6 +37,8 @@ for dataset in tqdm(datasets):
             task_str = task
             if args.bptt > -1:
                 task_str += '_bptt_' + str(args.bptt)
+            if args.shuffle_every_epoch:
+                task_str += '_shuffleep_'
             task_str += '_split_' + str(split)
             if task.startswith('zs'):
                 ensemble_size = int(task.split('-')[-1])
@@ -77,7 +80,9 @@ for dataset in tqdm(datasets):
                 command = ['python', 'train_loop.py', '--data_path', dataset_path, '--split', str(split), '--wandb_group', dataset.strip() + "_" + task_str] + addl_args
             if args.bptt > -1:
                 command.append("--bptt")
-                command.append(str(args.bptt))                
+                command.append(str(args.bptt))     
+            if args.shuffle_every_epoch:
+                command.append("--shuffle_every_epoch")           
             print("Running command:", ' '.join(command))
             subprocess.call(command)
             new_outputs = Path('logs').glob('_multiclass*')
