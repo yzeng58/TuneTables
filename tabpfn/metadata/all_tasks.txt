@@ -14,3 +14,5 @@ pt100-pca
 pt1000
 pt1000-5ens-bagged-avg
 pt1000-5ens-bagged-avg-top2
+pt1000-10ens-randinit-avg-top2-reseed
+pt1000-10ens-randinit-avg-top2-unif-reseed

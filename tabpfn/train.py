@@ -130,10 +130,7 @@ def train(priordataloader_class, criterion, encoder_generator, emsize=200, nhid=
         else:
             feat_idx = np.arange(X.shape[1])
         
-        if do_permute:
-            idx = np.random.permutation(X.shape[0])
-        else:
-            idx = np.arange(X.shape[0])
+        idx = np.random.permutation(X.shape[0])
         X = X[idx, ...]
         y = y[idx, ...]
         # print("y: ", y[:20, ...])
@@ -167,7 +164,7 @@ def train(priordataloader_class, criterion, encoder_generator, emsize=200, nhid=
                        preprocess_type=extra_prior_kwargs_dict.get("preprocess_type", "none"),
                        aggregate_k_gradients=1)
         val_dl = DataLoader(
-            val_ds, batch_size=min(32, y_val.shape[0]), shuffle=False, num_workers=1,
+            val_ds, batch_size=min(128, y_val.shape[0]), shuffle=False, num_workers=1,
         )
         test_ds = TabDS(X_test, y_test, num_features=num_features, 
                         pad_features=extra_prior_kwargs_dict.get("pad_features", True),
@@ -175,7 +172,7 @@ def train(priordataloader_class, criterion, encoder_generator, emsize=200, nhid=
                         preprocess_type=extra_prior_kwargs_dict.get("preprocess_type", "none"),
                         aggregate_k_gradients=1)
         test_dl = DataLoader(
-            test_ds, batch_size=min(32, y_test.shape[0]), shuffle=False, num_workers=1,
+            test_ds, batch_size=min(128, y_test.shape[0]), shuffle=False, num_workers=1,
         )
         # Fix the prior data TabPFN will use for fitting when including real data points
         for _, (td, _, _) in enumerate(dl):
@@ -204,6 +201,7 @@ def train(priordataloader_class, criterion, encoder_generator, emsize=200, nhid=
             def tpc_data_eval(cl=1000, X=None, y=None, X_val=None, y_val=None, ens_size=1):
                     print("Num classes: ", num_classes)
                     from scripts.transformer_prediction_interface import TabPFNClassifier
+                    start_time = time.time()
                     results = dict()
                     if cl > len(X):
                         cl = len(X) - 1
@@ -212,6 +210,7 @@ def train(priordataloader_class, criterion, encoder_generator, emsize=200, nhid=
                                                 base_path="/home/benfeuer/TabPFN-pt/tabpfn",
                                                 # seed=None,
                                                 seed=extra_prior_kwargs_dict.get('rand_seed', 0),
+                                                batch_size_inference=1,
                                                 )
                     eval_model.fit(X[:cl, ...], y[:cl, ...], overwrite_warning=True)
                     predictions = eval_model.predict(X_val).astype(np.int64)
@@ -228,6 +227,8 @@ def train(priordataloader_class, criterion, encoder_generator, emsize=200, nhid=
                     # print("Targets numpy type: ", targets.dtype)
                     # print("Targets: ", targets[:20, ...])
                     warnings.filterwarnings("ignore")
+                    end_time = time.time()
+                    results['Eval_Time'] = np.round(end_time - start_time, 3).item()
                     results['Accuracy'] = np.round(accuracy_score(targets, predictions), 3).item()
                     results['Log_Loss'] = np.round(log_loss(targets, outputs, labels=np.arange(num_classes)), 3).item()
                     results['F1_Weighted'] = np.round(f1_score(targets, predictions, average='weighted'), 3).item()
@@ -249,6 +250,7 @@ def train(priordataloader_class, criterion, encoder_generator, emsize=200, nhid=
             res_dict = dict(res_dict, **{"Val_" + k : v for k, v in val_results.items()})
             test_results = tpc_data_eval(cl=bptt, X=data_for_fitting[0], y=data_for_fitting[1], X_val=X_test, y_val=y_test, ens_size=extra_prior_kwargs_dict.get('zs_eval_ensemble', 0))
             res_dict = dict(res_dict, **{"Test_" + k : v for k, v in test_results.items()})
+            print("Results: ", res_dict)
             with open(os.path.join(extra_prior_kwargs_dict.get('save_path'), 'zs_eval_ensemble.json'), 'w') as f:
                 json.dump(res_dict, f)
             if extra_prior_kwargs_dict.get('wandb_log', False):
