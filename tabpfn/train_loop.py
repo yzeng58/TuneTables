@@ -8,38 +8,9 @@ from scripts.model_builder import get_model, save_model
 from scripts.model_configs import *
 from priors.utils import uniform_int_sampler_f
 from notebook_utils import *
-from utils import get_wandb_api_key
+from utils import make_serializable, wandb_init
 
 import ConfigSpace
-
-def is_json_serializable(obj):
-    """
-    Test if an object is JSON serializable.
-
-    Args:
-    obj (any): The object to test for JSON serialization.
-
-    Returns:
-    bool: True if the object is JSON serializable, False otherwise.
-    """
-    try:
-        json.dumps(obj)
-        return True
-    except (TypeError, OverflowError):
-        return False
-
-def make_serializable(config_sample):
-    if isinstance(config_sample, torch.Tensor):
-        config_sample = "tensor"
-    if isinstance(config_sample, dict):
-        config_sample = {k: make_serializable(config_sample[k]) for k in config_sample}
-    if isinstance(config_sample, list):
-        config_sample = [make_serializable(v) for v in config_sample]
-    if callable(config_sample):
-        config_sample = str(config_sample)
-    if not is_json_serializable(config_sample):
-        config_sample = str(config_sample)
-    return config_sample
 
 def train_function(config_sample, i=0, add_name=''):
 
@@ -316,9 +287,7 @@ def train_loop():
     print("Training model ...")
 
     if config['wandb_log']:
-        wandb.login(key=get_wandb_api_key())
-        wandb.init(config=simple_config, name=model_string, group=config['wandb_group'],
-                project=config['wandb_project'], entity=config['wandb_entity'])
+        wandb_init(config, model_string)
 
     #clean out optuna params
     for k, v in config.items():

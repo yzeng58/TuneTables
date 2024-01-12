@@ -4,12 +4,12 @@ import wandb
 import optuna
 import ConfigSpace
 
-from train_loop import parse_args, reload_config, train_function, make_serializable
+from train_loop import parse_args, reload_config, train_function
 # from scripts.model_builder import get_model, save_model
 # from scripts.model_configs import *
 # from priors.utils import uniform_int_sampler_f
 # from notebook_utils import *
-from utils import get_wandb_api_key
+from utils import wandb_init
 
 def objective(trial):
     args = parse_args()
@@ -36,10 +36,7 @@ def objective(trial):
     print("Training model ...")
 
     if config['wandb_log']:
-        wandb.login(key=get_wandb_api_key())
-        simple_config = make_serializable(config)
-        wandb.init(config=simple_config, name=model_string, group=config['wandb_group'],
-                project=config['wandb_project'], entity=config['wandb_entity'])
+        wandb_init(config, model_string)
     try:
         results_dict = train_function(config, 0, model_string)
     except Exception as e:
