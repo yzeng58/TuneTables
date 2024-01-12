@@ -34,7 +34,8 @@ def objective(trial):
 
     if config['wandb_log']:
         wandb.login(key=get_wandb_api_key())
-        wandb.init(config=config, name=model_string, group=config['wandb_group'],
+        simple_config = make_serializable(config)
+        wandb.init(config=simple_config, name=model_string, group=config['wandb_group'],
                 project=config['wandb_project'], entity=config['wandb_entity'])
 
     results_dict = train_function(config, 0, model_string)

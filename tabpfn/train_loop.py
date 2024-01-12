@@ -294,7 +294,7 @@ def parse_args():
     parser.add_argument('--optuna_objective', type=str, default='Val_Accuracy', help='Objective for optuna.')
     parser.add_argument('--verbose', action='store_true', help='Whether to print more information during training.')
     parser.add_argument('--shuffle_every_epoch', action='store_true', help='Whether to shuffle the order of the data every epoch (can help when bptt is large).')
-    parser.add_argument('--max_num_classes', type=int, default=100, help='Maximum number of classes to use.')
+    parser.add_argument('--max_num_classes', type=int, default=10, help='Maximum number of classes to use.')
     args = parser.parse_args()
     return args
 
@@ -307,17 +307,17 @@ def train_loop():
     # config_sample = evaluate_hypers(config, args)
 
     print("Saving config ...")
-
+    simple_config = make_serializable(config.copy())
     os.mkdir(f'{config["base_path"]}/{model_string}')
     config['base_path'] = f'{config["base_path"]}/{model_string}'
     with open(f'{config["base_path"]}/config_diff_real_{model_string}_n_{0}.json', 'w') as f:
-        json.dump(make_serializable(config.copy()), f, indent=4)
+        json.dump(simple_config, f, indent=4)
 
     print("Training model ...")
 
     if config['wandb_log']:
         wandb.login(key=get_wandb_api_key())
-        wandb.init(config=config, name=model_string, group=config['wandb_group'],
+        wandb.init(config=simple_config, name=model_string, group=config['wandb_group'],
                 project=config['wandb_project'], entity=config['wandb_entity'])
 
     #clean out optuna params

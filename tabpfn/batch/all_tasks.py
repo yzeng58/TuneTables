@@ -75,9 +75,10 @@ pt1000_unif_dict = copy.deepcopy(pt1000_dict)
 pt1000_unif_dict['uniform_bptt'] = ''
 pt1000_unif_highep_lowlr_dict = copy.deepcopy(pt1000_unif_dict)
 pt1000_unif_highep_lowlr_dict['epochs'] = 101
-pt1000_unif_highep_lowlr_dict['lr'] = 0.01
+pt1000_unif_highep_lowlr_dict['lr'] = 0.05
 pt1000_unif_highep_lowlr_dict['save_every_k_epochs'] = 31
 pt1000_unif_highep_lowlr_dict['validation_period'] = 5
+pt1000_unif_highep_lowlr_dict['early_stopping'] = 10
 pt1000_powerall_dict = copy.deepcopy(pt1000_dict)
 pt1000_powerall_dict['preprocess_type'] = 'power_all'
 
