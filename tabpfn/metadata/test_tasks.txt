@@ -1,2 +1,6 @@
-pt100-uniform-short
-pt100-uniform-shorter
+pt10-uniform
+pt10-uniform-short
+pt10-uniform-shorter
+pt1000-uniform
+pt1000-uniform-short
+pt1000-uniform-shorter

@@ -26,6 +26,9 @@ models_diff
 # C extensions
 *.so
 
+# JSON logs
+*.json
+
 # Distribution / packaging
 .Python
 build/
