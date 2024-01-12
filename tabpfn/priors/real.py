@@ -644,5 +644,5 @@ def get_train_dataloader(ds, bptt=1000, shuffle=True, num_workers=1, drop_last=T
             )
             # raise ValueError(f'Number of batches {len(dl)} not divisible by {agg_k_grads}, please modify aggregation factor.')
         if old_bptt != bptt:
-            print(f'Batch size changed from {old_bptt} to {bptt} to be divisible by {agg_k_grads}.')
+            print(f'Batch size changed from {old_bptt} to {bptt} to be divisible by {agg_k_grads} (with last batch dropped).')
         return dl, bptt

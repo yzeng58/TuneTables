@@ -146,6 +146,11 @@ def train(priordataloader_class, criterion, encoder_generator, emsize=200, nhid=
         return X, new_y, X_val, y_val, X_test, y_test, invert_perm_map
     
     def make_dataloaders(bptt=bptt):
+
+        if bptt > X.shape[0] // 2:
+            print("Warning: bptt is larger than the number of training examples. Setting bptt to half the number of training examples")
+            bptt = (X.shape[0] // 2) - 2
+
         train_ds = TabDS(X, y, num_features=num_features, 
                          pad_features=extra_prior_kwargs_dict.get("pad_features", True), 
                          do_preprocess=extra_prior_kwargs_dict.get("do_preprocess", False),
@@ -164,7 +169,7 @@ def train(priordataloader_class, criterion, encoder_generator, emsize=200, nhid=
                        preprocess_type=extra_prior_kwargs_dict.get("preprocess_type", "none"),
                        aggregate_k_gradients=1)
         val_dl = DataLoader(
-            val_ds, batch_size=min(128, y_val.shape[0]), shuffle=False, num_workers=1,
+            val_ds, batch_size=min(128, y_val.shape[0] // 2), shuffle=False, num_workers=1,
         )
         test_ds = TabDS(X_test, y_test, num_features=num_features, 
                         pad_features=extra_prior_kwargs_dict.get("pad_features", True),
@@ -172,7 +177,7 @@ def train(priordataloader_class, criterion, encoder_generator, emsize=200, nhid=
                         preprocess_type=extra_prior_kwargs_dict.get("preprocess_type", "none"),
                         aggregate_k_gradients=1)
         test_dl = DataLoader(
-            test_ds, batch_size=min(128, y_test.shape[0]), shuffle=False, num_workers=1,
+            test_ds, batch_size=min(128, y_test.shape[0] // 2), shuffle=False, num_workers=1,
         )
         # Fix the prior data TabPFN will use for fitting when including real data points
         for _, (td, _, _) in enumerate(dl):
@@ -446,7 +451,8 @@ def train(priordataloader_class, criterion, encoder_generator, emsize=200, nhid=
         step_time = 0
         before_get_batch = time.time()
         batches_seen = 0
-        assert len(dl) % aggregate_k_gradients == 0, 'Please set the number of steps per epoch s.t. `aggregate_k_gradients` divides it.'
+        assert len(dl) > aggregate_k_gradients, 'Number of batches per epoch must be greater than `aggregate_k_gradients`'
+        assert len(dl) % aggregate_k_gradients == 0, 'Please set the number of batches per epoch s.t. `aggregate_k_gradients` divides it.'
         # if do_prompt_tuning:
         #     wbu = e_model.prefix_embedding.weight.detach().clone()
         #     print("Prompt weights before: ", wbu[:10, ...])

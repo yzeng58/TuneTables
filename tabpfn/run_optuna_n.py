@@ -1,8 +1,5 @@
-import time
 from datetime import datetime
-import argparse
 import json
-import os
 import wandb
 import optuna
 import ConfigSpace
@@ -20,13 +17,19 @@ def objective(trial):
     for k, v in config.items():
         if isinstance(v, ConfigSpace.hyperparameters.CategoricalHyperparameter):
             config[k] = trial.suggest_categorical(k, v.choices)
-    # print("in objective, config")
-    # print(make_serializable(config))
 
     #manually set optuna params
-    config['bptt'] = trial.suggest_int('bptt', 128, 8192, log=True)
+    for k, v in config.items():
+        if isinstance(v, float) or isinstance(v, int) or isinstance(v, str):
+            trial.set_user_attr(k, v)
+    # config['bptt'] = trial.suggest_int('bptt', 128, 8192, log=True)
     config['lr'] = trial.suggest_float('lr', .0001, .3)
-    config['aggregate_k_gradients'] = trial.suggest_int('aggregate_k_gradients', 1, 8)
+    config['aggregate_k_gradients'] = trial.suggest_int('aggregate_k_gradients', 1, 4)
+    config['feature_subset_method'] = trial.suggest_categorical('feature_subset_method', ['pca', 'mutual_information', 'random'])
+    config['preprocess_type'] = trial.suggest_categorical('preprocess_type', ['none', 'power_all', 'quantile_all', 'robust_all'])
+    config['early_stopping'] = trial.suggest_int('early_stopping', 2, 6)
+    config['tuned_prompt_label_balance'] = trial.suggest_categorical('label_balance', ['proportional', 'equal'])
+
     while config['bptt'] % config['aggregate_k_gradients'] != 0:
         config['aggregate_k_gradients'] -= 1
  
@@ -37,8 +40,13 @@ def objective(trial):
         simple_config = make_serializable(config)
         wandb.init(config=simple_config, name=model_string, group=config['wandb_group'],
                 project=config['wandb_project'], entity=config['wandb_entity'])
-
-    results_dict = train_function(config, 0, model_string)
+    try:
+        results_dict = train_function(config, 0, model_string)
+    except Exception as e:
+        print("Exception during optuna trial: ", e)
+        if config['wandb_log']:
+                wandb.finish()
+        return 0.0
 
     if config['wandb_log']:
         wandb.finish()
@@ -47,5 +55,16 @@ def objective(trial):
 
 
 if __name__ == '__main__':
-    study = optuna.create_study(direction='maximize')
-    study.optimize(objective, n_trials=100)
+    sampler = optuna.samplers.TPESampler(seed=13579)  # Make the sampler behave in a deterministic way.
+    study = optuna.create_study(direction='maximize', sampler=sampler)
+    study.optimize(objective, n_trials=30)
+    # Print best trial
+    trial = study.best_trial
+    current_time = '_' + datetime.now().strftime("%m_%d_%Y_%H_%M_%S")    
+    # Save study results
+
+    res_dict = study.best_params
+    res_dict['best_value'] = trial.value
+
+    with open(f'logs/optuna_results_{current_time}.json', 'w') as f:
+        json.dump(res_dict, f)

@@ -13,6 +13,7 @@ parser.add_argument('--tasks', type=str, default='/home/benfeuer/TabPFN-pt/tabpf
 parser.add_argument('--bptt', type=int, default=-1, help='bptt batch size')
 parser.add_argument('--splits', nargs='+', type=int, default=[0], help='Splits to run')
 parser.add_argument('--shuffle_every_epoch', action='store_true', help='Whether to shuffle the order of the data every epoch (can help when bptt is large).')
+parser.add_argument('--run_optuna', action='store_true', help='Whether to run optuna hyperparameter search.')
 
 args = parser.parse_args()
 
@@ -23,6 +24,11 @@ with open(args.tasks) as f:
     tasks = f.readlines()
 
 all_tasks = get_all_tasks()
+
+if args.run_optuna:
+    base_cmd = 'run_optuna_n.py'
+else:
+    base_cmd = 'train_loop.py'
 
 for dataset in tqdm(datasets):
     print("Starting dataset: ", dataset.strip())
@@ -35,6 +41,8 @@ for dataset in tqdm(datasets):
             # Get task name
             task = task.strip()
             task_str = task
+            if args.run_optuna:
+                task_str += '_optuna'
             if args.bptt > -1:
                 task_str += '_bptt_' + str(args.bptt)
             if args.shuffle_every_epoch:
@@ -42,7 +50,7 @@ for dataset in tqdm(datasets):
             task_str += '_split_' + str(split)
             if task.startswith('zs'):
                 ensemble_size = int(task.split('-')[-1])
-                command = ['python', 'train_loop.py', 
+                command = ['python', base_cmd, 
                            '--data_path', dataset_path,
                            '--feature_subset_method', 'pca',
                            '--split', str(split), 
@@ -77,7 +85,7 @@ for dataset in tqdm(datasets):
                     val = str(v)
                     if val != '':
                         addl_args.append(val)
-                command = ['python', 'train_loop.py', '--data_path', dataset_path, '--split', str(split), '--wandb_group', dataset.strip() + "_" + task_str] + addl_args
+                command = ['python', base_cmd, '--data_path', dataset_path, '--split', str(split), '--wandb_group', dataset.strip() + "_" + task_str] + addl_args
             if args.bptt > -1:
                 command.append("--bptt")
                 command.append(str(args.bptt))     
