@@ -40,11 +40,10 @@ def eval_method(splits, device, method, cat_idx, metric_used, max_time=300):
     # def xgb_metric(x, y, test_x, test_y, cat_features, metric_used, max_time=300, no_tune=None, gpu_id=None)
     # def catboost_metric(x, y, test_x, test_y, cat_features, metric_used, max_time=300, no_tune=None, gpu_id=None)
     # return metric, pred, best
-
     eval_sets_x = torch.cat([splits[1][0], splits[2][0]])
     eval_sets_y = torch.cat([splits[1][1], splits[2][1]])
 
-    if method in ['random_forest', 'lightgbm', 'autogluon', 'autosklearn2']:
+    if method in ['random_forest', 'lightgbm', 'autogluon', 'autosklearn2', 'cocktail', 'knn']:
         _, outputs, best_configs = clf(
             splits[0][0],
             splits[0][1],
@@ -75,13 +74,14 @@ def run_eval(dataset_name, base_path):
     # This is the metric used for fitting the models
     metric_used = tabular_metrics.auc_metric
     # methods = ['random_forest', 'lightgbm', 'cocktail', 'logistic', 'gp', 'knn', 'catboost', 'xgb', 'autosklearn2', 'autogluon']
-    methods = ['autosklearn2', 'random_forest', 'xgb', 'catboost', 'lightgbm']
+    methods = ['catboost', 'autosklearn2', 'random_forest', 'xgb', 'knn']
+    # methods = ['knn']
     device = '0'
 
     config = dict()
     config['dataset'] = dataset_name
     config['base_path'] = base_path
-    config['max_time'] = 60
+    config['max_time'] = 60*5
     config['metric_used'] = str(metric_used)
     config['device'] = device
     config['methods'] = ", ".join(str(x) for x in methods)
@@ -149,19 +149,32 @@ def run_eval(dataset_name, base_path):
             wandb.init(config=config, name=model_string, group='baselines',
                 project='tabpfn-pt', entity='nyu-dice-lab')
             num_classes = len(np.unique(y_train))
+
+            # if num_classes == 2 and method == 'lightgbm':
+            #     #convert to 1-class problem
+            #     print("y_train: ", y_train[:10])
+            #     print("shape: ", y_train.shape)
+            #     y_train = y_train == 1
+            #     print("y_train: ", y_train[:10])
+            #     print("shape: ", y_train.shape)
+            #     raise NotImplementedError("LightGBM binary classification not implemented")
             results = dict()
-            warnings.filterwarnings("ignore")
-            try:
-                start_time = time.time()
-                outputs, best_configs = eval_method(splits, device, method, [], metric_used, max_time=60)
-                end_time = time.time()
-            except Exception as e:
-                print("Error running method: ", e)
-                wandb.finish()
-                continue
-            warnings.filterwarnings("default")
+            # try:
+            start_time = time.time()
+            outputs, best_configs = eval_method(splits, device, method, [], metric_used, max_time=config['max_time'])
+            end_time = time.time()
             run_time = end_time - start_time
             results[f'Run_Time'] = np.round(run_time, 3).item()
+            # except Exception as e:
+            #     print("Error running method: ", e)
+            #     wandb.finish()
+            #     continue
+
+            outputs = outputs[:, 0:num_classes]
+            #numpy softmax
+            # outputs = np.exp(outputs) / np.sum(np.exp(outputs), axis=1, keepdims=True)
+            # # assert outputs sum to 1
+            # assert np.allclose(np.sum(outputs, axis=1), np.ones(outputs.shape[0])), "Outputs do not sum to 1"
 
             predictions = np.argmax(outputs, axis=1)
 
@@ -174,22 +187,27 @@ def run_eval(dataset_name, base_path):
             results[f'Val_Accuracy'] = np.round(accuracy_score(y_val, val_predictions), 3).item()
             results[f'Val_Log_Loss'] = np.round(log_loss(y_val, val_outputs, labels=np.arange(num_classes)), 3).item()
             results[f'Val_F1_Weighted'] = np.round(f1_score(y_val, val_predictions, average='weighted'), 3).item()
-            results[f'F1_Macro'] = np.round(f1_score(y_val, val_predictions, average='macro'), 3).item()
+            results[f'Val_F1_Macro'] = np.round(f1_score(y_val, val_predictions, average='macro'), 3).item()
             try:
-                results[f'Val_ROC_AUC'] = np.round(roc_auc_score(y_val, val_predictions, labels=np.arange(num_classes), multi_class='ovr'), 3).item()
+                if num_classes == 2:
+                    results['Val_ROC_AUC'] = np.round(roc_auc_score(y_val, val_outputs[:, 1], labels=np.arange(num_classes)), 3).item()
+                else:
+                    results['Val_ROC_AUC'] = np.round(roc_auc_score(y_val, val_outputs, labels=np.arange(num_classes), multi_class='ovr'), 3).item()
             except Exception as e:
                 print("Error calculating ROC AUC: ", e)
-                results[f'Val_ROC_AUC'] = 0.0
-
+                results['Val_ROC_AUC'] = 0.0
             results[f'Test_Accuracy'] = np.round(accuracy_score(y_test, test_predictions), 3).item()
             results[f'Test_Log_Loss'] = np.round(log_loss(y_test, test_outputs, labels=np.arange(num_classes)), 3).item()
             results[f'Test_F1_Weighted'] = np.round(f1_score(y_test, test_predictions, average='weighted'), 3).item()
-            results[f'F1_Macro'] = np.round(f1_score(y_test, test_predictions, average='macro'), 3).item()
+            results[f'Test_F1_Macro'] = np.round(f1_score(y_test, test_predictions, average='macro'), 3).item()
             try:
-                results[f'Test_ROC_AUC'] = np.round(roc_auc_score(y_test, test_predictions, labels=np.arange(num_classes), multi_class='ovr'), 3).item()
+                if num_classes == 2:
+                    results['Test_ROC_AUC'] = np.round(roc_auc_score(y_test, test_outputs[:, 1], labels=np.arange(num_classes)), 3).item()
+                else:
+                    results['Test_ROC_AUC'] = np.round(roc_auc_score(y_test, test_outputs, labels=np.arange(num_classes), multi_class='ovr'), 3).item()
             except Exception as e:
                 print("Error calculating ROC AUC: ", e)
-                results[f'Test_ROC_AUC'] = 0.0
+                results['Test_ROC_AUC'] = 0.0
             if isinstance(best_configs, pd.DataFrame) or isinstance(best_configs, pd.Series):
                 save_path = os.path.join(base_path, model_string + ".csv")
                 best_configs.to_csv(save_path)
@@ -199,7 +217,7 @@ def run_eval(dataset_name, base_path):
                 #drop key 'best'
                 best_configs.pop('best')
                 results = dict(results, **best_configs)
-                wandb.log(results)
+            wandb.log(results)
             wandb.finish()
 
 if __name__ == '__main__':

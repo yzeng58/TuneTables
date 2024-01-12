@@ -1048,7 +1048,6 @@ def lightgbm_metric(x, y, test_x, test_y, cat_features, metric_used, max_time=30
     def clf_(**params):
         return LGBMClassifier(categorical_feature=cat_features, use_missing=True
                               , objective=get_scoring_string(metric_used, usage='lightgbm', multiclass=len(np.unique(y)) > 2), **params)
-
     return eval_complete_f(x, y, test_x, test_y, 'lightgbm', clf_, metric_used, max_time, no_tune)
 
 param_grid_hyperopt['logistic'] = {
