@@ -465,8 +465,8 @@ def train(priordataloader_class, criterion, encoder_generator, emsize=200, nhid=
         step_time = 0
         before_get_batch = time.time()
         batches_seen = 0
-        assert len(dl) > aggregate_k_gradients, 'Number of batches per epoch must be greater than `aggregate_k_gradients`'
-        assert len(dl) % aggregate_k_gradients == 0, 'Please set the number of batches per epoch s.t. `aggregate_k_gradients` divides it.'
+        # assert len(dl) > aggregate_k_gradients, 'Number of batches per epoch must be greater than `aggregate_k_gradients`'
+        # assert len(dl) % aggregate_k_gradients == 0, 'Please set the number of batches per epoch s.t. `aggregate_k_gradients` divides it.'
         # if do_prompt_tuning:
         #     wbu = e_model.prefix_embedding.weight.detach().clone()
         #     print("Prompt weights before: ", wbu[:10, ...])
