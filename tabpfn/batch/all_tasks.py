@@ -14,6 +14,7 @@ base_dict = {
     'wandb_log' : '',
     'do_preprocess' : '',
     'verbose' : '',
+    'max_time' : 36000,
 }
 
 pt10_dict = {
@@ -29,6 +30,7 @@ ens_bagged_avg_dict = {
         'ensemble_lr' : 1.0,
         'average_ensemble' : '',
         'ensemble_size' : 5,
+        'max_time' : 36000,
 }
 
 #Prompt tuning with 10 prompts
@@ -153,6 +155,7 @@ ens_randinit_avg_top2_reseed_dict['reseed_data'] = ''
 ens_randinit_avg_top2_reseed_dict['ensemble_size'] = 10
 ens_randinit_avg_top2_unif_reseed_dict = copy.deepcopy(ens_randinit_avg_top2_reseed_dict)
 ens_randinit_avg_top2_unif_reseed_dict['uniform_bptt'] = ''
+ens_randinit_avg_top2_unif_reseed_dict['topk_key'] = 'Val_nc_Accuracy'
 
 all_tasks = {
     'ft' : base_dict,

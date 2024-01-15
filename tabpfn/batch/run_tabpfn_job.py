@@ -14,6 +14,7 @@ parser.add_argument('--bptt', type=int, default=-1, help='bptt batch size')
 parser.add_argument('--splits', nargs='+', type=int, default=[0], help='Splits to run')
 parser.add_argument('--shuffle_every_epoch', action='store_true', help='Whether to shuffle the order of the data every epoch (can help when bptt is large).')
 parser.add_argument('--run_optuna', action='store_true', help='Whether to run optuna hyperparameter search.')
+parser.add_argument('--real_data_qty', type=int, default=0, help='Number of real data points to use for fitting.')
 
 args = parser.parse_args()
 
@@ -47,6 +48,7 @@ for dataset in tqdm(datasets):
                 task_str += '_bptt_' + str(args.bptt)
             if args.shuffle_every_epoch:
                 task_str += '_shuffleep_'
+            task_str += '_rdq_' + str(args.real_data_qty)
             task_str += '_split_' + str(split)
             if task.startswith('zs'):
                 ensemble_size = int(task.split('-')[-1])
@@ -54,7 +56,8 @@ for dataset in tqdm(datasets):
                            '--data_path', dataset_path,
                            '--feature_subset_method', 'pca',
                            '--split', str(split), 
-                           '--wandb_group', dataset.strip() + "_" + task_str, 
+                           '--wandb_group', dataset.strip() + "_" + task_str,
+                           '--real_data_qty', str(args.real_data_qty),
                            '--zs-eval-ensemble', str(ensemble_size)]
             else:
                 # Get task args
@@ -85,7 +88,7 @@ for dataset in tqdm(datasets):
                     val = str(v)
                     if val != '':
                         addl_args.append(val)
-                command = ['python', base_cmd, '--data_path', dataset_path, '--split', str(split), '--wandb_group', dataset.strip() + "_" + task_str] + addl_args
+                command = ['python', base_cmd, '--data_path', dataset_path, '--split', str(split), '--real_data_qty', str(args.real_data_qty), '--wandb_group', dataset.strip() + "_" + task_str] + addl_args
             if args.bptt > -1:
                 command.append("--bptt")
                 command.append(str(args.bptt))     
