@@ -147,10 +147,6 @@ def train(priordataloader_class, criterion, encoder_generator, emsize=200, nhid=
     
     def make_dataloaders(bptt=bptt):
 
-        if bptt > X.shape[0] // 2:
-            print("Warning: bptt is larger than the number of training examples. Setting bptt to half the number of training examples")
-            bptt = (X.shape[0] // 2) - 2
-
         train_ds = TabDS(X, y, num_features=num_features, 
                          pad_features=extra_prior_kwargs_dict.get("pad_features", True), 
                          do_preprocess=extra_prior_kwargs_dict.get("do_preprocess", False),

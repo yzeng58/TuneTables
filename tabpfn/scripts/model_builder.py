@@ -221,7 +221,7 @@ def get_model(config, device, should_train=True, verbose=False, state_dict=None,
     n_features = config['max_features']
 
     if 'aggregate_k_gradients' not in config or config['aggregate_k_gradients'] is None:
-        config['aggregate_k_gradients'] = math.ceil(config['batch_size'] * ((config['nlayers'] * config['emsize'] * config['bptt'] * config['bptt']) / 10824640000))
+        config['aggregate_k_gradients'] = 1
 
     config['num_steps'] = math.ceil(config['num_steps'] * config['aggregate_k_gradients'])
     config['batch_size'] = math.ceil(config['batch_size'] / config['aggregate_k_gradients'])
@@ -342,8 +342,8 @@ def get_model(config, device, should_train=True, verbose=False, state_dict=None,
             config['num_classes'] = len(set(y_train))
             config['num_steps'] = len(X_train) // config['bptt']
             if config['bptt'] > n_samples:
-                print(f"WARNING: bptt {config['bptt']} is larger than the number of samples in the dataset, {n_samples}. Setting bptt below {n_samples}")
-                config['bptt'] = n_samples - 1
+                print(f"WARNING: bptt {config['bptt']} is larger than the number of samples in the training set, {n_samples}. Setting bptt=128.")
+                config['bptt'] = 128
             dataloader = [[X_train, y_train], [X_val, y_val], [X_test, y_test]]
             dataset_built = True
             break
@@ -393,7 +393,7 @@ def get_model(config, device, should_train=True, verbose=False, state_dict=None,
     if config['boosting'] or config.get('uniform_bptt', False):
         sep_samp = get_fixed_batch_sampler(config.get('bptt', 1024) + config.get('bptt_extra_samples', 128))
     else:
-        sep_samp = get_uniform_single_eval_pos_sampler(config.get('max_eval_pos', config['bptt']), min_len=config.get('min_eval_pos', 0))
+        sep_samp = get_uniform_single_eval_pos_sampler(config.get('max_eval_pos', config['bptt'] - 128), min_len=config.get('min_eval_pos', 0))
         
     model, results_dict = train(dataloader
                   , loss

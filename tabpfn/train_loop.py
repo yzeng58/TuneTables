@@ -186,8 +186,8 @@ def reload_config(config_type='causal', task_type='multiclass', longer=0, args=N
     config['uniform_bptt'] = args.uniform_bptt
     if config['uniform_bptt']:
         config['bptt_extra_samples'] = 128
-        if config['bptt'] <= 128:
-            print("Warning: bptt should be >= 128 when using uniform bptt, as 128 samples per batch are reserved for evaluation. Setting bptt to 128.")
+        if config['bptt'] < 128:
+            print("Warning: bptt should be >= 128 when using uniform bptt, as currently 128 samples per batch are reserved for evaluation. Setting bptt to 128.")
             config['bptt'] = 128
     else:
         config['bptt_extra_samples'] = None

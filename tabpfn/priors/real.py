@@ -17,6 +17,7 @@ from sklearn.preprocessing import OneHotEncoder, QuantileTransformer, RobustScal
 from sklearn.decomposition import PCA
 
 import torch
+from torch.utils.data import DataLoader
 
 from tabpfn.utils import normalize_data, to_ranking_low_mem, remove_outliers, NOP, normalize_by_used_features_f
 
@@ -629,8 +630,6 @@ class TabDS(Dataset):
     def __getitem__(self, idx):
         #(X,y) data, y target, single_eval_pos
         return tuple([self.X[idx], self.y_float[idx]]), self.y[idx], torch.tensor([])
-
-from torch.utils.data import DataLoader
 
 def get_train_dataloader(ds, bptt=1000, shuffle=True, num_workers=1, drop_last=True, agg_k_grads=1):
         old_bptt = bptt
