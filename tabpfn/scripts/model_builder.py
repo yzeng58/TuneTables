@@ -384,11 +384,13 @@ def get_model(config, device, should_train=True, verbose=False, state_dict=None,
                         , 'uniform_bptt': config.get('uniform_bptt', False)
                         , 'min_batches_per_epoch': config.get('min_batches_per_epoch', 10)
                         , 'keep_topk_ensemble': config.get('keep_topk_ensemble', 0)
+                        , 'topk_key': config.get('topk_key', 'Val_Accuracy')
                         , 'do_preprocess' : config.get('do_preprocess', False)
                         , 'preprocess_type' : config.get('preprocess_type', 'none')
                         , 'wandb_log': config.get('wandb_log', False)
                         , 'shuffle_every_epoch': config.get('shuffle_every_epoch', False)
                         , 'real_data_qty': config.get('real_data_qty', False)
+                        , 'max_time': config.get('max_time', 0)
                         , **extra_kwargs
     }
 

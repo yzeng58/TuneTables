@@ -150,6 +150,7 @@ def reload_config(config_type='causal', task_type='multiclass', longer=0, args=N
     config['validation_period'] = args.validation_period
     config['verbose'] = args.verbose
     config['save_every_k_epochs'] = args.save_every_k_epochs
+    config['max_time'] = args.max_time
 
     # concatenation
     config['concat_method'] = args.concat_method
@@ -263,6 +264,8 @@ def parse_args():
     parser.add_argument('--zs-eval-ensemble', type=int, default=0, help='Whether to do ensembled zero-shot evaluation.')
     parser.add_argument('--min_batches_per_epoch', type=int, default=1, help='Minimum number of batches per epoch.')
     parser.add_argument('--keep_topk_ensemble', type=int, default=0, help='Whether to keep only the top-k ensemble members.')
+    parser.add_argument('--topk_key', type=str, default='Val_Accuracy', help='Key to use for top-k ensemble selection.')
+    parser.add_argument('--max_time', type=int, default=0, help='Maximum time to run for (in seconds).')
     parser.add_argument('--preprocess_type', type=str, default='none', help='Type of preprocessing to use (none, power_all, quantile_all, robust_all).')
     parser.add_argument('--optuna_objective', type=str, default='Val_Accuracy', help='Objective for optuna.')
     parser.add_argument('--verbose', action='store_true', help='Whether to print more information during training.')

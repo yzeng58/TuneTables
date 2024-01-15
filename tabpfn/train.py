@@ -59,6 +59,8 @@ def train(priordataloader_class, criterion, encoder_generator, emsize=200, nhid=
     device = gpu_device if torch.cuda.is_available() else 'cpu:0'
     print(f'Using {device} device')
     using_dist, rank, device = init_dist(device)
+    start_time = time.time()
+    max_time = extra_prior_kwargs_dict.get('max_time', 0)
 
     if extra_prior_kwargs_dict.get('pad_features', None):
         num_features = 100
@@ -439,6 +441,9 @@ def train(priordataloader_class, criterion, encoder_generator, emsize=200, nhid=
         return results, outputs, targets
     
     def train_epoch(e_model, e_optimizer, boost_this_epoch=False):
+        if max_time > 0 and time.time() - start_time > max_time:
+            print("Max time reached. Exiting")
+            exit(0)
         e_model.train()  # Turn on the train mode
         # Confirm that the correct params are frozen and unfrozen
         if do_prompt_tuning:
@@ -938,10 +943,11 @@ def train(priordataloader_class, criterion, encoder_generator, emsize=200, nhid=
             current_preds = dict()
             boosting_accs = dict()
             topk_ens_val = extra_prior_kwargs_dict.get('keep_topk_ensemble', 0)
+            topk_key = extra_prior_kwargs_dict.get('topk_key', 'Val_Accuracy')
             if topk_ens_val > 0:
-                print("keeping top {} of {} models".format(topk_ens_val, i+1))
+                print("keeping top {} of {} models, per provided key {}".format(topk_ens_val, i+1, topk_key))
                 #sort by val score
-                sorted_res = sorted(res_dict_ensemble.items(), key=lambda x: x[1]['Val_Accuracy'], reverse=True)
+                sorted_res = sorted(res_dict_ensemble.items(), key=lambda x: x[1][topk_key], reverse=True)
                 models_to_include = [x[0] for x in sorted_res][:topk_ens_val]
             else:
                 models_to_include = list(range(i + 1))
