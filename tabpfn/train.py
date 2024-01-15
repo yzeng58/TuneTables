@@ -80,7 +80,11 @@ def train(priordataloader_class, criterion, encoder_generator, emsize=200, nhid=
         prefix_size = 0
 
     single_eval_pos_gen = single_eval_pos_gen if callable(single_eval_pos_gen) else lambda: single_eval_pos_gen
-    real_data_qty = extra_prior_kwargs_dict.get('real_data_qty', bptt)
+    real_data_qty = extra_prior_kwargs_dict.get('real_data_qty', 0)
+    if real_data_qty <= 0:
+        real_data_qty = bptt
+
+    print("Real data qty (for fitting): ", real_data_qty)
 
     def eval_pos_seq_len_sampler():
         single_eval_pos = single_eval_pos_gen()
@@ -789,6 +793,7 @@ def train(priordataloader_class, criterion, encoder_generator, emsize=200, nhid=
             elif hasattr(dl, 'validate') and epoch % validation_period == 0:
                 with torch.no_grad():
                     val_score = dl.validate(model)
+
             if patience > extra_prior_kwargs_dict.get('early_stopping_patience', 2):
                 print("Early stopping after {} epochs".format(epoch))
                 break
@@ -803,6 +808,7 @@ def train(priordataloader_class, criterion, encoder_generator, emsize=200, nhid=
                     f' | forward time {forward_time:5.2f}' 
                     f' | nan share {nan_share:5.2f} | ignore share (for classification tasks) {ignore_share:5.4f}'
                     + (f' | val score {val_score}' if val_score is not None else '')
+                    + (f' | val score nc {val_score_nc}' if val_score_nc is not None else '')
                 )
                 print('-' * 89)
                 if epoch_callback is not None and rank == 0:
