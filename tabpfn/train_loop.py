@@ -129,8 +129,7 @@ def reload_config(config_type='causal', task_type='multiclass', longer=0, args=N
     config['rand_seed'] = args.seed
     config['emsize'] = 512
     config['nhead'] = config['emsize'] // 128
-    config['bptt'] = args.bptt
-    config['max_eval_pos'] = config['bptt'] - 128
+    config['max_eval_pos'] = config['bptt'] = args.bptt
     config['aggregate_k_gradients'] = args.aggregate_k_gradients
     config['epochs'] = args.epochs
     config['warmup_epochs'] = args.epochs // 10

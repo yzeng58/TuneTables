@@ -397,7 +397,7 @@ def get_model(config, device, should_train=True, verbose=False, state_dict=None,
     if config['boosting'] or config.get('uniform_bptt', False):
         sep_samp = get_fixed_batch_sampler(config.get('bptt', 1024) + config.get('bptt_extra_samples', 128))
     else:
-        sep_samp = get_uniform_single_eval_pos_sampler(config.get('max_eval_pos', config['bptt'] - 128), min_len=config.get('min_eval_pos', 0))
+        sep_samp = get_uniform_single_eval_pos_sampler(config.get('max_eval_pos', config['bptt']), min_len=config.get('min_eval_pos', 0))
         
     model, results_dict = train(dataloader
                   , loss
