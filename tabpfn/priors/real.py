@@ -644,4 +644,10 @@ def get_train_dataloader(ds, bptt=1000, shuffle=True, num_workers=1, drop_last=T
             # raise ValueError(f'Number of batches {len(dl)} not divisible by {agg_k_grads}, please modify aggregation factor.')
         if old_bptt != bptt:
             print(f'Batch size changed from {old_bptt} to {bptt} to be divisible by {agg_k_grads} (with last batch dropped).')
+        if len(dl) == 0:
+            bptt = 1
+            dl = DataLoader(
+                ds, batch_size=bptt, shuffle=shuffle, num_workers=num_workers, drop_last=drop_last,
+            )
+            print("Dataloader length was 0, setting batch size to 1.")
         return dl, bptt

@@ -771,7 +771,8 @@ def train(priordataloader_class, criterion, encoder_generator, emsize=200, nhid=
                     return_outputs.append(test_outputs)
                     return_targets.append(test_targets)
                     res_dict = dict(res_dict, **{"Test_nc_" + k : v for k, v in test_score_nc.items()})
-                if val_score and val_score > best_val_score:
+                if not extra_prior_kwargs_dict.get('uniform_bptt', False) \
+                    and val_score and val_score > best_val_score:
                     #print("Train data:", data_for_fitting)
                     patience = 0
                     best_val_score = val_score
@@ -779,9 +780,10 @@ def train(priordataloader_class, criterion, encoder_generator, emsize=200, nhid=
                     if do_prompt_tuning:
                         best_val_embed = t_model.prefix_embedding.weight.detach().cpu()
                 elif extra_prior_kwargs_dict.get('uniform_bptt', False) and bptt <= 128 \
-                    and do_prompt_tuning and val_score_nc and val_score_nc > best_val_score_nc:
+                    and do_prompt_tuning and \
+                    res_dict.get("Val_nc_Accuracy", 0) > best_val_score_nc:
                     patience = 0
-                    best_val_score_nc = val_score_nc
+                    best_val_score_nc = res_dict.get("Val_nc_Accuracy", 0)
                     is_best = True
                     best_val_embed = t_model.prefix_embedding.weight.detach().cpu()
                 else:
@@ -804,7 +806,7 @@ def train(priordataloader_class, criterion, encoder_generator, emsize=200, nhid=
                     f' | forward time {forward_time:5.2f}' 
                     f' | nan share {nan_share:5.2f} | ignore share (for classification tasks) {ignore_share:5.4f}'
                     + (f' | val score {val_score}' if val_score is not None else '')
-                    + (f' | val score nc {val_score_nc}' if val_score_nc is not None else '')
+                    + (f' | val score nc {res_dict.get("Val_nc_Accuracy", 0)}' if val_score_nc is not None else '')
                 )
                 print('-' * 89)
                 if epoch_callback is not None and rank == 0:
