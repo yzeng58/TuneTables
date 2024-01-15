@@ -134,6 +134,8 @@ def reload_config(config_type='causal', task_type='multiclass', longer=0, args=N
     config['aggregate_k_gradients'] = args.aggregate_k_gradients
     config['epochs'] = args.epochs
     config['warmup_epochs'] = args.epochs // 10
+    if args.real_data_qty > 0:
+        config['real_data_qty'] = args.real_data_qty
 
     # data preprocessing
     config['do_preprocess'] = args.do_preprocess
@@ -266,6 +268,7 @@ def parse_args():
     parser.add_argument('--verbose', action='store_true', help='Whether to print more information during training.')
     parser.add_argument('--shuffle_every_epoch', action='store_true', help='Whether to shuffle the order of the data every epoch (can help when bptt is large).')
     parser.add_argument('--max_num_classes', type=int, default=10, help='Maximum number of classes to use.')
+    parser.add_argument('--real_data_qty', type=int, default=0, help='Number of real data samples to use for fitting.')
     args = parser.parse_args()
     return args
 

@@ -381,12 +381,14 @@ def get_model(config, device, should_train=True, verbose=False, state_dict=None,
                         , 'pad_features': config.get('pad_features', False)
                         , 'early_stopping_patience': config.get('early_stopping_patience', 2)
                         , 'num_classes' : config.get('num_classes', 2)
+                        , 'uniform_bptt': config.get('uniform_bptt', False)
                         , 'min_batches_per_epoch': config.get('min_batches_per_epoch', 10)
                         , 'keep_topk_ensemble': config.get('keep_topk_ensemble', 0)
                         , 'do_preprocess' : config.get('do_preprocess', False)
                         , 'preprocess_type' : config.get('preprocess_type', 'none')
                         , 'wandb_log': config.get('wandb_log', False)
                         , 'shuffle_every_epoch': config.get('shuffle_every_epoch', False)
+                        , 'real_data_qty': config.get('real_data_qty', False)
                         , **extra_kwargs
     }
 

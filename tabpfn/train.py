@@ -78,6 +78,7 @@ def train(priordataloader_class, criterion, encoder_generator, emsize=200, nhid=
         prefix_size = 0
 
     single_eval_pos_gen = single_eval_pos_gen if callable(single_eval_pos_gen) else lambda: single_eval_pos_gen
+    real_data_qty = extra_prior_kwargs_dict.get('real_data_qty', bptt)
 
     def eval_pos_seq_len_sampler():
         single_eval_pos = single_eval_pos_gen()
@@ -180,9 +181,17 @@ def train(priordataloader_class, criterion, encoder_generator, emsize=200, nhid=
             test_ds, batch_size=min(128, y_test.shape[0] // 2), shuffle=False, num_workers=1,
         )
         # Fix the prior data TabPFN will use for fitting when including real data points
-        for _, (td, _, _) in enumerate(dl):
-            data_for_fitting = td
-            break
+        X_data_for_fitting = []
+        y_data_for_fitting = []
+        #td is a list of tensors
+        for idx, (td, _, _) in enumerate(dl):
+            X_data_for_fitting.append(td[0])
+            y_data_for_fitting.append(td[1])
+            if idx == 10:
+                break
+        X_data_concat = torch.cat(X_data_for_fitting, dim=0)
+        y_data_concat = torch.cat(y_data_for_fitting, dim=0)
+        data_for_fitting = [X_data_concat, y_data_concat]
         return dl, val_dl, test_dl, bptt, data_for_fitting
 
     if real_prior:
@@ -251,9 +260,9 @@ def train(priordataloader_class, criterion, encoder_generator, emsize=200, nhid=
                     warnings.filterwarnings("default")
                     return results
             res_dict = dict()
-            val_results = tpc_data_eval(cl=bptt, X=data_for_fitting[0], y=data_for_fitting[1], X_val=X_val, y_val=y_val, ens_size=extra_prior_kwargs_dict.get('zs_eval_ensemble', 0))
+            val_results = tpc_data_eval(cl=real_data_qty, X=data_for_fitting[0], y=data_for_fitting[1], X_val=X_val, y_val=y_val, ens_size=extra_prior_kwargs_dict.get('zs_eval_ensemble', 0))
             res_dict = dict(res_dict, **{"Val_" + k : v for k, v in val_results.items()})
-            test_results = tpc_data_eval(cl=bptt, X=data_for_fitting[0], y=data_for_fitting[1], X_val=X_test, y_val=y_test, ens_size=extra_prior_kwargs_dict.get('zs_eval_ensemble', 0))
+            test_results = tpc_data_eval(cl=real_data_qty, X=data_for_fitting[0], y=data_for_fitting[1], X_val=X_test, y_val=y_test, ens_size=extra_prior_kwargs_dict.get('zs_eval_ensemble', 0))
             res_dict = dict(res_dict, **{"Test_" + k : v for k, v in test_results.items()})
             print("Results: ", res_dict)
             with open(os.path.join(extra_prior_kwargs_dict.get('save_path'), 'zs_eval_ensemble.json'), 'w') as f:
@@ -664,22 +673,34 @@ def train(priordataloader_class, criterion, encoder_generator, emsize=200, nhid=
             # print("Prefix weights list length: ", len(prefix_weights_l))
         return prefix_weights_l
 
-    def update_ensemble_acc(boosting_acc, boosting_acc_nc):
+    def update_ensemble_acc(ens_acc, ens_acc_nc, ens_acc_test, ens_acc_test_nc):
         ece = np.round(um.ece(labels_np, probs_np, num_bins=30), 3)
         tace = np.round(um.tace(labels_np, probs_np, num_bins=30), 3)
+        test_ece = np.round(um.ece(labels_np_test, probs_np_test, num_bins=30), 3)
+        test_tace = np.round(um.tace(labels_np_test, probs_np_test, num_bins=30), 3)
         if do_prompt_tuning:
             nc_ece = np.round(um.ece(labels_np_nc, probs_np_nc, num_bins=30), 3)
             nc_tace = np.round(um.tace(labels_np_nc, probs_np_nc, num_bins=30), 3)
+            nc_test_ece = np.round(um.ece(labels_np_nc_test, probs_np_nc_test, num_bins=30), 3)
+            nc_test_tace = np.round(um.tace(labels_np_nc_test, probs_np_nc_test, num_bins=30), 3)
         else:
             nc_ece = 0
             nc_tace = 0
+            nc_test_ece = 0
+            nc_test_tace = 0
         new_res = {
-            "Ens_Val_Accuracy": boosting_acc,
-            "Ens_Val_Accuracy_NC": boosting_acc_nc,
+            "Ens_Val_Accuracy": ens_acc,
+            "Ens_Val_Accuracy_NC": ens_acc_nc,
             "Ens_Val_ECE": ece,
             "Ens_Val_TACE": tace,
             "Ens_Val_ECE_NC": nc_ece,
             "Ens_Val_TACE_NC": nc_tace,
+            "Ens_Test_Accuracy": ens_acc_test,
+            "Ens_Test_Accuracy_NC": ens_acc_test_nc,
+            "Ens_Test_ECE": test_ece,
+            "Ens_Test_TACE": test_tace,
+            "Ens_Test_ECE_NC": nc_test_ece,
+            "Ens_Test_TACE_NC": nc_test_tace
         }
         return new_res
 
@@ -688,7 +709,7 @@ def train(priordataloader_class, criterion, encoder_generator, emsize=200, nhid=
         return_outputs = None
         return_targets = None
         res_dict = None
-        best_val_score = 0
+        best_val_score = best_val_score_nc = 0
         if do_prompt_tuning:
             best_val_embed = t_model.prefix_embedding.weight.detach().cpu()
         best_res_dict = None
@@ -709,32 +730,24 @@ def train(priordataloader_class, criterion, encoder_generator, emsize=200, nhid=
             res_dict = dict()
             if real_prior \
                 and (epoch - 1) % validation_period == 0:
-                val_results, val_outputs, val_targets = real_data_eval(r_model=t_model, cl=bptt, train_data=data_for_fitting, val_dl=val_dl)
+                val_results, val_outputs, val_targets = real_data_eval(r_model=t_model, cl=real_data_qty, train_data=data_for_fitting, val_dl=val_dl)
                 res_dict = dict(res_dict, **{"Val_" + k : v for k, v in val_results.items()})
                 val_score = res_dict["Val_Accuracy"]
                 # val_score2, val_outputs2, val_targets2 = real_data_eval(r_model=t_model, cl=bptt, train_data=data_for_fitting, val_dl=val_dl)
                 # if val_score != val_score2:
                 #     print("Val score mismatch: ", val_score, val_score2)
                 #     raise ValueError("Val score mismatch")
-                if val_score and val_score > best_val_score:
-                    #print("Train data:", data_for_fitting)
-                    patience = 0
-                    best_val_score = val_score
-                    is_best = True
-                    if do_prompt_tuning:
-                        best_val_embed = t_model.prefix_embedding.weight.detach().cpu()
-                else:
-                    patience += 1
-                test_results, test_outputs, test_targets = real_data_eval(r_model=t_model, cl=bptt, train_data=data_for_fitting, val_dl=test_dl)
+
+                test_results, test_outputs, test_targets = real_data_eval(r_model=t_model, cl=real_data_qty, train_data=data_for_fitting, val_dl=test_dl)
                 res_dict = dict(res_dict, **{"Test_" + k : v for k, v in test_results.items()})
-                return_outputs = [val_outputs]
-                return_targets = [val_targets]
+                return_outputs = [val_outputs, test_outputs]
+                return_targets = [val_targets, test_targets]
                 if do_prompt_tuning:
                     #TODO: will this work with context length 0? Should this be a hyperparameter?
                     if do_concat != "":
                         ec = EmbeddingConcatenator(t_model, do_concat, prefix_weights_l)
                         t_model = concat_embedding(ec, t_model, do_concat)
-                        val_score_concat, _, _ = real_data_eval(r_model=ec.get_model(), cl=bptt, train_data=data_for_fitting, val_dl=val_dl)
+                        val_score_concat, _, _ = real_data_eval(r_model=ec.get_model(), cl=real_data_qty, train_data=data_for_fitting, val_dl=val_dl)
                         res_dict = dict(res_dict, **{"Val_concat_" + k : v for k, v in val_score_concat.items()})
                         val_score_nc_concat, _, _ = real_data_eval(r_model=ec.get_model(), cl=0, train_data=data_for_fitting, val_dl=val_dl)
                         res_dict = dict(res_dict, **{"Val_concat_nc_" + k : v for k, v in val_score_nc_concat.items()})
@@ -750,7 +763,24 @@ def train(priordataloader_class, criterion, encoder_generator, emsize=200, nhid=
                     return_targets.append(val_targets)
                     res_dict = dict(res_dict, **{"Val_nc_" + k : v for k, v in val_score_nc.items()})
                     test_score_nc, test_outputs, test_targets = real_data_eval(r_model=t_model, cl=0, train_data=data_for_fitting, val_dl=test_dl)
+                    return_outputs.append(test_outputs)
+                    return_targets.append(test_targets)
                     res_dict = dict(res_dict, **{"Test_nc_" + k : v for k, v in test_score_nc.items()})
+                if val_score and val_score > best_val_score:
+                    #print("Train data:", data_for_fitting)
+                    patience = 0
+                    best_val_score = val_score
+                    is_best = True
+                    if do_prompt_tuning:
+                        best_val_embed = t_model.prefix_embedding.weight.detach().cpu()
+                elif extra_prior_kwargs_dict.get('uniform_bptt', False) and bptt <= 128 \
+                    and do_prompt_tuning and val_score_nc and val_score_nc > best_val_score_nc:
+                    patience = 0
+                    best_val_score_nc = val_score_nc
+                    is_best = True
+                    best_val_embed = t_model.prefix_embedding.weight.detach().cpu()
+                else:
+                    patience += 1
             elif hasattr(dl, 'validate') and epoch % validation_period == 0:
                 with torch.no_grad():
                     val_score = dl.validate(model)
@@ -802,7 +832,7 @@ def train(priordataloader_class, criterion, encoder_generator, emsize=200, nhid=
             t_model.prefix_embedding.weight.requires_grad = True
             t_optim = torch.optim.AdamW(t_model.parameters(), lr=lr, weight_decay=weight_decay)
             t_sched = scheduler(t_optim, warmup_epochs, epochs if epochs is not None else 100)
-            v_scr, val_outputs, val_targets = real_data_eval(r_model=t_model, cl=bptt, train_data=data_for_fitting, val_dl=val_dl)
+            v_scr, val_outputs, val_targets = real_data_eval(r_model=t_model, cl=real_data_qty, train_data=data_for_fitting, val_dl=val_dl)
             if v_scr['Accuracy'] != best_res_dict['Val_Accuracy']:
                 print("Best embedding score {} does not match best score {}!".format(v_scr, best_res_dict['Val_Accuracy']))
 
@@ -844,14 +874,22 @@ def train(priordataloader_class, criterion, encoder_generator, emsize=200, nhid=
         res_dict_ensemble[i] = results_dict
         prior_grad_dict = gradient_dict
         # probs np and labels np are used by update_ensemble_acc for ECE and TACE
+        #OUTPUT_DICT[0] contains val_outputs, test_outputs, val_outputs_nc, test_outputs_nc
         probs_np = output_dict[0][0]
         labels_np = test_targets[0]
+        probs_np_test = output_dict[0][1]
+        labels_np_test = test_targets[1]
         if do_prompt_tuning:
-            probs_np_nc = output_dict[0][1]
-            labels_np_nc = test_targets[1]
+            probs_np_nc = output_dict[0][2]
+            labels_np_nc = test_targets[2]
+            probs_np_nc_test = output_dict[0][3]
+            labels_np_nc_test = test_targets[3]
         if is_ensemble:
             master_epoch_count.append(1)
-            ensembling_acc[i] = update_ensemble_acc(results_dict.get('Val_Accuracy', 0), results_dict.get('Val_nc_Accuracy', 0))
+            ensembling_acc[i] = update_ensemble_acc(res_dict_ensemble[i]['Val_Accuracy'], 
+                                                    res_dict_ensemble[i]['Val_nc_Accuracy'], 
+                                                    res_dict_ensemble[i]['Test_Accuracy'], 
+                                                    res_dict_ensemble[i]['Test_nc_Accuracy'])
             if not do_concat:
                 with open(os.path.join(extra_prior_kwargs_dict.get('save_path'), 'ensembling_acc.json'), 'w') as f:
                     json.dump(ensembling_acc, f, indent=4)
@@ -929,18 +967,17 @@ def train(priordataloader_class, criterion, encoder_generator, emsize=200, nhid=
                 correct = (current_preds[m] == torch.from_numpy(test_targets[m])).sum().item()
                 boosting_accs[m] = np.round(correct / total, 3)
             #TODO: this should not be hard-coded
-            probs_np = current_outs[0]
+            #OUTPUT_DICT[0] contains val_outputs, test_outputs, val_outputs_nc, test_outputs_nc
+            probs_np = output_dict[0][0]
             labels_np = test_targets[0]
+            probs_np_test = output_dict[0][1]
+            labels_np_test = test_targets[1]
             if do_prompt_tuning:
-                probs_np_nc = current_outs[1]
-                labels_np_nc = test_targets[1]
-            #TODO: This ignores nc results
-            print("Ensembled val acc: ", boosting_accs[0])
-            if boosting_accs[0] <= ensembling_acc[i-1]["Ens_Val_Accuracy"]:
-                output_dict[i][0] = torch.zeros_like(torch.from_numpy(output_dict[i][0]))
-                ensembling_acc[i] = ensembling_acc[i-1]
-            else:
-                ensembling_acc[i] = update_ensemble_acc(boosting_accs[0], boosting_accs[1])
+                probs_np_nc = output_dict[0][2]
+                labels_np_nc = test_targets[2]
+                probs_np_nc_test = output_dict[0][3]
+                labels_np_nc_test = test_targets[3]
+            ensembling_acc[i] = update_ensemble_acc(boosting_accs[0], boosting_accs[2], boosting_accs[1], boosting_accs[3])
             if do_prompt_tuning:
                 prefix_weights_l = save_prefix_weights(model, extra_prior_kwargs_dict.get('save_path'), i, do_concat, prefix_weights_l)
             # Save ensembled accuracy
