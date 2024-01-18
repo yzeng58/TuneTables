@@ -67,9 +67,8 @@ def eval_method(splits, device, method, cat_idx, metric_used, max_time=300):
     
     return outputs, best_configs
 
-def run_eval(dataset_name, base_path):
+def run_eval(dataset_name, base_path, max_time):
     print("Running evaluation for dataset: ", dataset_name)
-    max_times = [0.5, 1, 15, 30, 60, 60*5, 60*15, 60*60]
 
     metrics = [tabular_metrics.auc_metric, tabular_metrics.cross_entropy]
 
@@ -83,7 +82,7 @@ def run_eval(dataset_name, base_path):
     config = dict()
     config['dataset'] = dataset_name
     config['base_path'] = base_path
-    config['max_time'] = args.max_time
+    config['max_time'] = max_time
     config['metric_used'] = str(metric_used)
     config['device'] = device
     config['methods'] = ", ".join(str(x) for x in methods)
@@ -239,4 +238,4 @@ if __name__ == '__main__':
         datasets = f.readlines()
     for dataset in datasets:
         dataset = dataset.strip()
-        run_eval(dataset, args.dataset_path)
+        run_eval(dataset, args.dataset_path, args.max_time)
