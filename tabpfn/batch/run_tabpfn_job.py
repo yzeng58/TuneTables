@@ -1,5 +1,7 @@
 import subprocess
+import asyncio
 import os
+import time
 import argparse
 from tqdm.auto import tqdm
 from all_tasks import get_all_tasks
@@ -15,6 +17,7 @@ parser.add_argument('--splits', nargs='+', type=int, default=[0], help='Splits t
 parser.add_argument('--shuffle_every_epoch', action='store_true', help='Whether to shuffle the order of the data every epoch (can help when bptt is large).')
 parser.add_argument('--run_optuna', action='store_true', help='Whether to run optuna hyperparameter search.')
 parser.add_argument('--real_data_qty', type=int, default=0, help='Number of real data points to use for fitting.')
+parser.add_argument('--gcp_run', action='store_true', help='Whether to launch the job on a GCP instance.')
 
 args = parser.parse_args()
 
@@ -30,6 +33,18 @@ if args.run_optuna:
     base_cmd = 'run_optuna_n.py'
 else:
     base_cmd = 'train_loop.py'
+
+async def run_command(cmd):
+    # Start the subprocess
+    process = await asyncio.create_subprocess_shell(
+        cmd,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE)
+
+    # Wait for the command to finish
+    stdout, stderr = await process.communicate()
+
+    return process.returncode, stdout, stderr
 
 for dataset in tqdm(datasets):
     print("Starting dataset: ", dataset.strip())
@@ -95,13 +110,40 @@ for dataset in tqdm(datasets):
             if args.shuffle_every_epoch:
                 command.append("--shuffle_every_epoch")           
             print("Running command:", ' '.join(command))
-            subprocess.call(command)
-            new_outputs = Path('logs').glob('_multiclass*')
-            updated_outputs = []
-            for output in new_outputs:
-                new_name = output.name.replace('_multiclass', task_str)
-                new_path = os.path.join(output.parent, new_name)
-                os.rename(output, new_path)
-                updated_outputs.append(new_path)
-            for output in updated_outputs:
-                shutil.move(output, log_dir)
+            if args.gcp_run:
+                # Check if there are already 10 jobs running
+                current_op_count = int(subprocess.check_output("gcloud compute operations list --filter='status=RUNNING' | wc -l", shell=True))
+                while current_op_count > 10:
+                    print("Waiting for GCP jobs to finish...")
+                    time.sleep(60)
+                    current_op_count = int(subprocess.check_output("gcloud compute operations list --filter='status=RUNNING' | wc -l", shell=True))
+                with open("run_command.txt", "w") as f:
+                    f.write(' '.join(command))
+                returncode, stdout, stderr = asyncio.run(run_command('bash batch/run_gcp_expt.sh'))
+                if returncode != 0:
+                    print("GCP launch failed.")
+                    print("Stdout:")
+                    print(stdout.decode())
+                    print("Stderr:")
+                    print(stderr.decode())
+                    exit()
+                else:
+                    print("GCP launch succeeded. Saving results.")
+                    target_dir = os.path.join(log_dir, task_str)
+                    os.makedirs(target_dir, exist_ok=True)
+                    with open(os.path.join(target_dir, "stdout.txt"), "w") as f:
+                        f.write(stdout.decode())
+                    with open(os.path.join(target_dir, "stderr.txt"), "w") as f:
+                        f.write(stderr.decode())
+                    time.sleep(10)
+            else:
+                subprocess.call(command)
+                new_outputs = Path('logs').glob('_multiclass*')
+                updated_outputs = []
+                for output in new_outputs:
+                    new_name = output.name.replace('_multiclass', task_str)
+                    new_path = os.path.join(output.parent, new_name)
+                    os.rename(output, new_path)
+                    updated_outputs.append(new_path)
+                for output in updated_outputs:
+                    shutil.move(output, log_dir)
