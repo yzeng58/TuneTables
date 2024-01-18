@@ -14,6 +14,8 @@ import torch
 import wandb
 from utils import get_wandb_api_key
 
+import uncertainty_metrics.numpy as um
+
 # from datasets import load_openml_list, valid_dids_classification, test_dids_classification, open_cc_dids
 
 from scripts import tabular_baselines
@@ -74,14 +76,14 @@ def run_eval(dataset_name, base_path):
     # This is the metric used for fitting the models
     metric_used = tabular_metrics.auc_metric
     # methods = ['random_forest', 'lightgbm', 'cocktail', 'logistic', 'gp', 'knn', 'catboost', 'xgb', 'autosklearn2', 'autogluon']
-    methods = ['catboost', 'autosklearn2', 'random_forest', 'xgb', 'knn']
+    methods = ['autogluon']
     # methods = ['knn']
     device = '0'
 
     config = dict()
     config['dataset'] = dataset_name
     config['base_path'] = base_path
-    config['max_time'] = 60*5
+    config['max_time'] = args.max_time
     config['metric_used'] = str(metric_used)
     config['device'] = device
     config['methods'] = ", ".join(str(x) for x in methods)
@@ -196,6 +198,8 @@ def run_eval(dataset_name, base_path):
             except Exception as e:
                 print("Error calculating ROC AUC: ", e)
                 results['Val_ROC_AUC'] = 0.0
+            results['Val_ECE'] = np.round(um.ece(y_val, val_outputs, num_bins=30), 3).item()
+            results['Val_TACE'] = np.round(um.tace(y_val, val_outputs, num_bins=30), 3).item()
             results[f'Test_Accuracy'] = np.round(accuracy_score(y_test, test_predictions), 3).item()
             results[f'Test_Log_Loss'] = np.round(log_loss(y_test, test_outputs, labels=np.arange(num_classes)), 3).item()
             results[f'Test_F1_Weighted'] = np.round(f1_score(y_test, test_predictions, average='weighted'), 3).item()
@@ -208,6 +212,8 @@ def run_eval(dataset_name, base_path):
             except Exception as e:
                 print("Error calculating ROC AUC: ", e)
                 results['Test_ROC_AUC'] = 0.0
+            results['Test_ECE'] = np.round(um.ece(y_test, test_outputs, num_bins=30), 3).item()
+            results['Test_TACE'] = np.round(um.tace(y_test, test_outputs, num_bins=30), 3).item()
             if isinstance(best_configs, pd.DataFrame) or isinstance(best_configs, pd.Series):
                 save_path = os.path.join(base_path, model_string + ".csv")
                 best_configs.to_csv(save_path)
@@ -225,6 +231,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--dataset_path', type=str, default='/home/benfeuer/TabPFN-pt/tabpfn/data')
     parser.add_argument('--datasets', type=str, default='/home/benfeuer/TabPFN-pt/tabpfn/metadata/subset.txt', help='Path to datasets text file')
+    parser.add_argument('--max_time', type=int, default=300, help='Allowed run time (in seconds)')
 
     args = parser.parse_args()
 

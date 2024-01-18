@@ -2,7 +2,11 @@ import gzip
 import json
 from pathlib import Path
 from typing import Optional
-import faiss
+
+try:
+    import faiss
+except ImportError:
+    print("faiss is not available; subset maker will not work until it is installed")
 
 import numpy as np
 from sklearn.preprocessing import LabelEncoder

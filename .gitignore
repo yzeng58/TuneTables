@@ -15,6 +15,7 @@ tabpfn/data/*
 */results_*/
 */_multiclass_*/
 */catboost_info/
+*/AutogluonModels/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
