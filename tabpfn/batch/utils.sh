@@ -70,14 +70,12 @@ AAAAB3NzaC1yc2EAAAADAQABAAABAQDfhoLPr6ZoSSL9epL7N0YQuJ9nD\+JB5CmK/f3NTX0vmOAHT51
     # attempt to run experiment
     gcloud compute ssh --ssh-flag="-A" ${instance_name} --zone=${zone} --project=${project} \
       --command="\
-      cd ${instance_repo_dir}; \
       sudo /opt/deeplearning/install-driver.sh; \
-      sudo find . -type f -exec chmod 777 {} \;; \
-      sudo find . -type d -exec chmod 777 {} \;; \
-      sudo apt install python-is-python3; \ 
-      sudo export PYTHONPATH=$PYTHONPATH:/home/benfeuer/TabPFN-pt:/home/benfeuer/TabPFN-pt/tabpfn; \
+      cd ${instance_repo_dir}; \
+      source /home/bf996/.bashrc; \
+      git config --global --add safe.directory /home/benfeuer/TabPFN-pt; \
       cd ${instance_repo_dir}/tabpfn; \
-      python train_loop.py --data_path /home/benfeuer/TabPFN-pt/tabpfn/data/openml__dilbert__168909 --split 0 --real_data_qty 0 --wandb_group openml__dilbert__168909_pt1000-uniform-short_bptt_128_rdq_0_split_0 --prior_type real --pad_features --resume /home/benfeuer/TabPFN-pt/tabpfn/models_diff/prior_diff_real_checkpoint_n_0_epoch_42.cpkt --epochs 7 --validation_period 3 --save_every_k_epochs 12 --aggregate_k_gradients 1 --lr 0.2 --feature_subset_method pca --wandb_log --do_preprocess --verbose --max_time 36000 --prompt_tuning --tuned_prompt_size 1000 --early_stopping 7 --uniform_bptt --bptt 128; \
+      ${run_command}; \
       "
 
     #${run_command}
@@ -119,4 +117,19 @@ delete_instances() {
         echo "deleting instance: $i"
         printf "Y" | gcloud compute instances delete $i --zone=${zone} --project=${project}
     done
+}
+
+wait_until_processes_finish() {
+  # only takes one arg: the maximum number of processes that can be running
+  # print a '.' every 60 iterations
+  counter=0
+  while [ `jobs -r | wc -l | tr -d " "` -gt $1 ]; do
+    sleep 1
+    counter=$((counter+1))
+    if (($counter % 60 == 0))
+    then
+      echo -n "."     # no trailing newline
+    fi
+  done
+  echo "no more than $1 jobs are running. moving on."
 }
