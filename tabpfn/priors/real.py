@@ -2,6 +2,7 @@ import gzip
 import json
 from pathlib import Path
 from typing import Optional
+from utils import seed_all
 
 try:
     import faiss
@@ -243,7 +244,7 @@ class CoresetSampler:
 
 class SubsetMaker(object):
     def __init__(
-        self, subset_features, subset_rows, subset_features_method, subset_rows_method
+        self, subset_features, subset_rows, subset_features_method, subset_rows_method, seed
     ):
         self.subset_features = subset_features
         self.subset_rows = subset_rows
@@ -251,6 +252,9 @@ class SubsetMaker(object):
         self.subset_rows_method = subset_rows_method
         self.row_selector = None
         self.feature_selector = None
+        self.seed = seed
+        seed_all(seed)
+
 
     def random_subset(self, X, y, action=[]):
         if "rows" in action:
@@ -516,25 +520,23 @@ def process_data(
                 args.subset_rows,
                 args.subset_features_method,
                 args.subset_rows_method,
+                seed=args.rand_seed,
             )
         X_train, y_train = dataset.ssm.make_subset(
             X_train,
             y_train,
             split="train",
-            seed=args.rand_seed,
         )
         if args.subset_features < args.num_features:
             X_val, y_val = dataset.ssm.make_subset(
                 X_val,
                 y_val,
                 split="val",
-                seed=args.rand_seed,
             )
             X_test, y_test = dataset.ssm.make_subset(
                 X_test,
                 y_test,
                 split="test",
-                seed=args.rand_seed,
             )
     return {
         "data_train": (X_train, y_train),
