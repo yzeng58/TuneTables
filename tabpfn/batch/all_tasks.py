@@ -10,7 +10,7 @@ base_dict = {
     'save_every_k_epochs' : 15,
     'aggregate_k_gradients' : 1,
     'lr' : 1e-3,
-    'feature_subset_method' : 'pca',
+    'subset_features_method' : 'pca',
     'wandb_log' : '',
     'do_preprocess' : '',
     'verbose' : '',
@@ -57,15 +57,17 @@ pt10_unif_dict['uniform_bptt'] = ''
 pt10_prop_dict = copy.deepcopy(pt10_dict)
 pt10_prop_dict['tuned_prompt_label_balance'] = 'proportional'
 pt10_pca_dict = copy.deepcopy(pt10_dict)
-pt10_pca_dict['feature_subset_method'] = 'pca'
+pt10_pca_dict['subset_features_method'] = 'pca'
 pt10_mut_dict = copy.deepcopy(pt10_dict)
-pt10_mut_dict['feature_subset_method'] = 'mutual_information'
+pt10_mut_dict['subset_features_method'] = 'mutual_information'
 pt10_rand_dict = copy.deepcopy(pt10_dict)
-pt10_rand_dict['feature_subset_method'] = 'random'
+pt10_rand_dict['subset_features_method'] = 'random'
 pt10_powerall_dict = copy.deepcopy(pt10_dict)
 pt10_powerall_dict['preprocess_type'] = 'power_all'
 
 #Prompt tuning with 100 prompts
+debug_dict = copy.deepcopy(pt10_dict)
+debug_dict['epochs'] = 10
 pt100_dict = copy.deepcopy(pt10_dict)
 pt100_dict['tuned_prompt_size'] = 100
 pt100_short_dict = copy.deepcopy(pt100_dict)
@@ -89,11 +91,11 @@ pt100_unif_dict['uniform_bptt'] = ''
 pt100_prop_dict = copy.deepcopy(pt100_dict)
 pt100_prop_dict['tuned_prompt_label_balance'] = 'proportional'
 pt100_pca_dict = copy.deepcopy(pt100_dict)
-pt100_pca_dict['feature_subset_method'] = 'pca'
+pt100_pca_dict['subset_features_method'] = 'pca'
 pt100_mut_dict = copy.deepcopy(pt100_dict)
-pt100_mut_dict['feature_subset_method'] = 'mutual_information'
+pt100_mut_dict['subset_features_method'] = 'mutual_information'
 pt100_rand_dict = copy.deepcopy(pt100_dict)
-pt100_rand_dict['feature_subset_method'] = 'random'
+pt100_rand_dict['subset_features_method'] = 'random'
 pt100_powerall_dict = copy.deepcopy(pt100_dict)
 pt100_powerall_dict['preprocess_type'] = 'power_all'
 
@@ -127,11 +129,11 @@ pt1000_unif_highep_lowlr_dict['early_stopping'] = 10
 pt1000_prop_dict = copy.deepcopy(pt1000_dict)
 pt1000_prop_dict['tuned_prompt_label_balance'] = 'proportional'
 pt1000_pca_dict = copy.deepcopy(pt1000_dict)
-pt1000_pca_dict['feature_subset_method'] = 'pca'
+pt1000_pca_dict['subset_features_method'] = 'pca'
 pt1000_mut_dict = copy.deepcopy(pt1000_dict)
-pt1000_mut_dict['feature_subset_method'] = 'mutual_information'
+pt1000_mut_dict['subset_features_method'] = 'mutual_information'
 pt1000_rand_dict = copy.deepcopy(pt1000_dict)
-pt1000_rand_dict['feature_subset_method'] = 'random'
+pt1000_rand_dict['subset_features_method'] = 'random'
 pt1000_powerall_dict = copy.deepcopy(pt1000_dict)
 pt1000_powerall_dict['preprocess_type'] = 'power_all'
 
@@ -158,6 +160,7 @@ ens_randinit_avg_top2_unif_reseed_dict['uniform_bptt'] = ''
 ens_randinit_avg_top2_unif_reseed_dict['topk_key'] = 'Val_nc_Accuracy'
 
 all_tasks = {
+    'debug' : debug_dict,
     'ft' : base_dict,
     'pt10': pt10_dict,
     'pt10-prop' : pt10_prop_dict,

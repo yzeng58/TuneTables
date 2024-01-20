@@ -20,7 +20,7 @@ from transformer import TransformerModel
 from tabpfn.scripts.tabular_evaluation import predict_wrapper
 from tabpfn.utils import get_cosine_schedule_with_warmup, get_openai_lr, StoreDictKeyPair, get_weighted_single_eval_pos_sampler, get_uniform_single_eval_pos_sampler
 import tabpfn.priors as priors
-from priors.real import TabDS, get_train_dataloader
+from priors.real import TabDS
 import tabpfn.encoders as encoders
 import tabpfn.positional_encodings as positional_encodings
 from utils import init_dist, seed_all, EmbeddingConcatenator
@@ -31,6 +31,7 @@ from torch import nn
 import numpy as np
 
 import uncertainty_metrics.numpy as um
+from priors.real import process_data
 
 from sklearn.metrics import (
     accuracy_score,
@@ -47,7 +48,30 @@ class Losses():
         return nn.CrossEntropyLoss(reduction='none', weight=torch.ones(num_classes))
     bce = nn.BCEWithLogitsLoss(reduction='none')
 
-def train(priordataloader_class, criterion, encoder_generator, emsize=200, nhid=200, nlayers=6, nhead=2, dropout=0.0,
+
+def get_train_dataloader(ds, bptt=1000, shuffle=True, num_workers=1, drop_last=True, agg_k_grads=1):
+        old_bptt = bptt
+        dl = DataLoader(
+            ds, batch_size=bptt, shuffle=shuffle, num_workers=num_workers, drop_last=drop_last,
+        )
+        while len(dl) % agg_k_grads != 0:
+            bptt += 1
+            dl = DataLoader(
+                ds, batch_size=bptt, shuffle=shuffle, num_workers=num_workers, drop_last=drop_last,
+            )
+            # raise ValueError(f'Number of batches {len(dl)} not divisible by {agg_k_grads}, please modify aggregation factor.')
+        if old_bptt != bptt:
+            print(f'Batch size changed from {old_bptt} to {bptt} to be divisible by {agg_k_grads} (with last batch dropped).')
+        if len(dl) == 0:
+            bptt = 1
+            dl = DataLoader(
+                ds, batch_size=bptt, shuffle=shuffle, num_workers=num_workers, drop_last=drop_last,
+            )
+            print("Dataloader length was 0, setting batch size to 1.")
+        return dl, bptt
+
+#def train(args, priordataloader_class, criterion, encoder_generator, emsize=200, nhid=200, nlayers=6, nhead=2, dropout=0.0,
+def train(args, dataset, criterion, encoder_generator, emsize=200, nhid=200, nlayers=6, nhead=2, dropout=0.0,
           epochs=10, steps_per_epoch=100, batch_size=200, bptt=10, lr=None, weight_decay=0.0, warmup_epochs=10, input_normalization=False,
           y_encoder_generator=None, pos_encoder_generator=None, decoder=None, extra_prior_kwargs_dict={}, scheduler=get_cosine_schedule_with_warmup,
           load_weights_from_this_state_dict=None, validation_period=10, single_eval_pos_gen=None, bptt_extra_samples=None, gpu_device='cuda:0',
@@ -55,7 +79,10 @@ def train(priordataloader_class, criterion, encoder_generator, emsize=200, nhid=
           initializer=None, initialize_with_model=None, train_mixed_precision=False, efficient_eval_masking=True, 
           boosting=False, boosting_lr=1e-3, boosting_n_iters=10, rand_init_ensemble=False, do_concat="", **model_extra_args
           ):
-    seed_all(extra_prior_kwargs_dict.get('rand_seed'))
+
+
+
+        
     device = gpu_device if torch.cuda.is_available() else 'cpu:0'
     print(f'Using {device} device')
     using_dist, rank, device = init_dist(device)
@@ -78,6 +105,8 @@ def train(priordataloader_class, criterion, encoder_generator, emsize=200, nhid=
     else:
         do_prompt_tuning = False
         prefix_size = 0
+
+
 
     single_eval_pos_gen = single_eval_pos_gen if callable(single_eval_pos_gen) else lambda: single_eval_pos_gen
     real_data_qty = extra_prior_kwargs_dict.get('real_data_qty', 0)
@@ -114,12 +143,58 @@ def train(priordataloader_class, criterion, encoder_generator, emsize=200, nhid=
             # print("new_a: ", new_a[:5, ...])
         return new_a
 
-    def make_datasets(do_permute=True):
-        X, y = priordataloader_class[0][0], priordataloader_class[0][1]
+    def make_datasets(extra_prior_kwargs_dict, do_permute=True, bptt = 0, steps_per_epoch=None):
+        """  """
+        dataset_built = False
+        for i, split_dictionary in enumerate(dataset.split_indeces):
+            # TODO: make stopping index a hyperparameter
+            if i != extra_prior_kwargs_dict.get('split'): # config['split']:
+                continue
+            train_index = split_dictionary["train"]
+            val_index = split_dictionary["val"]
+            test_index = split_dictionary["test"]
+
+            # run pre-processing & split data (list of numpy arrays of length num_ensembles)
+            processed_data = process_data(
+                dataset,
+                train_index,
+                val_index,
+                test_index,
+                verbose= extra_prior_kwargs_dict.get('verbose'), #config['verbose'],
+                scaler="None",
+                one_hot_encode=False,
+                args=args,
+            )
+            X_train, y_train = processed_data["data_train"]
+            X_val, y_val = processed_data["data_val"]
+            X_test, y_test = processed_data["data_test"]
+            n_features = X_train.shape[1]
+            n_samples = X_train.shape[0]
+            #config['num_classes'] = len(set(y_train))
+            num_classes = len(set(y_train))
+            #config['num_steps'] = len(X_train) // config['bptt']
+            steps_per_epoch = len(X_train) // bptt
+            #if config['bptt'] > n_samples:
+            #    print(f"WARNING: bptt {config['bptt']} is larger than the number of samples in the training set, {n_samples}. Setting bptt=128.")
+            #    config['bptt'] = 128
+            if bptt > n_samples:
+                print(f"WARNING: bptt {config['bptt']} is larger than the number of samples in the training set, {n_samples}. Setting bptt=128.")
+                bptt = 128
+
+            priordataloader_class = [[X_train, y_train], [X_val, y_val], [X_test, y_test]]
+            dataset_built = True
+            break
+        if not dataset_built:
+            raise Exception(f"Split {config['split']} not found in dataset!")
+        
+        seed_all(extra_prior_kwargs_dict.get('rand_seed'))
+
+        X, y = X_train, y_train
+        ##X, y = priordataloader_class[0][0], priordataloader_class[0][1]
         # print("In make datasets: ")
         #print("unique y: ", np.unique(y))
-        X_val, y_val = priordataloader_class[1][0], priordataloader_class[1][1]
-        X_test, y_test = priordataloader_class[2][0], priordataloader_class[2][1]
+        ##X_val, y_val = priordataloader_class[1][0], priordataloader_class[1][1]
+        ##X_test, y_test = priordataloader_class[2][0], priordataloader_class[2][1]
         #shuffle data
         if do_permute:
             label_perm = np.random.permutation(num_classes)
@@ -142,7 +217,7 @@ def train(priordataloader_class, criterion, encoder_generator, emsize=200, nhid=
         y = y[idx, ...]
         # print("y: ", y[:20, ...])
         # print("Label perm: ", label_perm)
-        new_y = loop_translate(y, rev_invert_perm_map)
+        y = loop_translate(y, rev_invert_perm_map)
         # for i in range(num_classes):
         #     new_y[i] = y[rev_invert_perm_map[i]]
         # print("New y: ", new_y[:20, ...])
@@ -150,15 +225,44 @@ def train(priordataloader_class, criterion, encoder_generator, emsize=200, nhid=
         X = X[:, feat_idx, ...]
         X_val = X_val[:, feat_idx, ...]
         X_test = X_test[:, feat_idx, ...]
-        return X, new_y, X_val, y_val, X_test, y_test, invert_perm_map
-    
-    def make_dataloaders(bptt=bptt):
+
+        # label balancing
+        num_classes = len(np.unique(np.unique(y)))
+        if do_prompt_tuning and extra_prior_kwargs_dict.get('tuned_prompt_label_balance', 'equal') == 'proportional':
+            label_weights = np.bincount(y) / len(y)
+            label_weights = torch.from_numpy(label_weights).float().to(device)
+        else:
+            label_weights = None
+
+
+        print('aggregate_k_gradients',aggregate_k_gradients)
 
         train_ds = TabDS(X, y, num_features=num_features, 
                          pad_features=extra_prior_kwargs_dict.get("pad_features", True), 
                          do_preprocess=extra_prior_kwargs_dict.get("do_preprocess", False),
                          preprocess_type=extra_prior_kwargs_dict.get("preprocess_type", "none"),
                          aggregate_k_gradients=aggregate_k_gradients)
+
+
+        val_ds = TabDS(X_val, y_val, num_features=num_features, 
+                       pad_features=extra_prior_kwargs_dict.get("pad_features", True), 
+                       do_preprocess=extra_prior_kwargs_dict.get("do_preprocess", False),
+                       preprocess_type=extra_prior_kwargs_dict.get("preprocess_type", "none"),
+                       aggregate_k_gradients=1)
+
+        test_ds = TabDS(X_test, y_test, num_features=num_features, 
+                        pad_features=extra_prior_kwargs_dict.get("pad_features", True),
+                        do_preprocess=extra_prior_kwargs_dict.get("do_preprocess", False), 
+                        preprocess_type=extra_prior_kwargs_dict.get("preprocess_type", "none"),
+                        aggregate_k_gradients=1)
+
+
+        return X, y, X_val, y_val, X_test, y_test, invert_perm_map, steps_per_epoch, num_classes, label_weights, train_ds, val_ds, test_ds
+    
+
+
+    def make_dataloaders(bptt=bptt):
+
         dl, bptt = get_train_dataloader(train_ds, 
                                   bptt=bptt, 
                                   shuffle=False, 
@@ -166,19 +270,11 @@ def train(priordataloader_class, criterion, encoder_generator, emsize=200, nhid=
                                   drop_last=True, 
                                   agg_k_grads=aggregate_k_gradients
                                 )
-        val_ds = TabDS(X_val, y_val, num_features=num_features, 
-                       pad_features=extra_prior_kwargs_dict.get("pad_features", True), 
-                       do_preprocess=extra_prior_kwargs_dict.get("do_preprocess", False),
-                       preprocess_type=extra_prior_kwargs_dict.get("preprocess_type", "none"),
-                       aggregate_k_gradients=1)
+
         val_dl = DataLoader(
             val_ds, batch_size=min(128, y_val.shape[0] // 2), shuffle=False, num_workers=1,
         )
-        test_ds = TabDS(X_test, y_test, num_features=num_features, 
-                        pad_features=extra_prior_kwargs_dict.get("pad_features", True),
-                        do_preprocess=extra_prior_kwargs_dict.get("do_preprocess", False), 
-                        preprocess_type=extra_prior_kwargs_dict.get("preprocess_type", "none"),
-                        aggregate_k_gradients=1)
+
         test_dl = DataLoader(
             test_ds, batch_size=min(128, y_test.shape[0] // 2), shuffle=False, num_workers=1,
         )
@@ -196,21 +292,22 @@ def train(priordataloader_class, criterion, encoder_generator, emsize=200, nhid=
         data_for_fitting = [X_data_concat, y_data_concat]
         return dl, val_dl, test_dl, bptt, data_for_fitting
 
+
+
     if real_prior:
-        data_for_fitting = None
-        num_classes = len(np.unique(priordataloader_class[0][1]))
-        if do_prompt_tuning and extra_prior_kwargs_dict.get('tuned_prompt_label_balance', 'equal') == 'proportional':
-            label_weights = np.bincount(priordataloader_class[0][1]) / len(priordataloader_class[0][1])
-            label_weights = torch.from_numpy(label_weights).float().to(device)
-        else:
-            label_weights = None
+
 
         #load data
         not_zs = extra_prior_kwargs_dict.get('zs_eval_ensemble', 0) == 0
+        seed_all(extra_prior_kwargs_dict.get('rand_seed'))
 
-        X, y, X_val, y_val, X_test, y_test, invert_perm_map = make_datasets(do_permute=not_zs)
+        X, y, X_val, y_val, X_test, y_test, invert_perm_map, steps_per_epoch, num_classes, label_weights, train_ds, val_ds, test_ds = make_datasets(extra_prior_kwargs_dict, do_permute=not_zs, bptt=bptt, steps_per_epoch=steps_per_epoch)
+
+        data_for_fitting = None
+
+
         #make dataloaders
-        dl, val_dl, test_dl, bptt, data_for_fitting = make_dataloaders(bptt=bptt)
+        dl, val_dl, test_dl, bptt, data_for_fitting  = make_dataloaders(bptt=bptt)
 
         if extra_prior_kwargs_dict.get('zs_eval_ensemble', 0) > 0:
 
@@ -275,8 +372,9 @@ def train(priordataloader_class, criterion, encoder_generator, emsize=200, nhid=
             exit(0)
 
     else:
-        dl = priordataloader_class(num_steps=steps_per_epoch, batch_size=batch_size, eval_pos_seq_len_sampler=eval_pos_seq_len_sampler, seq_len_maximum=bptt+(bptt_extra_samples if bptt_extra_samples else 0), device=device, **extra_prior_kwargs_dict)
-        num_features = dl.num_features
+        raise Exception("Excepted a real dataset")
+
+
     encoder = encoder_generator(num_features, emsize)
     #style_def = dl.get_test_batch()[0][0] # the style in batch of the form ((style, x, y), target, single_eval_pos)
     style_def = None
@@ -610,6 +708,7 @@ def train(priordataloader_class, criterion, encoder_generator, emsize=200, nhid=
         #     wbn = e_model.prefix_embedding.weight.detach().clone()
         #     print("Prompt weights after: ", wbn[:10, ...])
             # print("Prompt requires grad: ", e_model.prefix_embedding.weight.requires_grad)
+
         return total_loss / max(steps_per_epoch, 1), (total_positional_losses / total_positional_losses_recorded).tolist(),\
                time_to_get_batch, forward_time, step_time, nan_steps.cpu().item()/(batch+1),\
                ignore_steps.cpu().item()/(batch+1)
@@ -918,7 +1017,7 @@ def train(priordataloader_class, criterion, encoder_generator, emsize=200, nhid=
             if extra_prior_kwargs_dict.get('reseed_data', True):
                 #load data
                 extra_prior_kwargs_dict['preprocess_type'] = np.random.choice(['none', 'power_all', 'robust_all', 'quantile_all'])
-                X, y, X_val, y_val, X_test, y_test, invert_perm_map = make_datasets()
+                X, y, X_val, y_val, X_test, y_test, invert_perm_map, steps_per_epoch = make_datasets(bptt=bptt, steps_per_epoch=steps_per_epoch)
                 #make dataloaders
                 dl, val_dl, test_dl, bptt, data_for_fitting = make_dataloaders(bptt=bptt)
                 if bagging:

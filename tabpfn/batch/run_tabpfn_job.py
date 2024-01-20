@@ -8,8 +8,8 @@ from pathlib import Path
 
 parser = argparse.ArgumentParser(description='Run TabPFN')
 parser.add_argument('--base_path', type=str, default='/home/benfeuer/TabPFN-pt/tabpfn/data', help='Path to TabPFN-pt dataset directory')
-parser.add_argument('--datasets', type=str, default='/home/benfeuer/TabPFN-pt/tabpfn/metadata/subset.txt', help='Path to datasets text file')
-parser.add_argument('--tasks', type=str, default='/home/benfeuer/TabPFN-pt/tabpfn/metadata/subset_tasks.txt', help='Tasks to run')
+parser.add_argument('--datasets', type=str, default='/home/nc3468/TabPFN_5/TabPFN-pt/tabpfn/metadata/subset_datasets.txt', help='Path to datasets text file')
+parser.add_argument('--tasks', type=str, default='/home/nc3468/TabPFN_5/TabPFN-pt/tabpfn/metadata/subset_tasks.txt', help='Tasks to run')
 parser.add_argument('--bptt', type=int, default=-1, help='bptt batch size')
 parser.add_argument('--splits', nargs='+', type=int, default=[0], help='Splits to run')
 parser.add_argument('--shuffle_every_epoch', action='store_true', help='Whether to shuffle the order of the data every epoch (can help when bptt is large).')
@@ -54,7 +54,7 @@ for dataset in tqdm(datasets):
                 ensemble_size = int(task.split('-')[-1])
                 command = ['python', base_cmd, 
                            '--data_path', dataset_path,
-                           '--feature_subset_method', 'pca',
+                           '--subset_features_method', 'pca',
                            '--split', str(split), 
                            '--wandb_group', dataset.strip() + "_" + task_str,
                            '--real_data_qty', str(args.real_data_qty),
@@ -104,4 +104,7 @@ for dataset in tqdm(datasets):
                 os.rename(output, new_path)
                 updated_outputs.append(new_path)
             for output in updated_outputs:
-                shutil.move(output, log_dir)
+                try:
+                    shutil.move(output, log_dir)
+                except:
+                    print(f"An error occurred while moving {output} to {log_dir}")
