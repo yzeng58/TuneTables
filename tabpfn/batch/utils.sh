@@ -123,7 +123,7 @@ wait_until_processes_finish() {
   # only takes one arg: the maximum number of processes that can be running
   # print a '.' every 60 iterations
   counter=0
-  while [ `jobs -r | wc -l | tr -d " "` -gt $1 ]; do
+  while [ `gcloud compute instances list --filter='status=RUNNING' | wc -l` -gt $1 ]; do
     sleep 1
     counter=$((counter+1))
     if (($counter % 60 == 0))

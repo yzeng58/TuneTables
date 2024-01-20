@@ -94,6 +94,7 @@ def main_f(args):
                         val = str(v)
                         if val != '':
                             addl_args.append(val)
+                    dataset_path = dataset_path.replace(r'(', r'\(').replace(r')', r'\)')
                     command = ['python', base_cmd, '--data_path \"' + dataset_path + "\"", '--split', str(split), '--real_data_qty', str(args.real_data_qty), '--wandb_group', dataset.strip() + "_" + task_str] + addl_args
                 if args.bptt > -1:
                     command.append("--bptt")
