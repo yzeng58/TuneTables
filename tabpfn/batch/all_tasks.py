@@ -15,6 +15,7 @@ base_dict = {
     'do_preprocess' : '',
     'verbose' : '',
     'max_time' : 36000,
+    'early_stopping' : 5,
 }
 
 pt10_dict = {

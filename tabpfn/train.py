@@ -257,24 +257,26 @@ def preprocess_input(eval_xs, preprocess_transform, summerize_after_prep):
     return eval_xs
 
 def get_train_dataloader(ds, bptt=1000, shuffle=True, num_workers=1, drop_last=True, agg_k_grads=1):
-        old_bptt = bptt
+        # old_bptt = bptt
         dl = DataLoader(
             ds, batch_size=bptt, shuffle=shuffle, num_workers=num_workers, drop_last=drop_last,
         )
+        if len(dl) == 0:
+            ds_len = len(ds)
+            n_batches = 10
+            bptt = int(ds_len // n_batches)
+            # bptt = int(bptt // 2)
+            dl = DataLoader(
+                ds, batch_size=bptt, shuffle=shuffle, num_workers=num_workers, drop_last=drop_last,
+            )
         while len(dl) % agg_k_grads != 0:
             bptt += 1
             dl = DataLoader(
                 ds, batch_size=bptt, shuffle=shuffle, num_workers=num_workers, drop_last=drop_last,
             )
             # raise ValueError(f'Number of batches {len(dl)} not divisible by {agg_k_grads}, please modify aggregation factor.')
-        if old_bptt != bptt:
-            print(f'Batch size changed from {old_bptt} to {bptt} to be divisible by {agg_k_grads} (with last batch dropped).')
-        if len(dl) == 0:
-            bptt = 1
-            dl = DataLoader(
-                ds, batch_size=bptt, shuffle=shuffle, num_workers=num_workers, drop_last=drop_last,
-            )
-            print("Dataloader length was 0, setting batch size to 1.")
+        # if old_bptt != bptt:
+        #     print(f'Batch size changed from {old_bptt} to {bptt} to be divisible by {agg_k_grads} (with last batch dropped).')
         return dl, bptt
 
 def SummarizeAfter(X, X_val, X_test, y, y_val, y_test, num_features, subset_features_method):
@@ -303,9 +305,12 @@ def SummarizeAfter(X, X_val, X_test, y, y_val, y_test, num_features, subset_feat
             y,
             split="test",
         )
-
-        return torch.from_numpy(X).to(torch.float32), torch.from_numpy(X_val).to(torch.float32), torch.from_numpy(X_test).to(torch.float32)
-
+        if isinstance(X, torch.Tensor):
+            return X.to(torch.float32), X_val.to(torch.float32), X_test.to(torch.float32)
+        elif isinstance(X, np.ndarray):
+            return torch.from_numpy(X).to(torch.float32), torch.from_numpy(X_val).to(torch.float32), torch.from_numpy(X_test).to(torch.float32)
+        else:
+            raise Exception(f"X is {type(X)}, not a tensor or numpy array")
 
 #def train(args, priordataloader_class, criterion, encoder_generator, emsize=200, nhid=200, nlayers=6, nhead=2, dropout=0.0,
 def train(args, dataset, criterion, encoder_generator, emsize=200, nhid=200, nlayers=6, nhead=2, dropout=0.0,
@@ -414,18 +419,14 @@ def train(args, dataset, criterion, encoder_generator, emsize=200, nhid=200, nla
             num_classes = len(set(y_train))
             #config['num_steps'] = len(X_train) // config['bptt']
             steps_per_epoch = len(X_train) // bptt
-            #if config['bptt'] > n_samples:
-            #    print(f"WARNING: bptt {config['bptt']} is larger than the number of samples in the training set, {n_samples}. Setting bptt=128.")
-            #    config['bptt'] = 128
+
             if bptt > n_samples:
-                print(f"WARNING: bptt {config['bptt']} is larger than the number of samples in the training set, {n_samples}. Setting bptt=128.")
+                print(f"WARNING: bptt {bptt} is larger than the number of samples in the training set, {n_samples}. Setting bptt=128.")
                 bptt = 128
 
             priordataloader_class = [[X_train, y_train], [X_val, y_val], [X_test, y_test]]
             dataset_built = True
             break
-        if not dataset_built:
-            raise Exception(f"Split {config['split']} not found in dataset!")
         
         seed_all(extra_prior_kwargs_dict.get('rand_seed'))
 
@@ -555,8 +556,16 @@ def train(args, dataset, criterion, encoder_generator, emsize=200, nhid=200, nla
         data_for_fitting = None
 
         X, y, X_val, y_val, X_test, y_test, invert_perm_map, steps_per_epoch, num_classes, label_weights, train_ds, val_ds, test_ds = make_datasets(extra_prior_kwargs_dict, do_permute=not_zs, bptt=bptt, steps_per_epoch=steps_per_epoch)
+        old_bptt = bptt
         dl, val_dl, test_dl, bptt, data_for_fitting  = make_dataloaders(bptt=bptt)
-
+        if old_bptt != bptt:
+            print("bptt changed from {} to {}".format(old_bptt, bptt))
+            max_pos = int((len(data_for_fitting[0]) // 10) * (.8))
+            if extra_prior_kwargs_dict.get('uniform_bptt', False):
+                single_eval_pos_gen = lambda: np.random.randint(0, max_pos)
+            else:
+                single_eval_pos_gen = max_pos
+        # print("Dataloader size: ", len(dl))
         if extra_prior_kwargs_dict.get('zs_eval_ensemble', 0) > 0:
 
             def tpc_data_eval(cl=1000, X=None, y=None, X_val=None, y_val=None, ens_size=1):
@@ -845,6 +854,7 @@ def train(args, dataset, criterion, encoder_generator, emsize=200, nhid=200, nla
                     single_eval_pos = single_eval_pos_gen() if callable(single_eval_pos_gen) else single_eval_pos_gen
                 else:
                     single_eval_pos = targets.shape[0] - bptt_extra_samples
+                # print("Size of data: ", len(data[0]))
                 # print("Single eval pos: ", single_eval_pos)
                 # print("BPTT extra samples: ", bptt_extra_samples)
                 # print("Batch size: ", targets.shape[0])
@@ -1266,8 +1276,14 @@ def train(args, dataset, criterion, encoder_generator, emsize=200, nhid=200, nla
                 #load data
                 extra_prior_kwargs_dict['preprocess_type'] = np.random.choice(['none', 'power_all', 'robust_all', 'quantile_all'])
                 X, y, X_val, y_val, X_test, y_test, invert_perm_map, steps_per_epoch, num_classes, label_weights, train_ds, val_ds, test_ds = make_datasets(extra_prior_kwargs_dict, do_permute=not_zs, bptt=bptt, steps_per_epoch=steps_per_epoch)
+                old_bptt = bptt
                 dl, val_dl, test_dl, bptt, data_for_fitting  = make_dataloaders(bptt=bptt)
-
+                if old_bptt != bptt:
+                    print("bptt changed from {} to {}".format(old_bptt, bptt))
+                    if extra_prior_kwargs_dict.get('uniform_bptt', False): 
+                        single_eval_pos_gen = lambda: np.random.randint(0, bptt)
+                    else:
+                        single_eval_pos_gen = bptt
                 if bagging:
                     dl_backup = dl
             if bagging:
