@@ -10,7 +10,6 @@ openml__colic__27
 openml__connect-4__146195
 openml__dilbert__168909
 openml__dresses-sales__125920
-openml__ecoli__145977
 openml__eeg-eye-state__14951
 openml__elevators__3711
 openml__har__14970

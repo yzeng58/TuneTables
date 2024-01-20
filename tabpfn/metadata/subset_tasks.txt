@@ -1,1 +1,3 @@
-pt1000-10ens-randinit-avg-top2-reseed
+pt10-uniform
+pt100-uniform
+pt1000-uniform
