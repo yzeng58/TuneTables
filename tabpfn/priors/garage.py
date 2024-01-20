@@ -16,3 +16,7 @@
 
 #####################
 
+    if scaler == "Quantile":
+        scaler_function = QuantileTransformer(
+            n_quantiles=min(len(train_index), 1000)
+        )  # use either 1000 quantiles or num. training instances, whichever is smaller

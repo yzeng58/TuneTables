@@ -65,23 +65,22 @@ def process_data(
     impute=True,
     args=None,
 ):
-    # validate the scaler
-    assert scaler in ["None", "Quantile"], f"scaler not recognized: {scaler}"
-
-    if scaler == "Quantile":
-        scaler_function = QuantileTransformer(
-            n_quantiles=min(len(train_index), 1000)
-        )  # use either 1000 quantiles or num. training instances, whichever is smaller
-
-    num_mask = np.ones(dataset.X.shape[1], dtype=int)
-    num_mask[dataset.cat_idx] = 0
-    # TODO: Remove this assertion after sufficient testing
-    assert num_mask.sum() + len(dataset.cat_idx) == dataset.X.shape[1]
-
+    
 
     X_train, y_train = dataset.X[train_index], dataset.y[train_index]
     X_val, y_val = dataset.X[val_index], dataset.y[val_index]
     X_test, y_test = dataset.X[test_index], dataset.y[test_index]
+
+    # validate the scaler
+    assert scaler in ["None"], f"scaler not recognized: {scaler}"
+
+
+    num_mask = np.ones(dataset.X.shape[1], dtype=int)
+    num_mask[dataset.cat_idx] = 0
+
+
+
+
 
     # Impute numerical features
     if impute:
@@ -511,12 +510,10 @@ def train(args, dataset, criterion, encoder_generator, emsize=200, nhid=200, nla
         not_zs = extra_prior_kwargs_dict.get('zs_eval_ensemble', 0) == 0
         seed_all(extra_prior_kwargs_dict.get('rand_seed'))
 
-        X, y, X_val, y_val, X_test, y_test, invert_perm_map, steps_per_epoch, num_classes, label_weights, train_ds, val_ds, test_ds = make_datasets(extra_prior_kwargs_dict, do_permute=not_zs, bptt=bptt, steps_per_epoch=steps_per_epoch)
 
         data_for_fitting = None
 
-
-        #make dataloaders
+        X, y, X_val, y_val, X_test, y_test, invert_perm_map, steps_per_epoch, num_classes, label_weights, train_ds, val_ds, test_ds = make_datasets(extra_prior_kwargs_dict, do_permute=not_zs, bptt=bptt, steps_per_epoch=steps_per_epoch)
         dl, val_dl, test_dl, bptt, data_for_fitting  = make_dataloaders(bptt=bptt)
 
         if extra_prior_kwargs_dict.get('zs_eval_ensemble', 0) > 0:
@@ -1227,9 +1224,9 @@ def train(args, dataset, criterion, encoder_generator, emsize=200, nhid=200, nla
             if extra_prior_kwargs_dict.get('reseed_data', True):
                 #load data
                 extra_prior_kwargs_dict['preprocess_type'] = np.random.choice(['none', 'power_all', 'robust_all', 'quantile_all'])
-                X, y, X_val, y_val, X_test, y_test, invert_perm_map, steps_per_epoch = make_datasets(bptt=bptt, steps_per_epoch=steps_per_epoch)
-                #make dataloaders
-                dl, val_dl, test_dl, bptt, data_for_fitting = make_dataloaders(bptt=bptt)
+                X, y, X_val, y_val, X_test, y_test, invert_perm_map, steps_per_epoch, num_classes, label_weights, train_ds, val_ds, test_ds = make_datasets(extra_prior_kwargs_dict, do_permute=not_zs, bptt=bptt, steps_per_epoch=steps_per_epoch)
+                dl, val_dl, test_dl, bptt, data_for_fitting  = make_dataloaders(bptt=bptt)
+
                 if bagging:
                     dl_backup = dl
             if bagging:
