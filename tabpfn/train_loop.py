@@ -198,8 +198,13 @@ def reload_config(config_type='causal', task_type='multiclass', longer=0, args=N
     #Feature subset selection
     config['subset_features'] = 100
     config['subset_rows'] = -1
-    config['subset_features_method'] = args.feature_subset_method
+    config['subset_features_method'] = args.subset_features_method
     config['subset_rows_method'] = 'random'
+
+
+    #Preprocessing
+    config['summerize_after_prep'] = args.summerize_after_prep
+
 
     # wandb
     # todo: for now, most are hard-coded
@@ -257,7 +262,7 @@ def parse_args():
     parser.add_argument('--wandb_group', type=str, default='temp', help='Group for wandb logging.')
     parser.add_argument('--wandb_project', type=str, default='tabpfn-pt', help='Project for wandb logging.')
     parser.add_argument('--wandb_entity', type=str, default='nyu-dice-lab', help='Entity for wandb logging.')
-    parser.add_argument('--feature_subset_method', type=str, default='mutual_information', help='Method for feature subset selection ("mutual_information, random, first, pca").')
+    parser.add_argument('--subset_features_method', type=str, default='mutual_information', help='Method for feature subset selection ("mutual_information, random, first, pca").')
     parser.add_argument('--pad_features', action='store_true', help='Whether to pad features to the maximum number of features.')
     parser.add_argument('--do_preprocess', action='store_true', help='Whether to add tabpfn-style preprocessing to the data.')
     parser.add_argument('--zs-eval-ensemble', type=int, default=0, help='Whether to do ensembled zero-shot evaluation.')
@@ -271,6 +276,7 @@ def parse_args():
     parser.add_argument('--shuffle_every_epoch', action='store_true', help='Whether to shuffle the order of the data every epoch (can help when bptt is large).')
     parser.add_argument('--max_num_classes', type=int, default=10, help='Maximum number of classes to use.')
     parser.add_argument('--real_data_qty', type=int, default=0, help='Number of real data samples to use for fitting.')
+    parser.add_argument('--summerize_after_prep', action='store_true', help='train_feature_extractor.')
     args = parser.parse_args()
     return args
 

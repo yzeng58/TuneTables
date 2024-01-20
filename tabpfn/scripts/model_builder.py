@@ -242,7 +242,6 @@ def get_model(config, device, should_train=True, verbose=False, state_dict=None,
     #Real Data Training
     if config['prior_type'] == 'real':
         from priors.real import TabularDataset
-        from priors.real import process_data
         dataset = TabularDataset.read(Path(config['data_path']).resolve())
         prior_hyperparameters = {}
         use_style = False
@@ -314,41 +313,11 @@ def get_model(config, device, should_train=True, verbose=False, state_dict=None,
     args = argparse.Namespace(**config)
 
     if config['prior_type'] == 'real':
-        dataset_built = False
-        for i, split_dictionary in enumerate(dataset.split_indeces):
-            # TODO: make stopping index a hyperparameter
-            if i != config['split']:
-                continue
-            train_index = split_dictionary["train"]
-            val_index = split_dictionary["val"]
-            test_index = split_dictionary["test"]
+        dataloader = dataset
 
-            # run pre-processing & split data (list of numpy arrays of length num_ensembles)
-            processed_data = process_data(
-                dataset,
-                train_index,
-                val_index,
-                test_index,
-                verbose=config['verbose'],
-                scaler="None",
-                one_hot_encode=False,
-                args=args,
-            )
-            X_train, y_train = processed_data["data_train"]
-            X_val, y_val = processed_data["data_val"]
-            X_test, y_test = processed_data["data_test"]
-            n_features = X_train.shape[1]
-            n_samples = X_train.shape[0]
-            config['num_classes'] = len(set(y_train))
-            config['num_steps'] = len(X_train) // config['bptt']
-            if config['bptt'] > n_samples:
-                print(f"WARNING: bptt {config['bptt']} is larger than the number of samples in the training set, {n_samples}. Setting bptt=128.")
-                config['bptt'] = 128
-            dataloader = [[X_train, y_train], [X_val, y_val], [X_test, y_test]]
-            dataset_built = True
-            break
-        if not dataset_built:
-            raise Exception(f"Split {config['split']} not found in dataset!")
+        config['num_classes'] = len(set(dataloader.y))
+        config['num_steps'] = None
+
     else:
         dataloader = model_proto.DataLoader
 
@@ -399,7 +368,8 @@ def get_model(config, device, should_train=True, verbose=False, state_dict=None,
     else:
         sep_samp = get_uniform_single_eval_pos_sampler(config.get('max_eval_pos', config['bptt']), min_len=config.get('min_eval_pos', 0))
         
-    model, results_dict = train(dataloader
+    model, results_dict = train(args
+                  , dataloader
                   , loss
                   , encoder
                   , style_encoder_generator = encoders.StyleEncoder if use_style else None

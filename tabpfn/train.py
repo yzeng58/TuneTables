@@ -20,17 +20,26 @@ from transformer import TransformerModel
 from tabpfn.scripts.tabular_evaluation import predict_wrapper
 from tabpfn.utils import get_cosine_schedule_with_warmup, get_openai_lr, StoreDictKeyPair, get_weighted_single_eval_pos_sampler, get_uniform_single_eval_pos_sampler
 import tabpfn.priors as priors
-from priors.real import TabDS, get_train_dataloader
+import sys
+script_path = os.path.abspath(__file__)
+project_path = os.path.dirname(os.path.dirname(script_path))
+sys.path.insert(0, os.path.join(project_path + "/tabpfn/priors"))
+
+import real
+
 import tabpfn.encoders as encoders
 import tabpfn.positional_encodings as positional_encodings
 from utils import init_dist, seed_all, EmbeddingConcatenator
 
 from torch.cuda.amp import autocast, GradScaler
 from torch import nn
+from torch.utils.data import Dataset
 
 import numpy as np
 
 import uncertainty_metrics.numpy as um
+#from priors.real import process_data
+from tabpfn.utils import normalize_data, to_ranking_low_mem, remove_outliers, NOP, normalize_by_used_features_f
 
 from sklearn.metrics import (
     accuracy_score,
@@ -38,6 +47,143 @@ from sklearn.metrics import (
     log_loss,
     roc_auc_score,
 )
+
+from sklearn.compose import ColumnTransformer
+from sklearn.impute import SimpleImputer
+from sklearn.pipeline import Pipeline
+from sklearn.preprocessing import OneHotEncoder, QuantileTransformer, RobustScaler, PowerTransformer
+
+
+def process_data(
+    dataset,
+    train_index,
+    val_index,
+    test_index,
+    verbose=False,
+    scaler="None",
+    one_hot_encode=False,
+    impute=True,
+    args=None,
+):
+    
+
+    X_train, y_train = dataset.X[train_index], dataset.y[train_index]
+    X_val, y_val = dataset.X[val_index], dataset.y[val_index]
+    X_test, y_test = dataset.X[test_index], dataset.y[test_index]
+
+    # validate the scaler
+    assert scaler in ["None"], f"scaler not recognized: {scaler}"
+
+
+    num_mask = np.ones(dataset.X.shape[1], dtype=int)
+    num_mask[dataset.cat_idx] = 0
+
+    # Impute numerical features
+    if impute:
+        num_idx = np.where(num_mask)[0]
+
+        # The imputer drops columns that are fully NaN. So, we first identify columns that are fully NaN and set them to
+        # zero. This will effectively drop the columns without changing the column indexing and ordering that many of
+        # the functions in this repository rely upon.
+        fully_nan_num_idcs = np.nonzero(
+            (~np.isnan(X_train[:, num_idx].astype("float"))).sum(axis=0) == 0
+        )[0]
+        if fully_nan_num_idcs.size > 0:
+            X_train[:, num_idx[fully_nan_num_idcs]] = 0
+            X_val[:, num_idx[fully_nan_num_idcs]] = 0
+            X_test[:, num_idx[fully_nan_num_idcs]] = 0
+
+        # Impute numerical features, and pass through the rest
+        numeric_transformer = Pipeline(steps=[("imputer", SimpleImputer())])
+        preprocessor = ColumnTransformer(
+            transformers=[
+                ("num", numeric_transformer, num_idx),
+                ("pass", "passthrough", dataset.cat_idx),
+                # ("cat", categorical_transformer, categorical_features),
+            ],
+            # remainder="passthrough",
+        )
+        X_train = preprocessor.fit_transform(X_train)
+        X_val = preprocessor.transform(X_val)
+        X_test = preprocessor.transform(X_test)
+
+        # Re-order columns (ColumnTransformer permutes them)
+        perm_idx = []
+        running_num_idx = 0
+        running_cat_idx = 0
+        for is_num in num_mask:
+            if is_num > 0:
+                perm_idx.append(running_num_idx)
+                running_num_idx += 1
+            else:
+                perm_idx.append(running_cat_idx + len(num_idx))
+                running_cat_idx += 1
+        assert running_num_idx == len(num_idx)
+        assert running_cat_idx == len(dataset.cat_idx)
+        X_train = X_train[:, perm_idx]
+        X_val = X_val[:, perm_idx]
+        X_test = X_test[:, perm_idx]
+
+    if scaler != "None":
+        if verbose:
+            print(f"Scaling the data using {scaler}...")
+        X_train[:, num_mask] = scaler_function.fit_transform(X_train[:, num_mask])
+        X_val[:, num_mask] = scaler_function.transform(X_val[:, num_mask])
+        X_test[:, num_mask] = scaler_function.transform(X_test[:, num_mask])
+
+    if one_hot_encode:
+        ohe = OneHotEncoder(sparse=False, handle_unknown="ignore")
+        new_x1 = ohe.fit_transform(X_train[:, dataset.cat_idx])
+        X_train = np.concatenate([new_x1, X_train[:, num_mask]], axis=1)
+        new_x1_test = ohe.transform(X_test[:, dataset.cat_idx])
+        X_test = np.concatenate([new_x1_test, X_test[:, num_mask]], axis=1)
+        new_x1_val = ohe.transform(X_val[:, dataset.cat_idx])
+        X_val = np.concatenate([new_x1_val, X_val[:, num_mask]], axis=1)
+        if verbose:
+            print("New Shape:", X_train.shape)
+
+    args.num_features = X_train.shape[1]
+    # create subset of dataset if needed
+    if (
+        args is not None
+        and (args.subset_features > 0 or args.subset_rows > 0)
+        and (
+            args.subset_features < args.num_features or args.subset_rows < len(X_train)
+        )
+    ):
+            
+        if getattr(dataset, "ssm", None) is None:
+            subset_maker = real.SubsetMaker(
+                args.subset_features,
+                args.subset_rows,
+                args.subset_features_method,
+                args.subset_rows_method,
+                give_full_features = args.summerize_after_prep, #if we summerize after prep, we don't want to summerize here
+            )
+        X_train, y_train = subset_maker.make_subset(
+            X_train,
+            y_train,
+            split="train",
+            seed=args.rand_seed,
+        )
+        if args.subset_features < args.num_features:
+            X_val, y_val = subset_maker.make_subset(
+                X_val,
+                y_val,
+                split="val",
+                seed=args.rand_seed,
+            )
+            X_test, y_test = subset_maker.make_subset(
+                X_test,
+                y_test,
+                split="test",
+                seed=args.rand_seed,
+            )
+    return {
+        "data_train": (X_train, y_train),
+        "data_val": (X_val, y_val),
+        "data_test": (X_test, y_test),
+    }
 
 class Losses():
     gaussian = nn.GaussianNLLLoss(full=True, reduction='none')
@@ -47,7 +193,122 @@ class Losses():
         return nn.CrossEntropyLoss(reduction='none', weight=torch.ones(num_classes))
     bce = nn.BCEWithLogitsLoss(reduction='none')
 
-def train(priordataloader_class, criterion, encoder_generator, emsize=200, nhid=200, nlayers=6, nhead=2, dropout=0.0,
+
+class TabDS(Dataset):
+    def __init__(self, X, y):
+        self.X = X
+
+        self.y_float = torch.from_numpy(y.copy().astype(np.float32))
+        self.y = torch.from_numpy(y.copy().astype(np.int64))
+
+        print(f"TabDS: X.shape = {self.X.shape}, y.shape = {self.y.shape}")
+
+    def __len__(self):
+        return len(self.y)
+
+    def __getitem__(self, idx):
+        #(X,y) data, y target, single_eval_pos
+        return tuple([self.X[idx], self.y_float[idx]]), self.y[idx], torch.tensor([])
+
+
+def preprocess_input(eval_xs, preprocess_transform, summerize_after_prep):
+    import warnings
+
+    if preprocess_transform != 'none':
+        if preprocess_transform == 'power' or preprocess_transform == 'power_all':
+            pt = PowerTransformer(standardize=True)
+        elif preprocess_transform == 'quantile' or preprocess_transform == 'quantile_all':
+            pt = QuantileTransformer(output_distribution='normal')
+        elif preprocess_transform == 'robust' or preprocess_transform == 'robust_all':
+            pt = RobustScaler(unit_variance=True)
+    eval_position = eval_xs.shape[0]
+    eval_xs = normalize_data(eval_xs, normalize_positions=eval_position)
+
+    warnings.simplefilter('error')
+    if preprocess_transform != 'none':
+        eval_xs = eval_xs.cpu().numpy()
+        feats = set(range(eval_xs.shape[1]))
+        for col in feats:
+            try:
+                pt.fit(eval_xs[0:eval_position, col:col + 1])
+                trans = pt.transform(eval_xs[:, col:col + 1])
+                # print(scipy.stats.spearmanr(trans[~np.isnan(eval_xs[:, col:col+1])], eval_xs[:, col:col+1][~np.isnan(eval_xs[:, col:col+1])]))
+                eval_xs[:, col:col + 1] = trans
+            except:
+                pass
+        eval_xs = torch.tensor(eval_xs).float()
+    warnings.simplefilter('default')
+
+    eval_xs = eval_xs.unsqueeze(1)
+
+    eval_xs = remove_outliers(eval_xs, normalize_positions=eval_position)
+    # Rescale X
+    #hard-coded
+    max_features = 100
+
+    if summerize_after_prep:
+        eval_xs = normalize_by_used_features_f(eval_xs, min(eval_xs.shape[-1],max_features), max_features,
+                                            normalize_with_sqrt=False)        
+    else:
+        eval_xs = normalize_by_used_features_f(eval_xs, eval_xs.shape[-1], max_features,
+                                                normalize_with_sqrt=False)
+
+    eval_xs = eval_xs.squeeze(1)
+    return eval_xs
+
+def get_train_dataloader(ds, bptt=1000, shuffle=True, num_workers=1, drop_last=True, agg_k_grads=1):
+        old_bptt = bptt
+        dl = DataLoader(
+            ds, batch_size=bptt, shuffle=shuffle, num_workers=num_workers, drop_last=drop_last,
+        )
+        while len(dl) % agg_k_grads != 0:
+            bptt += 1
+            dl = DataLoader(
+                ds, batch_size=bptt, shuffle=shuffle, num_workers=num_workers, drop_last=drop_last,
+            )
+            # raise ValueError(f'Number of batches {len(dl)} not divisible by {agg_k_grads}, please modify aggregation factor.')
+        if old_bptt != bptt:
+            print(f'Batch size changed from {old_bptt} to {bptt} to be divisible by {agg_k_grads} (with last batch dropped).')
+        if len(dl) == 0:
+            bptt = 1
+            dl = DataLoader(
+                ds, batch_size=bptt, shuffle=shuffle, num_workers=num_workers, drop_last=drop_last,
+            )
+            print("Dataloader length was 0, setting batch size to 1.")
+        return dl, bptt
+
+def SummarizeAfter(X, X_val, X_test, y, y_val, y_test, num_features, subset_features_method):
+
+        SM = real.SubsetMaker(
+                num_features,
+                10e8, #subset_rows = 10^8 ablate this part here
+                subset_features_method,
+                "first", #args.subset_rows_method is not used anyhow
+            )
+
+        X, y = SM.make_subset(
+            X,
+            y,
+            split="train",
+        )
+
+        X_val, y = SM.make_subset(
+            X_val, 
+            y,
+            split="val",
+        )
+            
+        X_test, y = SM.make_subset(
+            X_test, 
+            y,
+            split="test",
+        )
+
+        return torch.from_numpy(X).to(torch.float32), torch.from_numpy(X_val).to(torch.float32), torch.from_numpy(X_test).to(torch.float32)
+
+
+#def train(args, priordataloader_class, criterion, encoder_generator, emsize=200, nhid=200, nlayers=6, nhead=2, dropout=0.0,
+def train(args, dataset, criterion, encoder_generator, emsize=200, nhid=200, nlayers=6, nhead=2, dropout=0.0,
           epochs=10, steps_per_epoch=100, batch_size=200, bptt=10, lr=None, weight_decay=0.0, warmup_epochs=10, input_normalization=False,
           y_encoder_generator=None, pos_encoder_generator=None, decoder=None, extra_prior_kwargs_dict={}, scheduler=get_cosine_schedule_with_warmup,
           load_weights_from_this_state_dict=None, validation_period=10, single_eval_pos_gen=None, bptt_extra_samples=None, gpu_device='cuda:0',
@@ -55,7 +316,10 @@ def train(priordataloader_class, criterion, encoder_generator, emsize=200, nhid=
           initializer=None, initialize_with_model=None, train_mixed_precision=False, efficient_eval_masking=True, 
           boosting=False, boosting_lr=1e-3, boosting_n_iters=10, rand_init_ensemble=False, do_concat="", **model_extra_args
           ):
-    seed_all(extra_prior_kwargs_dict.get('rand_seed'))
+
+
+
+        
     device = gpu_device if torch.cuda.is_available() else 'cpu:0'
     print(f'Using {device} device')
     using_dist, rank, device = init_dist(device)
@@ -78,6 +342,8 @@ def train(priordataloader_class, criterion, encoder_generator, emsize=200, nhid=
     else:
         do_prompt_tuning = False
         prefix_size = 0
+
+
 
     single_eval_pos_gen = single_eval_pos_gen if callable(single_eval_pos_gen) else lambda: single_eval_pos_gen
     real_data_qty = extra_prior_kwargs_dict.get('real_data_qty', 0)
@@ -114,12 +380,61 @@ def train(priordataloader_class, criterion, encoder_generator, emsize=200, nhid=
             # print("new_a: ", new_a[:5, ...])
         return new_a
 
-    def make_datasets(do_permute=True):
-        X, y = priordataloader_class[0][0], priordataloader_class[0][1]
+
+
+
+    def make_datasets(extra_prior_kwargs_dict, do_permute=True, bptt = 0, steps_per_epoch=None):
+        """  """
+        dataset_built = False
+        for i, split_dictionary in enumerate(dataset.split_indeces):
+            # TODO: make stopping index a hyperparameter
+            if i != extra_prior_kwargs_dict.get('split'): # config['split']:
+                continue
+            train_index = split_dictionary["train"]
+            val_index = split_dictionary["val"]
+            test_index = split_dictionary["test"]
+            
+            # run pre-processing & split data (list of numpy arrays of length num_ensembles)
+            processed_data = process_data(
+                dataset,
+                train_index,
+                val_index,
+                test_index,
+                verbose= extra_prior_kwargs_dict.get('verbose'), #config['verbose'],
+                scaler="None",
+                one_hot_encode=False,
+                args=args,
+            )
+            X_train, y_train = processed_data["data_train"]
+            X_val, y_val = processed_data["data_val"]
+            X_test, y_test = processed_data["data_test"]
+            n_features = X_train.shape[1]
+            n_samples = X_train.shape[0]
+            #config['num_classes'] = len(set(y_train))
+            num_classes = len(set(y_train))
+            #config['num_steps'] = len(X_train) // config['bptt']
+            steps_per_epoch = len(X_train) // bptt
+            #if config['bptt'] > n_samples:
+            #    print(f"WARNING: bptt {config['bptt']} is larger than the number of samples in the training set, {n_samples}. Setting bptt=128.")
+            #    config['bptt'] = 128
+            if bptt > n_samples:
+                print(f"WARNING: bptt {config['bptt']} is larger than the number of samples in the training set, {n_samples}. Setting bptt=128.")
+                bptt = 128
+
+            priordataloader_class = [[X_train, y_train], [X_val, y_val], [X_test, y_test]]
+            dataset_built = True
+            break
+        if not dataset_built:
+            raise Exception(f"Split {config['split']} not found in dataset!")
+        
+        seed_all(extra_prior_kwargs_dict.get('rand_seed'))
+
+        X, y = X_train, y_train
+        ##X, y = priordataloader_class[0][0], priordataloader_class[0][1]
         # print("In make datasets: ")
         #print("unique y: ", np.unique(y))
-        X_val, y_val = priordataloader_class[1][0], priordataloader_class[1][1]
-        X_test, y_test = priordataloader_class[2][0], priordataloader_class[2][1]
+        ##X_val, y_val = priordataloader_class[1][0], priordataloader_class[1][1]
+        ##X_test, y_test = priordataloader_class[2][0], priordataloader_class[2][1]
         #shuffle data
         if do_permute:
             label_perm = np.random.permutation(num_classes)
@@ -142,7 +457,7 @@ def train(priordataloader_class, criterion, encoder_generator, emsize=200, nhid=
         y = y[idx, ...]
         # print("y: ", y[:20, ...])
         # print("Label perm: ", label_perm)
-        new_y = loop_translate(y, rev_invert_perm_map)
+        y = loop_translate(y, rev_invert_perm_map)
         # for i in range(num_classes):
         #     new_y[i] = y[rev_invert_perm_map[i]]
         # print("New y: ", new_y[:20, ...])
@@ -150,15 +465,54 @@ def train(priordataloader_class, criterion, encoder_generator, emsize=200, nhid=
         X = X[:, feat_idx, ...]
         X_val = X_val[:, feat_idx, ...]
         X_test = X_test[:, feat_idx, ...]
-        return X, new_y, X_val, y_val, X_test, y_test, invert_perm_map
+
+        # label balancing
+        num_classes = len(np.unique(np.unique(y)))
+        if do_prompt_tuning and extra_prior_kwargs_dict.get('tuned_prompt_label_balance', 'equal') == 'proportional':
+            label_weights = np.bincount(y) / len(y)
+            label_weights = torch.from_numpy(label_weights).float().to(device)
+        else:
+            label_weights = None
+
+        if extra_prior_kwargs_dict.get("do_preprocess", False):
+            preprocess_type=extra_prior_kwargs_dict.get("preprocess_type", "none")
+            summerize_after_prep=extra_prior_kwargs_dict.get("summerize_after_prep", "False")
+
+            X = preprocess_input(torch.from_numpy(X.copy().astype(np.float32)), preprocess_type, summerize_after_prep)    
+            X_val = preprocess_input(torch.from_numpy(X_val.copy().astype(np.float32)), preprocess_type, summerize_after_prep)  
+            X_test = preprocess_input(torch.from_numpy(X_test.copy().astype(np.float32)), preprocess_type, summerize_after_prep)  
+
+
+            print("X",X.dtype)
+            ## SummarizeAfter
+            if args.summerize_after_prep:
+                X, X_val, X_test = SummarizeAfter(X, X_val, X_test, y, y_val, y_test, num_features, args.subset_features_method)            
+            print("X",X.dtype)
+
+        if X.shape[1] < num_features and extra_prior_kwargs_dict.get("pad_features", True):
+            
+            def pad_data(data):
+                return torch.cat([data, torch.zeros(data.shape[0], num_features - data.shape[1])], dim=1)
+            
+            X = pad_data(X)
+            X_val = pad_data(X_val)
+            X_test = pad_data(X_test)
+
+
+        print('aggregate_k_gradients',aggregate_k_gradients)
+
+
+        train_ds = TabDS(X, y)
+        val_ds = TabDS(X_val, y_val)
+        test_ds = TabDS(X_test, y_test)
+
+
+        return X, y, X_val, y_val, X_test, y_test, invert_perm_map, steps_per_epoch, num_classes, label_weights, train_ds, val_ds, test_ds
     
+
+
     def make_dataloaders(bptt=bptt):
 
-        train_ds = TabDS(X, y, num_features=num_features, 
-                         pad_features=extra_prior_kwargs_dict.get("pad_features", True), 
-                         do_preprocess=extra_prior_kwargs_dict.get("do_preprocess", False),
-                         preprocess_type=extra_prior_kwargs_dict.get("preprocess_type", "none"),
-                         aggregate_k_gradients=aggregate_k_gradients)
         dl, bptt = get_train_dataloader(train_ds, 
                                   bptt=bptt, 
                                   shuffle=False, 
@@ -166,19 +520,11 @@ def train(priordataloader_class, criterion, encoder_generator, emsize=200, nhid=
                                   drop_last=True, 
                                   agg_k_grads=aggregate_k_gradients
                                 )
-        val_ds = TabDS(X_val, y_val, num_features=num_features, 
-                       pad_features=extra_prior_kwargs_dict.get("pad_features", True), 
-                       do_preprocess=extra_prior_kwargs_dict.get("do_preprocess", False),
-                       preprocess_type=extra_prior_kwargs_dict.get("preprocess_type", "none"),
-                       aggregate_k_gradients=1)
+
         val_dl = DataLoader(
             val_ds, batch_size=min(128, y_val.shape[0] // 2), shuffle=False, num_workers=1,
         )
-        test_ds = TabDS(X_test, y_test, num_features=num_features, 
-                        pad_features=extra_prior_kwargs_dict.get("pad_features", True),
-                        do_preprocess=extra_prior_kwargs_dict.get("do_preprocess", False), 
-                        preprocess_type=extra_prior_kwargs_dict.get("preprocess_type", "none"),
-                        aggregate_k_gradients=1)
+
         test_dl = DataLoader(
             test_ds, batch_size=min(128, y_test.shape[0] // 2), shuffle=False, num_workers=1,
         )
@@ -196,21 +542,20 @@ def train(priordataloader_class, criterion, encoder_generator, emsize=200, nhid=
         data_for_fitting = [X_data_concat, y_data_concat]
         return dl, val_dl, test_dl, bptt, data_for_fitting
 
+
+
     if real_prior:
-        data_for_fitting = None
-        num_classes = len(np.unique(priordataloader_class[0][1]))
-        if do_prompt_tuning and extra_prior_kwargs_dict.get('tuned_prompt_label_balance', 'equal') == 'proportional':
-            label_weights = np.bincount(priordataloader_class[0][1]) / len(priordataloader_class[0][1])
-            label_weights = torch.from_numpy(label_weights).float().to(device)
-        else:
-            label_weights = None
+
 
         #load data
         not_zs = extra_prior_kwargs_dict.get('zs_eval_ensemble', 0) == 0
+        seed_all(extra_prior_kwargs_dict.get('rand_seed'))
 
-        X, y, X_val, y_val, X_test, y_test, invert_perm_map = make_datasets(do_permute=not_zs)
-        #make dataloaders
-        dl, val_dl, test_dl, bptt, data_for_fitting = make_dataloaders(bptt=bptt)
+
+        data_for_fitting = None
+
+        X, y, X_val, y_val, X_test, y_test, invert_perm_map, steps_per_epoch, num_classes, label_weights, train_ds, val_ds, test_ds = make_datasets(extra_prior_kwargs_dict, do_permute=not_zs, bptt=bptt, steps_per_epoch=steps_per_epoch)
+        dl, val_dl, test_dl, bptt, data_for_fitting  = make_dataloaders(bptt=bptt)
 
         if extra_prior_kwargs_dict.get('zs_eval_ensemble', 0) > 0:
 
@@ -275,8 +620,9 @@ def train(priordataloader_class, criterion, encoder_generator, emsize=200, nhid=
             exit(0)
 
     else:
-        dl = priordataloader_class(num_steps=steps_per_epoch, batch_size=batch_size, eval_pos_seq_len_sampler=eval_pos_seq_len_sampler, seq_len_maximum=bptt+(bptt_extra_samples if bptt_extra_samples else 0), device=device, **extra_prior_kwargs_dict)
-        num_features = dl.num_features
+        raise Exception("Excepted a real dataset")
+
+
     encoder = encoder_generator(num_features, emsize)
     #style_def = dl.get_test_batch()[0][0] # the style in batch of the form ((style, x, y), target, single_eval_pos)
     style_def = None
@@ -610,6 +956,7 @@ def train(priordataloader_class, criterion, encoder_generator, emsize=200, nhid=
         #     wbn = e_model.prefix_embedding.weight.detach().clone()
         #     print("Prompt weights after: ", wbn[:10, ...])
             # print("Prompt requires grad: ", e_model.prefix_embedding.weight.requires_grad)
+
         return total_loss / max(steps_per_epoch, 1), (total_positional_losses / total_positional_losses_recorded).tolist(),\
                time_to_get_batch, forward_time, step_time, nan_steps.cpu().item()/(batch+1),\
                ignore_steps.cpu().item()/(batch+1)
@@ -918,9 +1265,9 @@ def train(priordataloader_class, criterion, encoder_generator, emsize=200, nhid=
             if extra_prior_kwargs_dict.get('reseed_data', True):
                 #load data
                 extra_prior_kwargs_dict['preprocess_type'] = np.random.choice(['none', 'power_all', 'robust_all', 'quantile_all'])
-                X, y, X_val, y_val, X_test, y_test, invert_perm_map = make_datasets()
-                #make dataloaders
-                dl, val_dl, test_dl, bptt, data_for_fitting = make_dataloaders(bptt=bptt)
+                X, y, X_val, y_val, X_test, y_test, invert_perm_map, steps_per_epoch, num_classes, label_weights, train_ds, val_ds, test_ds = make_datasets(extra_prior_kwargs_dict, do_permute=not_zs, bptt=bptt, steps_per_epoch=steps_per_epoch)
+                dl, val_dl, test_dl, bptt, data_for_fitting  = make_dataloaders(bptt=bptt)
+
                 if bagging:
                     dl_backup = dl
             if bagging:
