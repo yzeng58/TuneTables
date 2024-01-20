@@ -1,1 +1,3 @@
-debug
+pt10-sumafter-pca
+pt100-sumafter-pca
+pt1000-sumafter-pca

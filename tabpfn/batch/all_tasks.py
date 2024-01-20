@@ -64,6 +64,8 @@ pt10_rand_dict = copy.deepcopy(pt10_dict)
 pt10_rand_dict['subset_features_method'] = 'random'
 pt10_powerall_dict = copy.deepcopy(pt10_dict)
 pt10_powerall_dict['preprocess_type'] = 'power_all'
+pt10_sumafter_pca_dict = copy.deepcopy(pt10_pca_dict)
+pt10_sumafter_pca_dict['summerize_after_prep'] = ''
 
 #Prompt tuning with 100 prompts
 debug_dict = copy.deepcopy(pt10_dict)
@@ -98,6 +100,8 @@ pt100_rand_dict = copy.deepcopy(pt100_dict)
 pt100_rand_dict['subset_features_method'] = 'random'
 pt100_powerall_dict = copy.deepcopy(pt100_dict)
 pt100_powerall_dict['preprocess_type'] = 'power_all'
+pt100_sumafter_pca_dict = copy.deepcopy(pt100_pca_dict)
+pt100_sumafter_pca_dict['summerize_after_prep'] = ''
 
 #Prompt tuning with 1000 prompts
 pt1000_dict = copy.deepcopy(pt10_dict)
@@ -136,6 +140,8 @@ pt1000_rand_dict = copy.deepcopy(pt1000_dict)
 pt1000_rand_dict['subset_features_method'] = 'random'
 pt1000_powerall_dict = copy.deepcopy(pt1000_dict)
 pt1000_powerall_dict['preprocess_type'] = 'power_all'
+pt1000_sumafter_pca_dict = copy.deepcopy(pt1000_pca_dict)
+pt1000_sumafter_pca_dict['summerize_after_prep'] = ''
 
 #Ensemble presets
 ens_bagged_avg_dict = dict(pt1000_dict, **ens_bagged_avg_dict)
@@ -169,6 +175,7 @@ all_tasks = {
     'pt10-rand' : pt10_rand_dict,
     'pt10-uniform' : pt10_unif_dict,
     'pt10-powerall' : pt10_powerall_dict,
+    'pt10-sumafter-pca' : pt10_sumafter_pca_dict,
     'pt10-short' : pt10_short_dict,
     'pt10-shorter' : pt10_shorter_dict,
     'pt10-uniform-short' : pt10_short_unif_dict,
@@ -180,6 +187,7 @@ all_tasks = {
     'pt100-rand' : pt100_rand_dict,
     'pt100-uniform' : pt100_unif_dict,
     'pt100-powerall' : pt100_powerall_dict,
+    'pt100-sumafter-pca' : pt100_sumafter_pca_dict,
     'pt100-short' : pt100_short_dict,
     'pt100-shorter' : pt100_shorter_dict,
     'pt100-uniform-short' : pt100_short_unif_dict,
@@ -192,6 +200,7 @@ all_tasks = {
     'pt1000-uniform' : pt1000_unif_dict,
     'pt1000-uniform-highep-lowlr' : pt1000_unif_highep_lowlr_dict,
     'pt1000-powerall' : pt1000_powerall_dict,
+    'pt1000-sumafter-pca' : pt1000_sumafter_pca_dict,
     'pt1000-short' : pt1000_short_dict,
     'pt1000-shorter' : pt1000_shorter_dict,
     'pt1000-uniform-short' : pt1000_short_unif_dict,
