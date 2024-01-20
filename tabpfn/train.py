@@ -20,18 +20,19 @@ from transformer import TransformerModel
 from tabpfn.scripts.tabular_evaluation import predict_wrapper
 from tabpfn.utils import get_cosine_schedule_with_warmup, get_openai_lr, StoreDictKeyPair, get_weighted_single_eval_pos_sampler, get_uniform_single_eval_pos_sampler
 import tabpfn.priors as priors
-from priors.real import TabDS
 import tabpfn.encoders as encoders
 import tabpfn.positional_encodings as positional_encodings
 from utils import init_dist, seed_all, EmbeddingConcatenator
 
 from torch.cuda.amp import autocast, GradScaler
 from torch import nn
+from torch.utils.data import Dataset
 
 import numpy as np
 
 import uncertainty_metrics.numpy as um
 from priors.real import process_data
+from tabpfn.utils import normalize_data, to_ranking_low_mem, remove_outliers, NOP, normalize_by_used_features_f
 
 from sklearn.metrics import (
     accuracy_score,
@@ -48,6 +49,62 @@ class Losses():
         return nn.CrossEntropyLoss(reduction='none', weight=torch.ones(num_classes))
     bce = nn.BCEWithLogitsLoss(reduction='none')
 
+
+class TabDS(Dataset):
+    def __init__(self, X, y):
+        self.X = X
+
+        self.y_float = torch.from_numpy(y.copy().astype(np.float32))
+        self.y = torch.from_numpy(y.copy().astype(np.int64))
+
+        print(f"TabDS: X.shape = {self.X.shape}, y.shape = {self.y.shape}")
+
+    def __len__(self):
+        return len(self.y)
+
+    def __getitem__(self, idx):
+        #(X,y) data, y target, single_eval_pos
+        return tuple([self.X[idx], self.y_float[idx]]), self.y[idx], torch.tensor([])
+
+
+def preprocess_input(eval_xs, preprocess_transform):
+    import warnings
+
+    if preprocess_transform != 'none':
+        if preprocess_transform == 'power' or preprocess_transform == 'power_all':
+            pt = PowerTransformer(standardize=True)
+        elif preprocess_transform == 'quantile' or preprocess_transform == 'quantile_all':
+            pt = QuantileTransformer(output_distribution='normal')
+        elif preprocess_transform == 'robust' or preprocess_transform == 'robust_all':
+            pt = RobustScaler(unit_variance=True)
+    eval_position = eval_xs.shape[0]
+    eval_xs = normalize_data(eval_xs, normalize_positions=eval_position)
+
+    warnings.simplefilter('error')
+    if preprocess_transform != 'none':
+        eval_xs = eval_xs.cpu().numpy()
+        feats = set(range(eval_xs.shape[1]))
+        for col in feats:
+            try:
+                pt.fit(eval_xs[0:eval_position, col:col + 1])
+                trans = pt.transform(eval_xs[:, col:col + 1])
+                # print(scipy.stats.spearmanr(trans[~np.isnan(eval_xs[:, col:col+1])], eval_xs[:, col:col+1][~np.isnan(eval_xs[:, col:col+1])]))
+                eval_xs[:, col:col + 1] = trans
+            except:
+                pass
+        eval_xs = torch.tensor(eval_xs).float()
+    warnings.simplefilter('default')
+
+    eval_xs = eval_xs.unsqueeze(1)
+
+    eval_xs = remove_outliers(eval_xs, normalize_positions=eval_position)
+    # Rescale X
+    #hard-coded
+    max_features = 100
+    eval_xs = normalize_by_used_features_f(eval_xs, eval_xs.shape[-1], max_features,
+                                            normalize_with_sqrt=False)
+    eval_xs = eval_xs.squeeze(1)
+    return eval_xs
 
 def get_train_dataloader(ds, bptt=1000, shuffle=True, num_workers=1, drop_last=True, agg_k_grads=1):
         old_bptt = bptt
@@ -69,6 +126,9 @@ def get_train_dataloader(ds, bptt=1000, shuffle=True, num_workers=1, drop_last=T
             )
             print("Dataloader length was 0, setting batch size to 1.")
         return dl, bptt
+
+
+
 
 #def train(args, priordataloader_class, criterion, encoder_generator, emsize=200, nhid=200, nlayers=6, nhead=2, dropout=0.0,
 def train(args, dataset, criterion, encoder_generator, emsize=200, nhid=200, nlayers=6, nhead=2, dropout=0.0,
@@ -234,27 +294,30 @@ def train(args, dataset, criterion, encoder_generator, emsize=200, nhid=200, nla
         else:
             label_weights = None
 
+        if extra_prior_kwargs_dict.get("do_preprocess", False):
+            preprocess_type=extra_prior_kwargs_dict.get("preprocess_type", "none")
+
+            X = preprocess_input(torch.from_numpy(X.copy().astype(np.float32)), preprocess_type)    
+            X_val = preprocess_input(torch.from_numpy(X_val.copy().astype(np.float32)), preprocess_type)  
+            X_test = preprocess_input(torch.from_numpy(X_test.copy().astype(np.float32)), preprocess_type)  
+
+
+        if X.shape[1] < num_features and extra_prior_kwargs_dict.get("pad_features", True):
+            
+            def pad_data(data):
+                return torch.cat([data, torch.zeros(data.shape[0], num_features - data.shape[1])], dim=1)
+            
+            X = pad_data(X)
+            X_val = pad_data(X_val)
+            X_test = pad_data(X_test)
+
 
         print('aggregate_k_gradients',aggregate_k_gradients)
 
-        train_ds = TabDS(X, y, num_features=num_features, 
-                         pad_features=extra_prior_kwargs_dict.get("pad_features", True), 
-                         do_preprocess=extra_prior_kwargs_dict.get("do_preprocess", False),
-                         preprocess_type=extra_prior_kwargs_dict.get("preprocess_type", "none"),
-                         aggregate_k_gradients=aggregate_k_gradients)
 
-
-        val_ds = TabDS(X_val, y_val, num_features=num_features, 
-                       pad_features=extra_prior_kwargs_dict.get("pad_features", True), 
-                       do_preprocess=extra_prior_kwargs_dict.get("do_preprocess", False),
-                       preprocess_type=extra_prior_kwargs_dict.get("preprocess_type", "none"),
-                       aggregate_k_gradients=1)
-
-        test_ds = TabDS(X_test, y_test, num_features=num_features, 
-                        pad_features=extra_prior_kwargs_dict.get("pad_features", True),
-                        do_preprocess=extra_prior_kwargs_dict.get("do_preprocess", False), 
-                        preprocess_type=extra_prior_kwargs_dict.get("preprocess_type", "none"),
-                        aggregate_k_gradients=1)
+        train_ds = TabDS(X, y)
+        val_ds = TabDS(X_val, y_val)
+        test_ds = TabDS(X_test, y_test)
 
 
         return X, y, X_val, y_val, X_test, y_test, invert_perm_map, steps_per_epoch, num_classes, label_weights, train_ds, val_ds, test_ds
