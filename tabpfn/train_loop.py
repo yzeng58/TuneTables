@@ -201,6 +201,11 @@ def reload_config(config_type='causal', task_type='multiclass', longer=0, args=N
     config['subset_features_method'] = args.subset_features_method
     config['subset_rows_method'] = 'random'
 
+
+    #Preprocessing
+    config['summerize_after_prep'] = args.summerize_after_prep
+
+
     # wandb
     # todo: for now, most are hard-coded
     config['wandb_log'] = args.wandb_log
@@ -271,6 +276,7 @@ def parse_args():
     parser.add_argument('--shuffle_every_epoch', action='store_true', help='Whether to shuffle the order of the data every epoch (can help when bptt is large).')
     parser.add_argument('--max_num_classes', type=int, default=10, help='Maximum number of classes to use.')
     parser.add_argument('--real_data_qty', type=int, default=0, help='Number of real data samples to use for fitting.')
+    parser.add_argument('--summerize_after_prep', action='store_true', help='train_feature_extractor.')
     args = parser.parse_args()
     return args
 

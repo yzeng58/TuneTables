@@ -12,11 +12,15 @@ import numpy as np
 from sklearn.preprocessing import LabelEncoder
 
 import time
-
-
 from sklearn.feature_selection import SelectKBest, mutual_info_classif
 from sklearn.decomposition import PCA
-
+from sklearn.decomposition import FastICA
+from sklearn.decomposition import KernelPCA
+from sklearn.manifold import Isomap
+from sklearn.random_projection import SparseRandomProjection
+from sklearn.manifold import LocallyLinearEmbedding
+import umap
+from sklearn.manifold import TSNE
 import torch
 from torch.utils.data import DataLoader
 
@@ -240,7 +244,7 @@ class CoresetSampler:
 
 class SubsetMaker(object):
     def __init__(
-        self, subset_features, subset_rows, subset_features_method, subset_rows_method, seed = 135798642
+        self, subset_features, subset_rows, subset_features_method, subset_rows_method, seed = 135798642,give_full_features=False
     ):
 
         np.random.seed(seed)
@@ -251,6 +255,7 @@ class SubsetMaker(object):
         self.subset_rows_method = subset_rows_method
         self.row_selector = None
         self.feature_selector = None
+        self.give_full_features = give_full_features
 
     def random_subset(self, X, y, action=[]):
         if "rows" in action:
@@ -350,6 +355,117 @@ class SubsetMaker(object):
         else:
             return X, y
 
+
+
+    def ica_subset(self, X, y, action='features', split='train'):
+        if split not in ["train", "val", "test"]:
+            raise ValueError("split must be 'train', 'val', or 'test'")        
+        if split == "train":
+            self.feature_selector = FastICA(n_components=self.subset_features)
+            print("Fitting ica selector ...")
+            timer = time.time()
+            X = self.feature_selector.fit_transform(X)
+            print(f"Done fitting ica feature selector in {round(time.time() - timer, 1)} seconds")
+        else:
+            X = self.feature_selector.transform(X)
+        return X, y
+
+
+    def kpca_subset(self, X, y, action='features', split='train'):
+        if split not in ["train", "val", "test"]:
+            raise ValueError("split must be 'train', 'val', or 'test'")        
+        if split == "train":
+            self.feature_selector = KernelPCA(n_components=self.subset_features, kernel='rbf', gamma=15)
+            print("Fitting kpca selector ...")
+            timer = time.time()
+            X = self.feature_selector.fit_transform(X)
+            print(f"Done fitting kpca feature selector in {round(time.time() - timer, 1)} seconds")
+        else:
+            X = self.feature_selector.transform(X)
+        return X, y
+
+    def isomap_subset(self, X, y, action='features', split='train'):
+        if split not in ["train", "val", "test"]:
+            raise ValueError("split must be 'train', 'val', or 'test'")        
+        if split == "train":
+            self.feature_selector = Isomap(n_components=self.subset_features)
+            print("Fitting isomap selector ...")
+            timer = time.time()
+            X = self.feature_selector.fit_transform(X)
+            print(f"Done fitting isomaps feature selector in {round(time.time() - timer, 1)} seconds")
+        else:
+            X = self.feature_selector.transform(X)
+        return X, y
+
+
+    def sparse_random_projection_subset(self, X, y, action='features', split='train'):
+        if split not in ["train", "val", "test"]:
+            raise ValueError("split must be 'train', 'val', or 'test'")        
+        if split == "train":
+            self.feature_selector = SparseRandomProjection(n_components=self.subset_features)
+            print("Fitting sparse rp selector ...")
+            timer = time.time()
+            X = self.feature_selector.fit_transform(X)
+            print(f"Done fitting sparse feature selector in {round(time.time() - timer, 1)} seconds")
+        else:
+            X = self.feature_selector.transform(X)
+        return X, y
+
+
+    def locally_linear_embedding_subset(self, X, y, action='features', split='train'):
+        if split not in ["train", "val", "test"]:
+            raise ValueError("split must be 'train', 'val', or 'test'")        
+        if split == "train":
+            self.feature_selector = LocallyLinearEmbedding(n_components=self.subset_features)
+            print("Fitting lle selector ...")
+            timer = time.time()
+            X = self.feature_selector.fit_transform(X)
+            print(f"Done fitting pca feature selector in {round(time.time() - timer, 1)} seconds")
+        else:
+            X = self.feature_selector.transform(X)
+        return X, y
+
+
+    def umap_subset(self, X, y, action='features', split='train'):
+        if split not in ["train", "val", "test"]:
+            raise ValueError("split must be 'train', 'val', or 'test'")        
+        if split == "train":
+            self.feature_selector = umap.UMAP(n_components=self.subset_features)
+            print("Fitting umpa selector ...")
+            timer = time.time()
+            X = self.feature_selector.fit_transform(X)
+            print(f"Done fitting pca feature selector in {round(time.time() - timer, 1)} seconds")
+        else:
+            X = self.feature_selector.transform(X)
+        return X, y
+
+    def tsne_subset(self, X, y, action='features', split='train'):
+        if split not in ["train", "val", "test"]:
+            raise ValueError("split must be 'train', 'val', or 'test'")        
+        if split == "train":
+            self.feature_selector = TSNE(n_components=self.subset_features)
+            print("Fitting tsne selector ...")
+            timer = time.time()
+            X = self.feature_selector.fit_transform(X)
+            print(f"Done fitting tsne feature selector in {round(time.time() - timer, 1)} seconds")
+        else:
+            X = self.feature_selector.transform(X)
+        return X, y
+     
+
+    def pca_subset_white(self, X, y, action='features', split='train'):
+        if split not in ["train", "val", "test"]:
+            raise ValueError("split must be 'train', 'val', or 'test'")        
+        if split == "train":
+            self.feature_selector = PCA(n_components=self.subset_features, whiten=True)
+            print("Fitting pca white selector ...")
+            timer = time.time()
+            X = self.feature_selector.fit_transform(X)
+            print(f"Done fitting pca feature selector in {round(time.time() - timer, 1)} seconds")
+        else:
+            X = self.feature_selector.transform(X)
+        return X, y
+
     def make_subset(
         self,
         X,
@@ -371,25 +487,44 @@ class SubsetMaker(object):
         # np.random.seed(seed)
 
         print("self.subset_features_method",self.subset_features_method)
-
-        if X.shape[1] > self.subset_features > 0:
-            print(
-                f"making {self.subset_features}-sized subset of {X.shape[1]} features ..."
-            )
-            if self.subset_features_method == "random":
-                X, y = self.random_subset(X, y, action=["features"])
-            elif self.subset_features_method == "first":
-                X, y = self.first_subset(X, y, action=["features"])
-            elif self.subset_features_method == "mutual_information":
-                X, y = self.mutual_information_subset(
-                    X, y, action="features", split=split
+        if self.give_full_features:
+                pass
+        else:
+            if X.shape[1] > self.subset_features > 0:
+                print(
+                    f"making {self.subset_features}-sized subset of {X.shape[1]} features ..."
                 )
-            elif self.subset_features_method == "pca":
-                X, y = self.pca_subset(X, y, action='features', split=split)                
-            else:
-                raise ValueError(
-                    f"subset_features_method not recognized: {self.subset_features_method}"
-                )
+                if self.subset_features_method == "random":
+                    X, y = self.random_subset(X, y, action=["features"])
+                elif self.subset_features_method == "first":
+                    X, y = self.first_subset(X, y, action=["features"])
+                elif self.subset_features_method == "mutual_information":
+                    X, y = self.mutual_information_subset(
+                        X, y, action="features", split=split
+                    )
+                elif self.subset_features_method == "pca":
+                    X, y = self.pca_subset(X, y, action='features', split=split)   
+                elif self.subset_features_method == "pca_white":
+                    X, y = self.pca_subset_white(X, y, action='features', split=split)   
+                elif self.subset_features_method == "ica":
+                    X, y = self.ica_subset(X, y, action='features', split=split) 
+                elif self.subset_features_method == "kpca":
+                    X, y = self.kpca_subset(X, y, action='features', split=split)      
+                elif self.subset_features_method == "isomap":
+                    X, y = self.isomap_subset(X, y, action='features', split=split)      
+                elif self.subset_features_method == "sparse_random_projection":
+                    X, y = self.sparse_random_projection_subset(X, y, action='features', split=split)         
+                elif self.subset_features_method == "locally_linear_embedding":
+                    X, y = self.locally_linear_embedding_subset(X, y, action='features', split=split)   
+                elif self.subset_features_method == "umap":
+                    X, y = self.umap_subset(X, y, action='features', split=split)   
+                elif self.subset_features_method == "tsne":
+                    X, y = self.tsne_subset(X, y, action='features', split=split)                                      
+                else:
+                    raise ValueError(
+                        f"subset_features_method not recognized: {self.subset_features_method}"
+                    )
+                
         if X.shape[0] > self.subset_rows > 0:
             print(f"making {self.subset_rows}-sized subset of {X.shape[0]} rows ...")
 

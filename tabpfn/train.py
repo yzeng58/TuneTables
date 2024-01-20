@@ -78,10 +78,6 @@ def process_data(
     num_mask = np.ones(dataset.X.shape[1], dtype=int)
     num_mask[dataset.cat_idx] = 0
 
-
-
-
-
     # Impute numerical features
     if impute:
         num_idx = np.where(num_mask)[0]
@@ -155,12 +151,14 @@ def process_data(
             args.subset_features < args.num_features or args.subset_rows < len(X_train)
         )
     ):
+            
         if getattr(dataset, "ssm", None) is None:
             subset_maker = real.SubsetMaker(
                 args.subset_features,
                 args.subset_rows,
                 args.subset_features_method,
                 args.subset_rows_method,
+                give_full_features = args.summerize_after_prep, #if we summerize after prep, we don't want to summerize here
             )
         X_train, y_train = subset_maker.make_subset(
             X_train,
@@ -213,7 +211,7 @@ class TabDS(Dataset):
         return tuple([self.X[idx], self.y_float[idx]]), self.y[idx], torch.tensor([])
 
 
-def preprocess_input(eval_xs, preprocess_transform):
+def preprocess_input(eval_xs, preprocess_transform, summerize_after_prep):
     import warnings
 
     if preprocess_transform != 'none':
@@ -247,8 +245,14 @@ def preprocess_input(eval_xs, preprocess_transform):
     # Rescale X
     #hard-coded
     max_features = 100
-    eval_xs = normalize_by_used_features_f(eval_xs, eval_xs.shape[-1], max_features,
-                                            normalize_with_sqrt=False)
+
+    if summerize_after_prep:
+        eval_xs = normalize_by_used_features_f(eval_xs, min(eval_xs.shape[-1],max_features), max_features,
+                                            normalize_with_sqrt=False)        
+    else:
+        eval_xs = normalize_by_used_features_f(eval_xs, eval_xs.shape[-1], max_features,
+                                                normalize_with_sqrt=False)
+
     eval_xs = eval_xs.squeeze(1)
     return eval_xs
 
@@ -273,7 +277,34 @@ def get_train_dataloader(ds, bptt=1000, shuffle=True, num_workers=1, drop_last=T
             print("Dataloader length was 0, setting batch size to 1.")
         return dl, bptt
 
+def SummarizeAfter(X, X_val, X_test, y, y_val, y_test, num_features, subset_features_method):
 
+        SM = real.SubsetMaker(
+                num_features,
+                10e8, #subset_rows = 10^8 ablate this part here
+                subset_features_method,
+                "first", #args.subset_rows_method is not used anyhow
+            )
+
+        X, y = SM.make_subset(
+            X,
+            y,
+            split="train",
+        )
+
+        X_val, y = SM.make_subset(
+            X_val, 
+            y,
+            split="val",
+        )
+            
+        X_test, y = SM.make_subset(
+            X_test, 
+            y,
+            split="test",
+        )
+
+        return torch.from_numpy(X).to(torch.float32), torch.from_numpy(X_val).to(torch.float32), torch.from_numpy(X_test).to(torch.float32)
 
 
 #def train(args, priordataloader_class, criterion, encoder_generator, emsize=200, nhid=200, nlayers=6, nhead=2, dropout=0.0,
@@ -349,6 +380,9 @@ def train(args, dataset, criterion, encoder_generator, emsize=200, nhid=200, nla
             # print("new_a: ", new_a[:5, ...])
         return new_a
 
+
+
+
     def make_datasets(extra_prior_kwargs_dict, do_permute=True, bptt = 0, steps_per_epoch=None):
         """  """
         dataset_built = False
@@ -359,7 +393,7 @@ def train(args, dataset, criterion, encoder_generator, emsize=200, nhid=200, nla
             train_index = split_dictionary["train"]
             val_index = split_dictionary["val"]
             test_index = split_dictionary["test"]
-
+            
             # run pre-processing & split data (list of numpy arrays of length num_ensembles)
             processed_data = process_data(
                 dataset,
@@ -442,11 +476,18 @@ def train(args, dataset, criterion, encoder_generator, emsize=200, nhid=200, nla
 
         if extra_prior_kwargs_dict.get("do_preprocess", False):
             preprocess_type=extra_prior_kwargs_dict.get("preprocess_type", "none")
+            summerize_after_prep=extra_prior_kwargs_dict.get("summerize_after_prep", "False")
 
-            X = preprocess_input(torch.from_numpy(X.copy().astype(np.float32)), preprocess_type)    
-            X_val = preprocess_input(torch.from_numpy(X_val.copy().astype(np.float32)), preprocess_type)  
-            X_test = preprocess_input(torch.from_numpy(X_test.copy().astype(np.float32)), preprocess_type)  
+            X = preprocess_input(torch.from_numpy(X.copy().astype(np.float32)), preprocess_type, summerize_after_prep)    
+            X_val = preprocess_input(torch.from_numpy(X_val.copy().astype(np.float32)), preprocess_type, summerize_after_prep)  
+            X_test = preprocess_input(torch.from_numpy(X_test.copy().astype(np.float32)), preprocess_type, summerize_after_prep)  
 
+
+            print("X",X.dtype)
+            ## SummarizeAfter
+            if args.summerize_after_prep:
+                X, X_val, X_test = SummarizeAfter(X, X_val, X_test, y, y_val, y_test, num_features, args.subset_features_method)            
+            print("X",X.dtype)
 
         if X.shape[1] < num_features and extra_prior_kwargs_dict.get("pad_features", True):
             
