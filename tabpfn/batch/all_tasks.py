@@ -67,6 +67,12 @@ pt10_powerall_dict = copy.deepcopy(pt10_dict)
 pt10_powerall_dict['preprocess_type'] = 'power_all'
 pt10_sumafter_pca_dict = copy.deepcopy(pt10_pca_dict)
 pt10_sumafter_pca_dict['summerize_after_prep'] = ''
+pt10_sumafter_pca_unif_dict = copy.deepcopy(pt10_sumafter_pca_dict)
+pt10_sumafter_pca_unif_dict['uniform_bptt'] = ''
+pt10_sumafter_mutinf_dict = copy.deepcopy(pt10_mut_dict)
+pt10_sumafter_mutinf_dict['summerize_after_prep'] = ''
+pt10_sumafter_mutinf_unif_dict = copy.deepcopy(pt10_sumafter_mutinf_dict)
+pt10_sumafter_mutinf_unif_dict['uniform_bptt'] = ''
 
 #Prompt tuning with 100 prompts
 debug_dict = copy.deepcopy(pt10_dict)
@@ -103,6 +109,12 @@ pt100_powerall_dict = copy.deepcopy(pt100_dict)
 pt100_powerall_dict['preprocess_type'] = 'power_all'
 pt100_sumafter_pca_dict = copy.deepcopy(pt100_pca_dict)
 pt100_sumafter_pca_dict['summerize_after_prep'] = ''
+pt100_sumafter_pca_unif_dict = copy.deepcopy(pt100_sumafter_pca_dict)
+pt100_sumafter_pca_unif_dict['uniform_bptt'] = ''
+pt100_sumafter_mutinf_dict = copy.deepcopy(pt100_mut_dict)
+pt100_sumafter_mutinf_dict['summerize_after_prep'] = ''
+pt100_sumafter_mutinf_unif_dict = copy.deepcopy(pt100_sumafter_mutinf_dict)
+pt100_sumafter_mutinf_unif_dict['uniform_bptt'] = ''
 
 #Prompt tuning with 1000 prompts
 pt1000_dict = copy.deepcopy(pt10_dict)
@@ -143,6 +155,12 @@ pt1000_powerall_dict = copy.deepcopy(pt1000_dict)
 pt1000_powerall_dict['preprocess_type'] = 'power_all'
 pt1000_sumafter_pca_dict = copy.deepcopy(pt1000_pca_dict)
 pt1000_sumafter_pca_dict['summerize_after_prep'] = ''
+pt1000_sumafter_pca_unif_dict = copy.deepcopy(pt1000_sumafter_pca_dict)
+pt1000_sumafter_pca_unif_dict['uniform_bptt'] = ''
+pt1000_sumafter_mutinf_dict = copy.deepcopy(pt1000_mut_dict)
+pt1000_sumafter_mutinf_dict['summerize_after_prep'] = ''
+pt1000_sumafter_mutinf_unif_dict = copy.deepcopy(pt1000_sumafter_mutinf_dict)
+pt1000_sumafter_mutinf_unif_dict['uniform_bptt'] = ''
 
 #Ensemble presets
 ens_bagged_avg_dict = dict(pt1000_dict, **ens_bagged_avg_dict)
@@ -161,10 +179,20 @@ ens_bagged_avg_top2_reseed_dict['reseed_data'] = ''
 ens_bagged_avg_top2_reseed_dict['ensemble_size'] = 10
 ens_randinit_avg_top2_reseed_dict = copy.deepcopy(ens_randinit_avg_top2_dict)
 ens_randinit_avg_top2_reseed_dict['reseed_data'] = ''
-ens_randinit_avg_top2_reseed_dict['ensemble_size'] = 10
+ens_randinit_avg_top2_reseed_dict['ensemble_size'] = 
+ens_randinit_avg_top2_lowlr_short_dict = copy.deepcopy(ens_randinit_avg_top2_reseed_dict)
+ens_randinit_avg_top2_lowlr_short_dict['lr'] = 0.03
+ens_randinit_avg_top2_lowlr_short_dict['epochs'] = 7
 ens_randinit_avg_top2_unif_reseed_dict = copy.deepcopy(ens_randinit_avg_top2_reseed_dict)
 ens_randinit_avg_top2_unif_reseed_dict['uniform_bptt'] = ''
 ens_randinit_avg_top2_unif_reseed_dict['topk_key'] = 'Val_nc_Accuracy'
+ens_randinit_avg_top2_reseed_sumafter_pca_dict = copy.deepcopy(ens_randinit_avg_top2_reseed_dict)
+ens_randinit_avg_top2_reseed_sumafter_pca_dict['summerize_after_prep'] = ''
+ens_randinit_avg_top2_unif_reseed_sumafter_pca_dict = copy.deepcopy(ens_randinit_avg_top2_unif_reseed_dict)
+ens_randinit_avg_top2_unif_reseed_sumafter_pca_dict['summerize_after_prep'] = ''
+ens_randinit_avg_top2_unif_reseed_lowlr_short_dict = copy.deepcopy(ens_randinit_avg_top2_unif_reseed_dict)
+ens_randinit_avg_top2_unif_reseed_lowlr_short_dict['lr'] = 0.03
+ens_randinit_avg_top2_unif_reseed_lowlr_short_dict['epochs'] = 7
 
 all_tasks = {
     'debug' : debug_dict,
@@ -177,6 +205,9 @@ all_tasks = {
     'pt10-uniform' : pt10_unif_dict,
     'pt10-powerall' : pt10_powerall_dict,
     'pt10-sumafter-pca' : pt10_sumafter_pca_dict,
+    'pt10-sumafter-pca-uniform' : pt10_sumafter_pca_unif_dict,
+    'pt10-sumafter-mutinf' : pt10_sumafter_mutinf_dict,
+    'pt10-sumafter-mutinf-uniform' : pt10_sumafter_mutinf_unif_dict,
     'pt10-short' : pt10_short_dict,
     'pt10-shorter' : pt10_shorter_dict,
     'pt10-uniform-short' : pt10_short_unif_dict,
@@ -189,6 +220,9 @@ all_tasks = {
     'pt100-uniform' : pt100_unif_dict,
     'pt100-powerall' : pt100_powerall_dict,
     'pt100-sumafter-pca' : pt100_sumafter_pca_dict,
+    'pt100-sumafter-pca-uniform' : pt100_sumafter_pca_unif_dict,
+    'pt100-sumafter-mutinf' : pt100_sumafter_mutinf_dict,
+    'pt100-sumafter-mutinf-uniform' : pt100_sumafter_mutinf_unif_dict,
     'pt100-short' : pt100_short_dict,
     'pt100-shorter' : pt100_shorter_dict,
     'pt100-uniform-short' : pt100_short_unif_dict,
@@ -202,6 +236,9 @@ all_tasks = {
     'pt1000-uniform-highep-lowlr' : pt1000_unif_highep_lowlr_dict,
     'pt1000-powerall' : pt1000_powerall_dict,
     'pt1000-sumafter-pca' : pt1000_sumafter_pca_dict,
+    'pt1000-sumafter-pca-uniform' : pt1000_sumafter_pca_unif_dict,
+    'pt1000-sumafter-mutinf' : pt1000_sumafter_mutinf_dict,
+    'pt1000-sumafter-mutinf-uniform' : pt1000_sumafter_mutinf_unif_dict,
     'pt1000-short' : pt1000_short_dict,
     'pt1000-shorter' : pt1000_shorter_dict,
     'pt1000-uniform-short' : pt1000_short_unif_dict,
@@ -213,7 +250,12 @@ all_tasks = {
     'pt1000-5ens-randinit-avg-top2' : ens_randinit_avg_top2_dict,
     'pt1000-10ens-bagged-avg-top2-reseed' : ens_bagged_avg_top2_reseed_dict,
     'pt1000-10ens-randinit-avg-top2-reseed' : ens_randinit_avg_top2_reseed_dict,
+    'pt1000-10ens-randinit-avg-top2-reseed-sumafter-pca' : ens_randinit_avg_top2_reseed_sumafter_pca_dict,
+    'pt1000-10ens-randinit-avg-top2-reseed-lowlr-short' : ens_randinit_avg_top2_lowlr_short_dict,
     'pt1000-10ens-randinit-avg-top2-unif-reseed' : ens_randinit_avg_top2_unif_reseed_dict,
+    'pt1000-10ens-randinit-avg-top2-unif-reseed-sumafter-pca' : ens_randinit_avg_top2_unif_reseed_sumafter_pca_dict,
+    'pt1000-10ens-randinit-avg-top2-unif-reseed-lowlr-short' : ens_randinit_avg_top2_unif_reseed_lowlr_short_dict,
+
 }
 
 def get_all_tasks():
