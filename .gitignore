@@ -5,6 +5,7 @@
 # config
 */config/
 */metadata/
+driver_installer.run
 
 # datasets
 tabpfn/data/*

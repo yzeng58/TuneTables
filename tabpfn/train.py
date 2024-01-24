@@ -261,14 +261,17 @@ def preprocess_input(eval_xs, preprocess_transform, summerize_after_prep):
     eval_xs = eval_xs.squeeze(1)
     return eval_xs
 
-def get_train_dataloader(ds, bptt=1000, shuffle=True, num_workers=1, drop_last=True, agg_k_grads=1):
+def get_train_dataloader(ds, bptt=1000, shuffle=True, num_workers=1, drop_last=True, agg_k_grads=1, not_zs=True):
         # old_bptt = bptt
         dl = DataLoader(
             ds, batch_size=bptt, shuffle=shuffle, num_workers=num_workers, drop_last=drop_last,
         )
         if len(dl) == 0:
             ds_len = len(ds)
-            n_batches = 10
+            if not_zs:
+                n_batches = 10
+            else:
+                n_batches = 1
             bptt = int(ds_len // n_batches)
             # bptt = int(bptt // 2)
             dl = DataLoader(
@@ -517,15 +520,15 @@ def train(args, dataset, criterion, encoder_generator, emsize=200, nhid=200, nla
     
 
 
-    def make_dataloaders(bptt=bptt):
+    def make_dataloaders(bptt=bptt, not_zs=True):
 
         dl, bptt = get_train_dataloader(train_ds, 
                                   bptt=bptt, 
                                   shuffle=False, 
                                   num_workers=1, 
                                   drop_last=True, 
-                                  agg_k_grads=aggregate_k_gradients
-                                )
+                                  agg_k_grads=aggregate_k_gradients,
+                                  not_zs=not_zs)
 
         val_dl = DataLoader(
             val_ds, batch_size=min(128, y_val.shape[0] // 2), shuffle=False, num_workers=1,
@@ -562,7 +565,7 @@ def train(args, dataset, criterion, encoder_generator, emsize=200, nhid=200, nla
 
         X, y, X_val, y_val, X_test, y_test, invert_perm_map, steps_per_epoch, num_classes, label_weights, train_ds, val_ds, test_ds = make_datasets(extra_prior_kwargs_dict, do_permute=not_zs, bptt=bptt, steps_per_epoch=steps_per_epoch)
         old_bptt = bptt
-        dl, val_dl, test_dl, bptt, data_for_fitting  = make_dataloaders(bptt=bptt)
+        dl, val_dl, test_dl, bptt, data_for_fitting  = make_dataloaders(bptt=bptt, not_zs=not_zs)
         if old_bptt != bptt:
             print("bptt changed from {} to {}".format(old_bptt, bptt))
             max_pos = int((len(data_for_fitting[0]) // 10) * (.8))
