@@ -60,7 +60,7 @@ def main_f(args):
                     ensemble_size = int(task.split('-')[-1])
                     command = ['python', base_cmd, 
                             '--data_path', dataset_path,
-                            '--feature_subset_method', 'pca',
+                            '--subset_features_method', 'random',
                             '--split', str(split), 
                             '--wandb_group', dataset.strip() + "_" + task_str,
                             '--real_data_qty', str(args.real_data_qty),
