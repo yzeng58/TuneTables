@@ -61,7 +61,8 @@ def main_f(args):
                     command = ['python', base_cmd, 
                             '--data_path', dataset_path,
                             '--subset_features_method', 'random',
-                            '--split', str(split), 
+                            '--split', str(split),
+                            '--wandb_log',
                             '--wandb_group', dataset.strip() + "_" + task_str,
                             '--real_data_qty', str(args.real_data_qty),
                             '--zs-eval-ensemble', str(ensemble_size)]
