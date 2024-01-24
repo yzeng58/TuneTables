@@ -196,7 +196,10 @@ class Losses():
 
 class TabDS(Dataset):
     def __init__(self, X, y):
-        self.X = X
+        if isinstance(X, np.ndarray):
+            self.X = torch.from_numpy(X.copy().astype(np.float32))
+        else:
+            self.X = X
 
         self.y_float = torch.from_numpy(y.copy().astype(np.float32))
         self.y = torch.from_numpy(y.copy().astype(np.int64))
@@ -208,7 +211,9 @@ class TabDS(Dataset):
 
     def __getitem__(self, idx):
         #(X,y) data, y target, single_eval_pos
-        return tuple([self.X[idx], self.y_float[idx]]), self.y[idx], torch.tensor([])
+        ret_item = tuple([self.X[idx], self.y_float[idx]]), self.y[idx], torch.tensor([])
+        # print("ret item:", ret_item[0][0], ret_item[0][1], ret_item[1], ret_item[2])
+        return ret_item
 
 
 def preprocess_input(eval_xs, preprocess_transform, summerize_after_prep):
