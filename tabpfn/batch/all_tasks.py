@@ -193,6 +193,12 @@ ens_randinit_avg_top2_unif_reseed_sumafter_pca_dict['summerize_after_prep'] = ''
 ens_randinit_avg_top2_unif_reseed_lowlr_short_dict = copy.deepcopy(ens_randinit_avg_top2_unif_reseed_dict)
 ens_randinit_avg_top2_unif_reseed_lowlr_short_dict['lr'] = 0.03
 ens_randinit_avg_top2_unif_reseed_lowlr_short_dict['epochs'] = 7
+ens_randinit_avg_top3_unif_reseed_highlr_short_dict = copy.deepcopy(ens_randinit_avg_top2_unif_reseed_dict)
+ens_randinit_avg_top3_unif_reseed_highlr_short_dict['lr'] = 0.2
+ens_randinit_avg_top3_unif_reseed_highlr_short_dict['epochs'] = 7
+ens_randinit_avg_top3_unif_reseed_highlr_short_dict['keep_topk_ensemble'] = 3
+ens_randinit_avg_top3_unif_reseed_sumafter_pca_highlr_short = copy.deepcopy(ens_randinit_avg_top3_unif_reseed_highlr_short_dict)
+ens_randinit_avg_top3_unif_reseed_sumafter_pca_highlr_short['summerize_after_prep'] = ''
 
 all_tasks = {
     'debug' : debug_dict,
@@ -255,7 +261,8 @@ all_tasks = {
     'pt1000-10ens-randinit-avg-top2-unif-reseed' : ens_randinit_avg_top2_unif_reseed_dict,
     'pt1000-10ens-randinit-avg-top2-unif-reseed-sumafter-pca' : ens_randinit_avg_top2_unif_reseed_sumafter_pca_dict,
     'pt1000-10ens-randinit-avg-top2-unif-reseed-lowlr-short' : ens_randinit_avg_top2_unif_reseed_lowlr_short_dict,
-
+    'pt1000-10ens-randinit-avg-top3-unif-reseed-highlr-short' : ens_randinit_avg_top3_unif_reseed_highlr_short_dict,
+    'pt1000-10ens-randinit-avg-top3-unif-reseed-sumafter-pca-highlr-short' : ens_randinit_avg_top3_unif_reseed_sumafter_pca_highlr_short,
 }
 
 def get_all_tasks():
