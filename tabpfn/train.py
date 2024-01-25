@@ -196,6 +196,15 @@ class Losses():
 
 class TabDS(Dataset):
     def __init__(self, X, y):
+        #check if NaNs are present in y
+        if np.isnan(y).any():
+            print("WARNING: NaNs present in y, dropping them")
+            nan_mask = ~np.isnan(y)
+            X = X[nan_mask, ...]
+            y = y[nan_mask, ...]
+            print("New X shape: ", X.shape)
+            print("New y shape: ", y.shape)
+
         if isinstance(X, np.ndarray):
             self.X = torch.from_numpy(X.copy().astype(np.float32))
         else:
@@ -205,6 +214,7 @@ class TabDS(Dataset):
         self.y = torch.from_numpy(y.copy().astype(np.int64))
 
         print(f"TabDS: X.shape = {self.X.shape}, y.shape = {self.y.shape}")
+        # print("y: ", self.y[:50, ...])
 
     def __len__(self):
         return len(self.y)
@@ -569,6 +579,7 @@ def train(args, dataset, criterion, encoder_generator, emsize=200, nhid=200, nla
         if old_bptt != bptt:
             print("bptt changed from {} to {}".format(old_bptt, bptt))
             max_pos = int((len(data_for_fitting[0]) // 10) * (.8))
+            print("max_pos: ", max_pos)
             if extra_prior_kwargs_dict.get('uniform_bptt', False):
                 single_eval_pos_gen = lambda: np.random.randint(0, max_pos)
             else:
@@ -577,7 +588,8 @@ def train(args, dataset, criterion, encoder_generator, emsize=200, nhid=200, nla
         if extra_prior_kwargs_dict.get('zs_eval_ensemble', 0) > 0:
 
             def tpc_data_eval(cl=1000, X=None, y=None, X_val=None, y_val=None, ens_size=1):
-                    print("Num classes: ", num_classes)
+                    #update num_classes depending on the data
+                    num_classes_local = len(np.unique(y))
                     from scripts.transformer_prediction_interface import TabPFNClassifier
                     start_time = time.time()
                     results = dict()
@@ -592,33 +604,42 @@ def train(args, dataset, criterion, encoder_generator, emsize=200, nhid=200, nla
                                                 )
                     eval_model.fit(X[:cl, ...], y[:cl, ...], overwrite_warning=True)
                     predictions = eval_model.predict(X_val).astype(np.int64)
-                    outputs = eval_model.predict_proba(X_val)
+                    outputs = np.zeros((len(X_val), num_classes_local))
                     #invert permutation of labels
-                    new_output = np.zeros_like(outputs)
-                    for i in range(num_classes):
-                        try:
-                            new_output[:, i] = outputs[:, invert_perm_map[i]]
-                        except Exception as e:
-                            print("TabPFN-ZS did not output class: ", i)
-                            print("Exception: ", e)
+                    # new_output = np.zeros((len(X_val), num_classes))
+                    output_eval = eval_model.predict_proba(X_val)
+                    for j in range(output_eval.shape[1]):
+                        outputs[:, invert_perm_map[j]] = output_eval[:, j]
+                    for i in range(num_classes_local):
+                        # try:
+                        outputs[:, i] = outputs[:, invert_perm_map[i]]
+                        # except Exception as e:
+                        #     print("TabPFN-ZS did not output class: ", i)
+                        #     outputs[:, invert_perm_map[i]] = 0.0
+                        #     new_output[:, i] = outputs[:, invert_perm_map[i]]
                     targets = y_val
                     warnings.filterwarnings("ignore")
                     end_time = time.time()
                     results['Eval_Time'] = np.round(end_time - start_time, 3).item()
                     results['Accuracy'] = np.round(accuracy_score(targets, predictions), 3).item()
-                    results['Log_Loss'] = np.round(log_loss(targets, outputs, labels=np.arange(num_classes)), 3).item()
+                    results['Log_Loss'] = np.round(log_loss(targets, outputs, labels=np.arange(num_classes_local)), 3).item()
                     results['F1_Weighted'] = np.round(f1_score(targets, predictions, average='weighted'), 3).item()
                     results['F1_Macro'] = np.round(f1_score(targets, predictions, average='macro'), 3).item()
                     try:
                         if num_classes == 2:
-                            results['ROC_AUC'] = np.round(roc_auc_score(targets, outputs[:, 1], labels=np.arange(num_classes)), 3).item()
+                            results['ROC_AUC'] = np.round(roc_auc_score(targets, outputs[:, 1], labels=np.arange(num_classes_local)), 3).item()
                         else:
-                            results['ROC_AUC'] = np.round(roc_auc_score(targets, outputs, labels=np.arange(num_classes), multi_class='ovr'), 3).item()
+                            results['ROC_AUC'] = np.round(roc_auc_score(targets, outputs, labels=np.arange(num_classes_local), multi_class='ovr'), 3).item()
                     except Exception as e:
                         print("Error calculating ROC AUC: ", e)
                         results['ROC_AUC'] = 0.0
-                    results['ECE'] = np.round(um.ece(targets, outputs, num_bins=30), 3).item()
-                    results['TACE'] = np.round(um.tace(targets, outputs, num_bins=30), 3).item()
+                    try:
+                        results['ECE'] = np.round(um.ece(targets, outputs, num_bins=30), 3).item()
+                        results['TACE'] = np.round(um.tace(targets, outputs, num_bins=30), 3).item()
+                    except Exception as e:
+                        print("Error calculating ECE/TACE: ", e)
+                        results['ECE'] = 0.0
+                        results['TACE'] = 0.0
                     warnings.filterwarnings("default")
                     return results
             res_dict = dict()
@@ -731,7 +752,7 @@ def train(args, dataset, criterion, encoder_generator, emsize=200, nhid=200, nla
     def real_data_eval(r_model, cl=1000, train_data=None, val_dl=None, softmax_temperature = torch.log(torch.tensor([0.8]))):
         start_time = time.time()
         td = copy.deepcopy(train_data)
-        #
+        num_classes_local = len(torch.unique(td[1]))
         td[0] = td[0][:cl, ...]
         td[1] = td[1][:cl, ...]
         single_eval_pos = len(td[0])
@@ -752,10 +773,10 @@ def train(args, dataset, criterion, encoder_generator, emsize=200, nhid=200, nla
                 # print("Original preds: ", predicted[:20, ...])
                 new_output = loop_translate(output, invert_perm_map)
                 # new_output = torch.zeros_like(output)
-                # for i in range(num_classes):
+                # for i in range(num_classes_local):
                 #     new_output[:, invert_perm_map[i]] = output[:, i]
                 output = new_output
-                output = output[:, 0:num_classes] / torch.exp(softmax_temperature)
+                output = output[:, 0:num_classes_local] / torch.exp(softmax_temperature)
                 output = torch.nn.functional.softmax(output, dim=-1)
                 output_list.append(output)
                 _, predicted = torch.max(output.cpu().data, 1)
@@ -771,19 +792,24 @@ def train(args, dataset, criterion, encoder_generator, emsize=200, nhid=200, nla
         warnings.filterwarnings("ignore")
         results['Eval_Time'] = np.round(time.time() - start_time, 3).item()
         results['Accuracy'] = np.round(accuracy_score(targets, predictions), 3).item()
-        results['Log_Loss'] = np.round(log_loss(targets, outputs, labels=np.arange(num_classes)), 3).item()
+        results['Log_Loss'] = np.round(log_loss(targets, outputs, labels=np.arange(num_classes_local)), 3).item()
         results['F1_Weighted'] = np.round(f1_score(targets, predictions, average='weighted'), 3).item()
         results['F1_Macro'] = np.round(f1_score(targets, predictions, average='macro'), 3).item()
         try:
-            if num_classes == 2:
-                results['ROC_AUC'] = np.round(roc_auc_score(targets, outputs[:, 1], labels=np.arange(num_classes)), 3).item()
+            if num_classes_local == 2:
+                results['ROC_AUC'] = np.round(roc_auc_score(targets, outputs[:, 1], labels=np.arange(num_classes_local)), 3).item()
             else:
-                results['ROC_AUC'] = np.round(roc_auc_score(targets, outputs, labels=np.arange(num_classes), multi_class='ovr'), 3).item()
+                results['ROC_AUC'] = np.round(roc_auc_score(targets, outputs, labels=np.arange(num_classes_local), multi_class='ovr'), 3).item()
         except Exception as e:
             print("Error calculating ROC AUC: ", e)
             results['ROC_AUC'] = 0.0
-        results['ECE'] = np.round(um.ece(targets, outputs, num_bins=30), 3).item()
-        results['TACE'] = np.round(um.tace(targets, outputs, num_bins=30), 3).item()
+        try:
+            results['ECE'] = np.round(um.ece(targets, outputs, num_bins=30), 3).item()
+            results['TACE'] = np.round(um.tace(targets, outputs, num_bins=30), 3).item()
+        except Exception as e:
+            print("Error calculating ECE/TACE: ", e)
+            results['ECE'] = 0.0
+            results['TACE'] = 0.0
 
         warnings.filterwarnings("default")
 
@@ -1024,7 +1050,7 @@ def train(args, dataset, criterion, encoder_generator, emsize=200, nhid=200, nla
             # print("Prefix weights list length: ", len(prefix_weights_l))
         return prefix_weights_l
 
-    def update_ensemble_acc(ens_acc, ens_acc_nc, ens_acc_test, ens_acc_test_nc):
+    def update_ensemble_acc(ens_acc, ens_acc_nc, ens_acc_test, ens_acc_test_nc, num_classes):
         print("probs_np shape: ", probs_np.shape)
         predictions_np = np.argmax(probs_np, axis=1)
         predictions_np_test = np.argmax(probs_np_test, axis=1)
@@ -1042,13 +1068,23 @@ def train(args, dataset, criterion, encoder_generator, emsize=200, nhid=200, nla
         f1_weighted = np.round(f1_score(labels_np, predictions_np, average='weighted'), 3).item()
         f1_macro = np.round(f1_score(labels_np, predictions_np, average='macro'), 3).item()
         ll = np.round(log_loss(labels_np, probs_np, labels=np.arange(num_classes)), 3)
-        ece = np.round(um.ece(labels_np, probs_np, num_bins=30), 3)
-        tace = np.round(um.tace(labels_np, probs_np, num_bins=30), 3)
+        try:
+            ece = np.round(um.ece(labels_np, probs_np, num_bins=30), 3)
+            tace = np.round(um.tace(labels_np, probs_np, num_bins=30), 3)
+        except Exception as e:
+            print("Error calculating ECE/TACE: ", e)
+            ece = 0.0
+            tace = 0.0
         test_f1_weighted = np.round(f1_score(labels_np_test, predictions_np_test, average='weighted'), 3).item()
         test_f1_macro = np.round(f1_score(labels_np_test, predictions_np_test, average='macro'), 3).item()
         test_ll = np.round(log_loss(labels_np_test, probs_np_test, labels=np.arange(num_classes)), 3)
-        test_ece = np.round(um.ece(labels_np_test, probs_np_test, num_bins=30), 3)
-        test_tace = np.round(um.tace(labels_np_test, probs_np_test, num_bins=30), 3)
+        try:
+            test_ece = np.round(um.ece(labels_np_test, probs_np_test, num_bins=30), 3)
+            test_tace = np.round(um.tace(labels_np_test, probs_np_test, num_bins=30), 3)
+        except Exception as e:
+            print("Error calculating ECE/TACE: ", e)
+            test_ece = 0.0
+            test_tace = 0.0
         if do_prompt_tuning:
             predictions_np_nc = np.argmax(probs_np_nc, axis=1)
             predictions_np_nc_test = np.argmax(probs_np_nc_test, axis=1)
@@ -1066,13 +1102,23 @@ def train(args, dataset, criterion, encoder_generator, emsize=200, nhid=200, nla
                 roc_auc_nc = 0.0
                 test_roc_auc_nc = 0.0
             nc_ll = np.round(log_loss(labels_np_nc, probs_np_nc, labels=np.arange(num_classes)), 3)
-            nc_ece = np.round(um.ece(labels_np_nc, probs_np_nc, num_bins=30), 3)
-            nc_tace = np.round(um.tace(labels_np_nc, probs_np_nc, num_bins=30), 3)
+            try:
+                nc_ece = np.round(um.ece(labels_np_nc, probs_np_nc, num_bins=30), 3)
+                nc_tace = np.round(um.tace(labels_np_nc, probs_np_nc, num_bins=30), 3)
+            except Exception as e:
+                print("Error calculating ECE/TACE: ", e)
+                nc_ece = 0.0
+                nc_tace = 0.0
             nc_test_f1_weighted = np.round(f1_score(labels_np_nc_test, predictions_np_nc_test, average='weighted'), 3).item()
             nc_test_f1_macro = np.round(f1_score(labels_np_nc_test, predictions_np_nc_test, average='macro'), 3).item()
             nc_test_ll = np.round(log_loss(labels_np_nc_test, probs_np_nc_test, labels=np.arange(num_classes)), 3)
-            nc_test_ece = np.round(um.ece(labels_np_nc_test, probs_np_nc_test, num_bins=30), 3)
-            nc_test_tace = np.round(um.tace(labels_np_nc_test, probs_np_nc_test, num_bins=30), 3)
+            try:
+                nc_test_ece = np.round(um.ece(labels_np_nc_test, probs_np_nc_test, num_bins=30), 3)
+                nc_test_tace = np.round(um.tace(labels_np_nc_test, probs_np_nc_test, num_bins=30), 3)
+            except Exception as e:
+                print("Error calculating ECE/TACE: ", e)
+                nc_test_ece = 0.0
+                nc_test_tace = 0.0
         else:
             nc_f1_weighted = 0
             nc_f1_macro = 0
@@ -1307,7 +1353,8 @@ def train(args, dataset, criterion, encoder_generator, emsize=200, nhid=200, nla
             ensembling_acc[i] = update_ensemble_acc(res_dict_ensemble[i]['Val_Accuracy'], 
                                                     res_dict_ensemble[i]['Val_nc_Accuracy'], 
                                                     res_dict_ensemble[i]['Test_Accuracy'], 
-                                                    res_dict_ensemble[i]['Test_nc_Accuracy'])
+                                                    res_dict_ensemble[i]['Test_nc_Accuracy'],
+                                                    len(np.unique(labels_np)))
             if not do_concat:
                 with open(os.path.join(extra_prior_kwargs_dict.get('save_path'), 'ensembling_acc.json'), 'w') as f:
                     json.dump(ensembling_acc, f, indent=4)
@@ -1401,7 +1448,11 @@ def train(args, dataset, criterion, encoder_generator, emsize=200, nhid=200, nla
                 labels_np_nc = test_targets[2]
                 probs_np_nc_test = output_dict[0][3]
                 labels_np_nc_test = test_targets[3]
-            ensembling_acc[i] = update_ensemble_acc(boosting_accs[0], boosting_accs[2], boosting_accs[1], boosting_accs[3])
+            ensembling_acc[i] = update_ensemble_acc(boosting_accs[0], 
+                                                    boosting_accs[2], 
+                                                    boosting_accs[1], 
+                                                    boosting_accs[3],
+                                                    len(np.unique(labels_np)))
             if do_prompt_tuning:
                 prefix_weights_l = save_prefix_weights(model, extra_prior_kwargs_dict.get('save_path'), i, do_concat, prefix_weights_l)
             # Save ensembled accuracy
