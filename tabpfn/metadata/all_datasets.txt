@@ -10,7 +10,6 @@ openml__colic__27
 openml__connect-4__146195
 openml__dilbert__168909
 openml__dresses-sales__125920
-openml__ecoli__145977
 openml__eeg-eye-state__14951
 openml__elevators__3711
 openml__har__14970
@@ -20,7 +19,6 @@ openml__riccardo__168338
 openml__robert__168332
 openml__volkert__168331
 openml__balance-scale__11
-openml__car__146821
 openml__cmc__23
 openml__cylinder-bands__14954
 openml__heart-c__48

@@ -150,6 +150,9 @@ def reload_config(config_type='causal', task_type='multiclass', longer=0, args=N
     config['verbose'] = args.verbose
     config['save_every_k_epochs'] = args.save_every_k_epochs
     config['max_time'] = args.max_time
+    config['shuffle_every_epoch'] = args.shuffle_every_epoch
+    config['topk_key'] = args.topk_key
+    config['optuna_objective'] = args.optuna_objective
 
     # concatenation
     config['concat_method'] = args.concat_method

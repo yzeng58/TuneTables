@@ -1,1 +1,2 @@
+pt1000-10ens-randinit-avg-top3-unif-reseed-highlr-short
 pt1000-10ens-randinit-avg-top2-unif-reseed-lowlr-short
