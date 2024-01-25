@@ -203,6 +203,12 @@ ens_randinit_avg_top3_unif_reseed_highlr_short_dict = copy.deepcopy(ens_randinit
 ens_randinit_avg_top3_unif_reseed_highlr_short_dict['lr'] = 0.2
 ens_randinit_avg_top3_unif_reseed_highlr_short_dict['epochs'] = 7
 ens_randinit_avg_top3_unif_reseed_highlr_short_dict['keep_topk_ensemble'] = 3
+ens_randinit_avg_top1_unif_reseed_highlr_short_dict = copy.deepcopy(ens_randinit_avg_top3_unif_reseed_highlr_short_dict)
+ens_randinit_avg_top1_unif_reseed_highlr_short_dict['keep_topk_ensemble'] = 1
+ens_randinit_avg_top1_unif_reseed_highlr_short_powerall_dict = copy.deepcopy(ens_randinit_avg_top1_unif_reseed_highlr_short_dict)
+ens_randinit_avg_top1_unif_reseed_highlr_short_powerall_dict['preprocess_type'] = 'power_all'
+ens_randinit_avg_top1_unif_reseed_highlr_short_powerall_mutinf_dict = copy.deepcopy(ens_randinit_avg_top1_unif_reseed_highlr_short_powerall_dict)
+ens_randinit_avg_top1_unif_reseed_highlr_short_powerall_mutinf_dict['subset_features_method'] = 'mutual_information'
 ens_randinit_avg_top3_unif_reseed_sumafter_pca_highlr_short = copy.deepcopy(ens_randinit_avg_top3_unif_reseed_highlr_short_dict)
 ens_randinit_avg_top3_unif_reseed_sumafter_pca_highlr_short['summerize_after_prep'] = ''
 
@@ -272,6 +278,9 @@ all_tasks = {
     'pt1000-10ens-randinit-avg-top1-unif-reseed-stopearly' : ens_randinit_avg_top1_unif_reseed_stopearly_dict,
     'pt1000-10ens-randinit-avg-top2-unif-reseed-stopearly' : ens_randinit_avg_top2_unif_reseed_stopearly_dict,
     'pt1000-10ens-randinit-avg-top1-unif-reseed-stopearly-mutinf' : ens_randinit_avg_top1_unif_reseed_stopearly_mutinf_dict,
+    'pt1000-10ens-randinit-avg-top1-unif-reseed-highlr-short' : ens_randinit_avg_top1_unif_reseed_highlr_short_dict,
+    'pt1000-10ens-randinit-avg-top1-unif-reseed-highlr-short-powerall' : ens_randinit_avg_top1_unif_reseed_highlr_short_powerall_dict,
+    'pt1000-10ens-randinit-avg-top1-unif-reseed-highlr-short-powerall-mutinf' : ens_randinit_avg_top1_unif_reseed_highlr_short_powerall_mutinf_dict,
 }
 
 def get_all_tasks():
