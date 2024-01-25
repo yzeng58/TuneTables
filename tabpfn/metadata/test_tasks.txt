@@ -1,1 +1,1 @@
-zs-32
+zs-random-32
