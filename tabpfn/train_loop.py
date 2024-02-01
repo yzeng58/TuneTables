@@ -208,6 +208,8 @@ def reload_config(config_type='causal', task_type='multiclass', longer=0, args=N
     #Preprocessing
     config['summerize_after_prep'] = args.summerize_after_prep
 
+    #loss fn
+    config['kl_loss'] = args.kl_loss
 
     # wandb
     # todo: for now, most are hard-coded
@@ -280,6 +282,7 @@ def parse_args():
     parser.add_argument('--max_num_classes', type=int, default=10, help='Maximum number of classes to use.')
     parser.add_argument('--real_data_qty', type=int, default=0, help='Number of real data samples to use for fitting.')
     parser.add_argument('--summerize_after_prep', action='store_true', help='train_feature_extractor.')
+    parser.add_argument('--kl_loss', action='store_true', help='Whether to use KL loss.')
     args = parser.parse_args()
     return args
 

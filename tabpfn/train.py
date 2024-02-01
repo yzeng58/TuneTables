@@ -367,7 +367,6 @@ def train(args, dataset, criterion, encoder_generator, emsize=200, nhid=200, nla
         prefix_size = 0
 
 
-
     single_eval_pos_gen = single_eval_pos_gen if callable(single_eval_pos_gen) else lambda: single_eval_pos_gen
     real_data_qty = extra_prior_kwargs_dict.get('real_data_qty', 0)
     if real_data_qty <= 0:
@@ -569,13 +568,29 @@ def train(args, dataset, criterion, encoder_generator, emsize=200, nhid=200, nla
         #load data
         not_zs = extra_prior_kwargs_dict.get('zs_eval_ensemble', 0) == 0
         seed_all(extra_prior_kwargs_dict.get('rand_seed'))
+        do_kl_loss = extra_prior_kwargs_dict.get('kl_loss', False)
 
+        if do_kl_loss:
+            if extra_prior_kwargs_dict['uniform_bptt'] == False:
+                print("KL loss with TabPFN-zs only supports uniform bptt")
+                extra_prior_kwargs_dict['uniform_bptt'] = True
+            
 
         data_for_fitting = None
 
         X, y, X_val, y_val, X_test, y_test, invert_perm_map, steps_per_epoch, num_classes, label_weights, train_ds, val_ds, test_ds = make_datasets(extra_prior_kwargs_dict, do_permute=not_zs, bptt=bptt, steps_per_epoch=steps_per_epoch)
         old_bptt = bptt
         dl, val_dl, test_dl, bptt, data_for_fitting  = make_dataloaders(bptt=bptt, not_zs=not_zs)
+
+        if do_kl_loss:
+            size_data = None
+            for batch, (data, targets, single_eval_pos) in enumerate(dl):
+                size_data = data.shape[1]
+                break
+            new_prefix_size = size_data
+            if new_prefix_size != prefix_size:
+                print("KL loss: Prefix size changed from {} to {}".format(prefix_size, new_prefix_size))
+
         if old_bptt != bptt:
             print("bptt changed from {} to {}".format(old_bptt, bptt))
             max_pos = int((len(data_for_fitting[0]) // 10) * (.8))
@@ -585,23 +600,26 @@ def train(args, dataset, criterion, encoder_generator, emsize=200, nhid=200, nla
             else:
                 single_eval_pos_gen = max_pos
         # print("Dataloader size: ", len(dl))
+        if extra_prior_kwargs_dict.get('zs_eval_ensemble', 0) > 0 or do_kl_loss:
+            from scripts.transformer_prediction_interface import TabPFNClassifier
+            eval_model = TabPFNClassifier(device='cuda', 
+                                                    N_ensemble_configurations=ens_size, 
+                                                    base_path="/home/benfeuer/TabPFN-pt/tabpfn",
+                                                    # seed=None,
+                                                    seed=extra_prior_kwargs_dict.get('rand_seed', 0),
+                                                    batch_size_inference=1,
+                                                    )
+            if do_kl_loss:
+                eval_model.fit(data_for_fitting[0], data_for_fitting[1], overwrite_warning=True)
         if extra_prior_kwargs_dict.get('zs_eval_ensemble', 0) > 0:
 
             def tpc_data_eval(cl=1000, X=None, y=None, X_val=None, y_val=None, ens_size=1):
                     #update num_classes depending on the data
                     num_classes_local = len(np.unique(y))
-                    from scripts.transformer_prediction_interface import TabPFNClassifier
                     start_time = time.time()
                     results = dict()
                     if cl > len(X):
                         cl = len(X) - 1
-                    eval_model = TabPFNClassifier(device='cuda', 
-                                                N_ensemble_configurations=ens_size, 
-                                                base_path="/home/benfeuer/TabPFN-pt/tabpfn",
-                                                # seed=None,
-                                                seed=extra_prior_kwargs_dict.get('rand_seed', 0),
-                                                batch_size_inference=1,
-                                                )
                     eval_model.fit(X[:cl, ...], y[:cl, ...], overwrite_warning=True)
                     predictions = eval_model.predict(X_val).astype(np.int64)
                     outputs = np.zeros((len(X_val), num_classes_local))
@@ -654,10 +672,8 @@ def train(args, dataset, criterion, encoder_generator, emsize=200, nhid=200, nla
                 import wandb
                 wandb.log(res_dict, step=1, commit=True)
             exit(0)
-
     else:
         raise Exception("Excepted a real dataset")
-
 
     encoder = encoder_generator(num_features, emsize)
     #style_def = dl.get_test_batch()[0][0] # the style in batch of the form ((style, x, y), target, single_eval_pos)
@@ -668,6 +684,10 @@ def train(args, dataset, criterion, encoder_generator, emsize=200, nhid=200, nla
         n_out = 2
     elif isinstance(criterion, nn.CrossEntropyLoss):
         n_out = criterion.weight.shape[0]
+    elif do_kl_loss:
+        assert num_classes < 11, "KL loss with TabPFN-zs only supports 10 classes or fewer"
+        n_out = n_classes
+        criterion = losses.kl_divergence
     else:
         n_out = 1
     model = TransformerModel(encoder, n_out, emsize, nhead, nhid, nlayers, dropout, style_encoder=style_encoder,
@@ -892,6 +912,11 @@ def train(args, dataset, criterion, encoder_generator, emsize=200, nhid=200, nla
                         losses = criterion(output.flatten(), targets.to(device).flatten())
                     elif isinstance(criterion, nn.CrossEntropyLoss):
                         losses = criterion(output.reshape(-1, n_out), targets.to(device).long().flatten())
+                    elif do_kl_loss:
+                        tuned_prompt_output = output[:single_eval_pos, ...]
+                        real_data_preds = eval_model.predict_proba(data[0])
+                        assert len(real_data_preds) == len(tuned_prompt_output), f"Real data preds and tuned prompt output have different lengths: {len(real_data_preds)} vs {len(tuned_prompt_output)}"
+                        losses = criterion(tuned_prompt_output, real_data_preds)
                     else:
                         losses = criterion(output, targets)
                     if boosting:
@@ -1188,6 +1213,8 @@ def train(args, dataset, criterion, encoder_generator, emsize=200, nhid=200, nla
                 train_epoch(t_model, t_optim, boost_this_epoch)
             val_score = val_score_nc = val_score_concat = val_score_nc_concat = test_score = test_score_nc = test_ece = test_tace = val_ece = val_tace = val_ece_nc = val_tace_nc = test_ece_nc = test_tace_nc = None
             res_dict = dict()
+            res_dict['epoch_train_time'] = np.round(time.time() - epoch_start_time, 3).item()
+            res_dict['master_epoch_count'] = len(master_epoch_count)
             if real_prior \
                 and (epoch - 1) % validation_period == 0:
                 val_results, val_outputs, val_targets = real_data_eval(r_model=t_model, cl=real_data_qty, train_data=data_for_fitting, val_dl=val_dl)
@@ -1271,7 +1298,7 @@ def train(args, dataset, criterion, encoder_generator, emsize=200, nhid=200, nla
                     epoch_callback(model, epoch / epochs, res_dict)
                 if val_score is not None:
                     # save the log to a json file
-                    res_dict = dict(res_dict, **{'time' : get_time, 
+                    res_dict = dict(res_dict, **{
                                 'epoch': epoch, 
                     })
                     if extra_prior_kwargs_dict.get('wandb_log', False):
