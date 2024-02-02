@@ -58,11 +58,13 @@ def main_f(args):
                 task_str += '_split_' + str(split)
                 if task.startswith('zs'):
                     ensemble_size = int(task.split('-')[-1])
+                    subset_ft_method = task.split('-')[-2]
                     command = ['python', base_cmd, 
                             '--data_path', dataset_path,
-                            '--feature_subset_method', 'pca',
-                            '--split', str(split), 
-                            '--wandb_group', dataset.strip() + "_" + task_str,
+                            '--subset_features_method', subset_ft_method,
+                            '--split', str(split),
+                            '--wandb_log',
+                            '--wandb_group', dataset.strip() + "_" + task_str + "_" + subset_ft_method, 
                             '--real_data_qty', str(args.real_data_qty),
                             '--zs-eval-ensemble', str(ensemble_size)]
                 else:
@@ -95,10 +97,12 @@ def main_f(args):
                         if val != '':
                             addl_args.append(val)
                     if args.gcp_run:
-                        dataset_path = dataset_path.replace(r'(', r'\(').replace(r')', r'\)')
-                        command = ['python', base_cmd, '--data_path \"' + dataset_path + "\"", '--split', str(split), '--real_data_qty', str(args.real_data_qty), '--wandb_group', dataset.strip() + "_" + task_str] + addl_args
+                        #dataset_path = dataset_path.replace(r'(', r'\(').replace(r')', r'\)')
+                        command = ['python', base_cmd, '--data_path \"' + dataset_path + "\"", '--split', str(split), '--real_data_qty', str(args.real_data_qty), '--wandb_group', dataset.strip().replace("(", "").replace(")", "") + "_" + task_str] + addl_args
                     else:
                         command = ['python', base_cmd, '--data_path', dataset_path, '--split', str(split), '--real_data_qty', str(args.real_data_qty), '--wandb_group', dataset.strip() + "_" + task_str] + addl_args
+                    if args.run_optuna:
+                        command = command + ["--wandb_project", "tabpfn-pt-optuna"]
                 if args.bptt > -1:
                     command.append("--bptt")
                     command.append(str(args.bptt))     

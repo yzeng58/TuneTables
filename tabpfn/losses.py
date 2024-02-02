@@ -39,3 +39,22 @@ class ScaledSoftmaxCE(nn.Module):
         temp_scales = x[..., -10:]
 
         logprobs = logits.softmax(-1)
+
+def kl_divergence(clf_out_a, clf_out_b, reduction="mean"):
+    assert clf_out_a.shape == clf_out_b.shape
+    kl_divs_per_example = torch.sum(
+        torch.nn.functional.softmax(clf_out_a, dim=1)
+        * (
+            torch.nn.functional.log_softmax(clf_out_a, dim=1)
+            - torch.nn.functional.log_softmax(clf_out_b, dim=1)
+        ),
+        dim=1,
+    )
+    if reduction == "mean":
+        kl_div = torch.mean(kl_divs_per_example)
+    elif reduction == "sum":
+        kl_div = torch.sum(kl_divs_per_example)
+    else:
+        assert reduction is None or reduction == "none"
+        kl_div = kl_divs_per_example
+    return kl_div

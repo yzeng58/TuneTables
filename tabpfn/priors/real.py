@@ -249,7 +249,7 @@ class CoresetSampler:
 
 class SubsetMaker(object):
     def __init__(
-        self, subset_features, subset_rows, subset_features_method, subset_rows_method, seed = 135798642,give_full_features=False
+        self, subset_features, subset_rows, subset_features_method, subset_rows_method, seed = 135798642, give_full_features=False
     ):
 
         np.random.seed(seed)
@@ -261,6 +261,7 @@ class SubsetMaker(object):
         self.row_selector = None
         self.feature_selector = None
         self.give_full_features = give_full_features
+        self.seed = seed
 
     def random_subset(self, X, y, action=[]):
         if "rows" in action:
@@ -360,7 +361,34 @@ class SubsetMaker(object):
         else:
             return X, y
 
+    # def random_forest_subset(self, X, y, action='features', split='train'):
+    #     from sklearn.inspection import permutation_importance
+    #     from sklearn.ensemble import RandomForestClassifier
 
+    #     if split not in ["train", "val", "test"]:
+    #         raise ValueError("split must be 'train', 'val', or 'test'")
+    #     if split == "train":
+    #         start_time = time.time()
+    #         forest = RandomForestClassifier(n_estimators=200, max_depth=20, random_state=self.seed, n_jobs=-1)
+    #         result = permutation_importance(
+    #             forest, X_test, y_test, n_repeats=10, random_state=42, n_jobs=2
+    #         )
+    #     elapsed_time = time.time() - start_time
+    #     print(f"Elapsed time to compute the importances: {elapsed_time:.3f} seconds")
+
+    #     forest_importances = pd.Series(result.importances_mean)
+
+
+    #         self.feature_selector = RandomForestClassifier(n_estimators=200, max_depth=20, random_state=self.seed, n_jobs=-1)
+    #         importances = forest.feature_importances_
+    #         std = np.std([tree.feature_importances_ for tree in forest.estimators_], axis=0)
+    #         print("Fitting random forest selector ...")
+    #         timer = time.time()
+    #         X = self.feature_selector.fit(X, y)
+    #         print(f"Done fitting random forest feature selector in {round(time.time() - timer, 1)} seconds")
+    #     else:
+    #         X = self.feature_selector.transform(X)
+    #     return X, y
 
     def ica_subset(self, X, y, action='features', split='train'):
         if split not in ["train", "val", "test"]:

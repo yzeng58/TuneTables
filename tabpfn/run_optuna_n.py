@@ -1,4 +1,5 @@
 from datetime import datetime
+import os
 import json
 import wandb
 import optuna
@@ -23,16 +24,14 @@ def objective(trial):
         if isinstance(v, float) or isinstance(v, int) or isinstance(v, str):
             trial.set_user_attr(k, v)
     # config['bptt'] = trial.suggest_int('bptt', 128, 8192, log=True)
-    config['lr'] = trial.suggest_float('lr', .0001, .3)
-    config['aggregate_k_gradients'] = trial.suggest_int('aggregate_k_gradients', 1, 4)
-    config['feature_subset_method'] = trial.suggest_categorical('feature_subset_method', ['pca', 'mutual_information', 'random'])
-    config['preprocess_type'] = trial.suggest_categorical('preprocess_type', ['none', 'power_all', 'quantile_all', 'robust_all'])
-    config['early_stopping'] = trial.suggest_int('early_stopping', 2, 6)
+    config['lr'] = trial.suggest_float('lr', .1, .5)
+    # config['aggregate_k_gradients'] = trial.suggest_int('aggregate_k_gradients', 1, 4)
+    # config['feature_subset_method'] = trial.suggest_categorical('feature_subset_method', ['pca', 'mutual_information'])
+    config['preprocess_type'] = trial.suggest_categorical('preprocess_type', ['none', 'power_all', 'quantile_all'])
+    config['epochs'] = trial.suggest_int('epochs', 1, 101, step=10)
+    config['early_stopping'] = config['epochs']
     config['tuned_prompt_label_balance'] = trial.suggest_categorical('label_balance', ['proportional', 'equal'])
-
-    while config['bptt'] % config['aggregate_k_gradients'] != 0:
-        config['aggregate_k_gradients'] -= 1
- 
+    config['wandb_group'] = config['wandb_group'] + "_epochs_preprocess_lr"
     print("Training model ...")
 
     if config['wandb_log']:
@@ -62,6 +61,6 @@ if __name__ == '__main__':
 
     res_dict = study.best_params
     res_dict['best_value'] = trial.value
-
-    with open(f'logs/optuna_results_{current_time}.json', 'w') as f:
+    os.makedirs('logs/optuna', exist_ok=True)
+    with open(f'logs/optuna/optuna_results_{current_time}.json', 'w') as f:
         json.dump(res_dict, f)

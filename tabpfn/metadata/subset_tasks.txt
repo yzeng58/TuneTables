@@ -1,3 +1,6 @@
-pt10-uniform
-pt100-uniform
-pt1000-uniform
+zs-random-32
+ft
+pt10
+pt100
+pt1000
+pt1000-10ens-randinit-avg-top2-reseed

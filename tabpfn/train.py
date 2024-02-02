@@ -196,19 +196,34 @@ class Losses():
 
 class TabDS(Dataset):
     def __init__(self, X, y):
-        self.X = X
+        #check if NaNs are present in y
+        if np.isnan(y).any():
+            print("WARNING: NaNs present in y, dropping them")
+            nan_mask = ~np.isnan(y)
+            X = X[nan_mask, ...]
+            y = y[nan_mask, ...]
+            print("New X shape: ", X.shape)
+            print("New y shape: ", y.shape)
+
+        if isinstance(X, np.ndarray):
+            self.X = torch.from_numpy(X.copy().astype(np.float32))
+        else:
+            self.X = X
 
         self.y_float = torch.from_numpy(y.copy().astype(np.float32))
         self.y = torch.from_numpy(y.copy().astype(np.int64))
 
         print(f"TabDS: X.shape = {self.X.shape}, y.shape = {self.y.shape}")
+        # print("y: ", self.y[:50, ...])
 
     def __len__(self):
         return len(self.y)
 
     def __getitem__(self, idx):
         #(X,y) data, y target, single_eval_pos
-        return tuple([self.X[idx], self.y_float[idx]]), self.y[idx], torch.tensor([])
+        ret_item = tuple([self.X[idx], self.y_float[idx]]), self.y[idx], torch.tensor([])
+        # print("ret item:", ret_item[0][0], ret_item[0][1], ret_item[1], ret_item[2])
+        return ret_item
 
 
 def preprocess_input(eval_xs, preprocess_transform, summerize_after_prep):
@@ -256,14 +271,17 @@ def preprocess_input(eval_xs, preprocess_transform, summerize_after_prep):
     eval_xs = eval_xs.squeeze(1)
     return eval_xs
 
-def get_train_dataloader(ds, bptt=1000, shuffle=True, num_workers=1, drop_last=True, agg_k_grads=1):
+def get_train_dataloader(ds, bptt=1000, shuffle=True, num_workers=1, drop_last=True, agg_k_grads=1, not_zs=True):
         # old_bptt = bptt
         dl = DataLoader(
             ds, batch_size=bptt, shuffle=shuffle, num_workers=num_workers, drop_last=drop_last,
         )
         if len(dl) == 0:
             ds_len = len(ds)
-            n_batches = 10
+            if not_zs:
+                n_batches = 10
+            else:
+                n_batches = 1
             bptt = int(ds_len // n_batches)
             # bptt = int(bptt // 2)
             dl = DataLoader(
@@ -347,7 +365,6 @@ def train(args, dataset, criterion, encoder_generator, emsize=200, nhid=200, nla
     else:
         do_prompt_tuning = False
         prefix_size = 0
-
 
 
     single_eval_pos_gen = single_eval_pos_gen if callable(single_eval_pos_gen) else lambda: single_eval_pos_gen
@@ -512,15 +529,15 @@ def train(args, dataset, criterion, encoder_generator, emsize=200, nhid=200, nla
     
 
 
-    def make_dataloaders(bptt=bptt):
+    def make_dataloaders(bptt=bptt, not_zs=True):
 
         dl, bptt = get_train_dataloader(train_ds, 
                                   bptt=bptt, 
                                   shuffle=False, 
                                   num_workers=1, 
                                   drop_last=True, 
-                                  agg_k_grads=aggregate_k_gradients
-                                )
+                                  agg_k_grads=aggregate_k_gradients,
+                                  not_zs=not_zs)
 
         val_dl = DataLoader(
             val_ds, batch_size=min(128, y_val.shape[0] // 2), shuffle=False, num_workers=1,
@@ -551,68 +568,96 @@ def train(args, dataset, criterion, encoder_generator, emsize=200, nhid=200, nla
         #load data
         not_zs = extra_prior_kwargs_dict.get('zs_eval_ensemble', 0) == 0
         seed_all(extra_prior_kwargs_dict.get('rand_seed'))
+        do_kl_loss = extra_prior_kwargs_dict.get('kl_loss', False)
 
+        if do_kl_loss:
+            if extra_prior_kwargs_dict['uniform_bptt'] == False:
+                print("KL loss with TabPFN-zs only supports uniform bptt")
+                extra_prior_kwargs_dict['uniform_bptt'] = True
+            
 
         data_for_fitting = None
 
         X, y, X_val, y_val, X_test, y_test, invert_perm_map, steps_per_epoch, num_classes, label_weights, train_ds, val_ds, test_ds = make_datasets(extra_prior_kwargs_dict, do_permute=not_zs, bptt=bptt, steps_per_epoch=steps_per_epoch)
         old_bptt = bptt
-        dl, val_dl, test_dl, bptt, data_for_fitting  = make_dataloaders(bptt=bptt)
+        dl, val_dl, test_dl, bptt, data_for_fitting  = make_dataloaders(bptt=bptt, not_zs=not_zs)
+
+        if do_kl_loss:
+            size_data = None
+            for batch, (data, targets, single_eval_pos) in enumerate(dl):
+                size_data = data.shape[1]
+                break
+            new_prefix_size = size_data
+            if new_prefix_size != prefix_size:
+                print("KL loss: Prefix size changed from {} to {}".format(prefix_size, new_prefix_size))
+
         if old_bptt != bptt:
             print("bptt changed from {} to {}".format(old_bptt, bptt))
             max_pos = int((len(data_for_fitting[0]) // 10) * (.8))
+            print("max_pos: ", max_pos)
             if extra_prior_kwargs_dict.get('uniform_bptt', False):
                 single_eval_pos_gen = lambda: np.random.randint(0, max_pos)
             else:
                 single_eval_pos_gen = max_pos
         # print("Dataloader size: ", len(dl))
+        if extra_prior_kwargs_dict.get('zs_eval_ensemble', 0) > 0 or do_kl_loss:
+            from scripts.transformer_prediction_interface import TabPFNClassifier
+            eval_model = TabPFNClassifier(device='cuda', 
+                                                    N_ensemble_configurations=ens_size, 
+                                                    base_path="/home/benfeuer/TabPFN-pt/tabpfn",
+                                                    # seed=None,
+                                                    seed=extra_prior_kwargs_dict.get('rand_seed', 0),
+                                                    batch_size_inference=1,
+                                                    )
+            if do_kl_loss:
+                eval_model.fit(data_for_fitting[0], data_for_fitting[1], overwrite_warning=True)
         if extra_prior_kwargs_dict.get('zs_eval_ensemble', 0) > 0:
 
             def tpc_data_eval(cl=1000, X=None, y=None, X_val=None, y_val=None, ens_size=1):
-                    print("Num classes: ", num_classes)
-                    from scripts.transformer_prediction_interface import TabPFNClassifier
+                    #update num_classes depending on the data
+                    num_classes_local = len(np.unique(y))
                     start_time = time.time()
                     results = dict()
                     if cl > len(X):
                         cl = len(X) - 1
-                    eval_model = TabPFNClassifier(device='cuda', 
-                                                N_ensemble_configurations=ens_size, 
-                                                base_path="/home/benfeuer/TabPFN-pt/tabpfn",
-                                                # seed=None,
-                                                seed=extra_prior_kwargs_dict.get('rand_seed', 0),
-                                                batch_size_inference=1,
-                                                )
                     eval_model.fit(X[:cl, ...], y[:cl, ...], overwrite_warning=True)
                     predictions = eval_model.predict(X_val).astype(np.int64)
-                    outputs = eval_model.predict_proba(X_val)
+                    outputs = np.zeros((len(X_val), num_classes_local))
                     #invert permutation of labels
-                    new_output = np.zeros_like(outputs)
-                    for i in range(num_classes):
-                        new_output[:, invert_perm_map[i]] = outputs[:, i]
+                    # new_output = np.zeros((len(X_val), num_classes))
+                    output_eval = eval_model.predict_proba(X_val)
+                    for j in range(output_eval.shape[1]):
+                        outputs[:, invert_perm_map[j]] = output_eval[:, j]
+                    for i in range(num_classes_local):
+                        # try:
+                        outputs[:, i] = outputs[:, invert_perm_map[i]]
+                        # except Exception as e:
+                        #     print("TabPFN-ZS did not output class: ", i)
+                        #     outputs[:, invert_perm_map[i]] = 0.0
+                        #     new_output[:, i] = outputs[:, invert_perm_map[i]]
                     targets = y_val
-                    # print("Predictions shape: ", predictions.shape)
-                    # print("predictions numpy type: ", predictions.dtype)
-                    # print("Predictions: ", predictions[:20, ...])
-                    # print("Targets shape: ", targets.shape)
-                    # print("Targets numpy type: ", targets.dtype)
-                    # print("Targets: ", targets[:20, ...])
                     warnings.filterwarnings("ignore")
                     end_time = time.time()
                     results['Eval_Time'] = np.round(end_time - start_time, 3).item()
                     results['Accuracy'] = np.round(accuracy_score(targets, predictions), 3).item()
-                    results['Log_Loss'] = np.round(log_loss(targets, outputs, labels=np.arange(num_classes)), 3).item()
+                    results['Log_Loss'] = np.round(log_loss(targets, outputs, labels=np.arange(num_classes_local)), 3).item()
                     results['F1_Weighted'] = np.round(f1_score(targets, predictions, average='weighted'), 3).item()
                     results['F1_Macro'] = np.round(f1_score(targets, predictions, average='macro'), 3).item()
                     try:
                         if num_classes == 2:
-                            results['ROC_AUC'] = np.round(roc_auc_score(targets, outputs[:, 1], labels=np.arange(num_classes)), 3).item()
+                            results['ROC_AUC'] = np.round(roc_auc_score(targets, outputs[:, 1], labels=np.arange(num_classes_local)), 3).item()
                         else:
-                            results['ROC_AUC'] = np.round(roc_auc_score(targets, outputs, labels=np.arange(num_classes), multi_class='ovr'), 3).item()
+                            results['ROC_AUC'] = np.round(roc_auc_score(targets, outputs, labels=np.arange(num_classes_local), multi_class='ovr'), 3).item()
                     except Exception as e:
                         print("Error calculating ROC AUC: ", e)
                         results['ROC_AUC'] = 0.0
-                    results['ECE'] = np.round(um.ece(targets, outputs, num_bins=30), 3).item()
-                    results['TACE'] = np.round(um.tace(targets, outputs, num_bins=30), 3).item()
+                    try:
+                        results['ECE'] = np.round(um.ece(targets, outputs, num_bins=30), 3).item()
+                        results['TACE'] = np.round(um.tace(targets, outputs, num_bins=30), 3).item()
+                    except Exception as e:
+                        print("Error calculating ECE/TACE: ", e)
+                        results['ECE'] = 0.0
+                        results['TACE'] = 0.0
                     warnings.filterwarnings("default")
                     return results
             res_dict = dict()
@@ -627,10 +672,8 @@ def train(args, dataset, criterion, encoder_generator, emsize=200, nhid=200, nla
                 import wandb
                 wandb.log(res_dict, step=1, commit=True)
             exit(0)
-
     else:
         raise Exception("Excepted a real dataset")
-
 
     encoder = encoder_generator(num_features, emsize)
     #style_def = dl.get_test_batch()[0][0] # the style in batch of the form ((style, x, y), target, single_eval_pos)
@@ -641,6 +684,10 @@ def train(args, dataset, criterion, encoder_generator, emsize=200, nhid=200, nla
         n_out = 2
     elif isinstance(criterion, nn.CrossEntropyLoss):
         n_out = criterion.weight.shape[0]
+    elif do_kl_loss:
+        assert num_classes < 11, "KL loss with TabPFN-zs only supports 10 classes or fewer"
+        n_out = n_classes
+        criterion = losses.kl_divergence
     else:
         n_out = 1
     model = TransformerModel(encoder, n_out, emsize, nhead, nhid, nlayers, dropout, style_encoder=style_encoder,
@@ -723,8 +770,9 @@ def train(args, dataset, criterion, encoder_generator, emsize=200, nhid=200, nla
     master_epoch_count = []
     
     def real_data_eval(r_model, cl=1000, train_data=None, val_dl=None, softmax_temperature = torch.log(torch.tensor([0.8]))):
+        start_time = time.time()
         td = copy.deepcopy(train_data)
-        #
+        num_classes_local = len(torch.unique(td[1]))
         td[0] = td[0][:cl, ...]
         td[1] = td[1][:cl, ...]
         single_eval_pos = len(td[0])
@@ -745,10 +793,10 @@ def train(args, dataset, criterion, encoder_generator, emsize=200, nhid=200, nla
                 # print("Original preds: ", predicted[:20, ...])
                 new_output = loop_translate(output, invert_perm_map)
                 # new_output = torch.zeros_like(output)
-                # for i in range(num_classes):
+                # for i in range(num_classes_local):
                 #     new_output[:, invert_perm_map[i]] = output[:, i]
                 output = new_output
-                output = output[:, 0:num_classes] / torch.exp(softmax_temperature)
+                output = output[:, 0:num_classes_local] / torch.exp(softmax_temperature)
                 output = torch.nn.functional.softmax(output, dim=-1)
                 output_list.append(output)
                 _, predicted = torch.max(output.cpu().data, 1)
@@ -759,38 +807,30 @@ def train(args, dataset, criterion, encoder_generator, emsize=200, nhid=200, nla
             outputs = torch.cat(output_list, dim=0).cpu().numpy()
             predictions = torch.cat(prediction_list, dim=0).cpu().numpy()
             targets = torch.cat(target_list, dim=0).cpu().numpy()
-            # print("Predictions shape: ", predictions.shape)
-            # print("predictions numpy type: ", predictions.dtype)
-            # print("Predictions: ", predictions[:20, ...])
-            # print("Predictions: ", predictions[-20:, ...])
-            # # print("Targets shape: ", targets.shape)
-            # # print("Targets numpy type: ", targets.dtype)
-            # print("Targets: ", targets[:20, ...])
-            # print("Targets: ", targets[-20:, ...])
-            # assert len(outputs) == len(predictions) == total, "Samples missing from eval: found {}, expected {}".format(len(outputs), total)
-            # correct += (predictions == targets).sum().item()
 
         results = dict()
         warnings.filterwarnings("ignore")
+        results['Eval_Time'] = np.round(time.time() - start_time, 3).item()
         results['Accuracy'] = np.round(accuracy_score(targets, predictions), 3).item()
-        results['Log_Loss'] = np.round(log_loss(targets, outputs, labels=np.arange(num_classes)), 3).item()
+        results['Log_Loss'] = np.round(log_loss(targets, outputs, labels=np.arange(num_classes_local)), 3).item()
         results['F1_Weighted'] = np.round(f1_score(targets, predictions, average='weighted'), 3).item()
         results['F1_Macro'] = np.round(f1_score(targets, predictions, average='macro'), 3).item()
         try:
-            if num_classes == 2:
-                results['ROC_AUC'] = np.round(roc_auc_score(targets, outputs[:, 1], labels=np.arange(num_classes)), 3).item()
+            if num_classes_local == 2:
+                results['ROC_AUC'] = np.round(roc_auc_score(targets, outputs[:, 1], labels=np.arange(num_classes_local)), 3).item()
             else:
-                results['ROC_AUC'] = np.round(roc_auc_score(targets, outputs, labels=np.arange(num_classes), multi_class='ovr'), 3).item()
+                results['ROC_AUC'] = np.round(roc_auc_score(targets, outputs, labels=np.arange(num_classes_local), multi_class='ovr'), 3).item()
         except Exception as e:
             print("Error calculating ROC AUC: ", e)
             results['ROC_AUC'] = 0.0
-        results['ECE'] = np.round(um.ece(targets, outputs, num_bins=30), 3).item()
-        results['TACE'] = np.round(um.tace(targets, outputs, num_bins=30), 3).item()
-        # print("Targets shape: ", targets.shape)
-        # print("Targets: ", targets[:20, ...])
-        # print("Predictions shape: ", predictions.shape)
-        # print("Predictions: ", predictions[:20, ...])
-        # raise Exception("Stop here")
+        try:
+            results['ECE'] = np.round(um.ece(targets, outputs, num_bins=30), 3).item()
+            results['TACE'] = np.round(um.tace(targets, outputs, num_bins=30), 3).item()
+        except Exception as e:
+            print("Error calculating ECE/TACE: ", e)
+            results['ECE'] = 0.0
+            results['TACE'] = 0.0
+
         warnings.filterwarnings("default")
 
         return results, outputs, targets
@@ -820,12 +860,7 @@ def train(args, dataset, criterion, encoder_generator, emsize=200, nhid=200, nla
         step_time = 0
         before_get_batch = time.time()
         batches_seen = 0
-        # assert len(dl) > aggregate_k_gradients, 'Number of batches per epoch must be greater than `aggregate_k_gradients`'
-        # assert len(dl) % aggregate_k_gradients == 0, 'Please set the number of batches per epoch s.t. `aggregate_k_gradients` divides it.'
-        # if do_prompt_tuning:
-        #     wbu = e_model.prefix_embedding.weight.detach().clone()
-        #     print("Prompt weights before: ", wbu[:10, ...])
-            # print("Prompt requires grad: ", e_model.prefix_embedding.weight.requires_grad)
+
         shuffle_every_epoch = extra_prior_kwargs_dict.get('shuffle_every_epoch', False)
         permute_feature_pos = extra_prior_kwargs_dict.get('permute_feature_position_in_ensemble', False)
         for batch, (data, targets, single_eval_pos) in enumerate(dl):
@@ -877,6 +912,11 @@ def train(args, dataset, criterion, encoder_generator, emsize=200, nhid=200, nla
                         losses = criterion(output.flatten(), targets.to(device).flatten())
                     elif isinstance(criterion, nn.CrossEntropyLoss):
                         losses = criterion(output.reshape(-1, n_out), targets.to(device).long().flatten())
+                    elif do_kl_loss:
+                        tuned_prompt_output = output[:single_eval_pos, ...]
+                        real_data_preds = eval_model.predict_proba(data[0])
+                        assert len(real_data_preds) == len(tuned_prompt_output), f"Real data preds and tuned prompt output have different lengths: {len(real_data_preds)} vs {len(tuned_prompt_output)}"
+                        losses = criterion(tuned_prompt_output, real_data_preds)
                     else:
                         losses = criterion(output, targets)
                     if boosting:
@@ -1035,30 +1075,113 @@ def train(args, dataset, criterion, encoder_generator, emsize=200, nhid=200, nla
             # print("Prefix weights list length: ", len(prefix_weights_l))
         return prefix_weights_l
 
-    def update_ensemble_acc(ens_acc, ens_acc_nc, ens_acc_test, ens_acc_test_nc):
-        ece = np.round(um.ece(labels_np, probs_np, num_bins=30), 3)
-        tace = np.round(um.tace(labels_np, probs_np, num_bins=30), 3)
-        test_ece = np.round(um.ece(labels_np_test, probs_np_test, num_bins=30), 3)
-        test_tace = np.round(um.tace(labels_np_test, probs_np_test, num_bins=30), 3)
+    def update_ensemble_acc(ens_acc, ens_acc_nc, ens_acc_test, ens_acc_test_nc, num_classes):
+        print("probs_np shape: ", probs_np.shape)
+        predictions_np = np.argmax(probs_np, axis=1)
+        predictions_np_test = np.argmax(probs_np_test, axis=1)
+        try:
+            if num_classes == 2:
+                roc_auc = np.round(roc_auc_score(labels_np, probs_np[:, 1], labels=np.arange(num_classes)), 3).item()
+                test_roc_auc = np.round(roc_auc_score(labels_np_test, probs_np_test[:, 1], labels=np.arange(num_classes)), 3).item()
+            else:
+                roc_auc = np.round(roc_auc_score(labels_np, probs_np, labels=np.arange(num_classes), multi_class='ovr'), 3).item()
+                test_roc_auc = np.round(roc_auc_score(labels_np_test, probs_np_test, labels=np.arange(num_classes), multi_class='ovr'), 3).item()
+        except Exception as e:
+            print("Error calculating ROC AUC: ", e)
+            roc_auc = 0.0
+            test_roc_auc = 0.0
+        f1_weighted = np.round(f1_score(labels_np, predictions_np, average='weighted'), 3).item()
+        f1_macro = np.round(f1_score(labels_np, predictions_np, average='macro'), 3).item()
+        ll = np.round(log_loss(labels_np, probs_np, labels=np.arange(num_classes)), 3)
+        try:
+            ece = np.round(um.ece(labels_np, probs_np, num_bins=30), 3)
+            tace = np.round(um.tace(labels_np, probs_np, num_bins=30), 3)
+        except Exception as e:
+            print("Error calculating ECE/TACE: ", e)
+            ece = 0.0
+            tace = 0.0
+        test_f1_weighted = np.round(f1_score(labels_np_test, predictions_np_test, average='weighted'), 3).item()
+        test_f1_macro = np.round(f1_score(labels_np_test, predictions_np_test, average='macro'), 3).item()
+        test_ll = np.round(log_loss(labels_np_test, probs_np_test, labels=np.arange(num_classes)), 3)
+        try:
+            test_ece = np.round(um.ece(labels_np_test, probs_np_test, num_bins=30), 3)
+            test_tace = np.round(um.tace(labels_np_test, probs_np_test, num_bins=30), 3)
+        except Exception as e:
+            print("Error calculating ECE/TACE: ", e)
+            test_ece = 0.0
+            test_tace = 0.0
         if do_prompt_tuning:
-            nc_ece = np.round(um.ece(labels_np_nc, probs_np_nc, num_bins=30), 3)
-            nc_tace = np.round(um.tace(labels_np_nc, probs_np_nc, num_bins=30), 3)
-            nc_test_ece = np.round(um.ece(labels_np_nc_test, probs_np_nc_test, num_bins=30), 3)
-            nc_test_tace = np.round(um.tace(labels_np_nc_test, probs_np_nc_test, num_bins=30), 3)
+            predictions_np_nc = np.argmax(probs_np_nc, axis=1)
+            predictions_np_nc_test = np.argmax(probs_np_nc_test, axis=1)
+            nc_f1_weighted = np.round(f1_score(labels_np_nc, predictions_np_nc, average='weighted'), 3).item()
+            nc_f1_macro = np.round(f1_score(labels_np_nc, predictions_np_nc, average='macro'), 3).item()
+            try:
+                if num_classes == 2:
+                    roc_auc_nc = np.round(roc_auc_score(labels_np_nc, probs_np_nc[:, 1], labels=np.arange(num_classes)), 3).item()
+                    test_roc_auc_nc = np.round(roc_auc_score(labels_np_nc_test, probs_np_nc_test[:, 1], labels=np.arange(num_classes)), 3).item()
+                else:
+                    roc_auc_nc = np.round(roc_auc_score(labels_np_nc, probs_np_nc, labels=np.arange(num_classes), multi_class='ovr'), 3).item()
+                    test_roc_auc_nc = np.round(roc_auc_score(labels_np_nc_test, probs_np_nc_test, labels=np.arange(num_classes), multi_class='ovr'), 3).item()
+            except Exception as e:
+                print("Error calculating ROC AUC: ", e)
+                roc_auc_nc = 0.0
+                test_roc_auc_nc = 0.0
+            nc_ll = np.round(log_loss(labels_np_nc, probs_np_nc, labels=np.arange(num_classes)), 3)
+            try:
+                nc_ece = np.round(um.ece(labels_np_nc, probs_np_nc, num_bins=30), 3)
+                nc_tace = np.round(um.tace(labels_np_nc, probs_np_nc, num_bins=30), 3)
+            except Exception as e:
+                print("Error calculating ECE/TACE: ", e)
+                nc_ece = 0.0
+                nc_tace = 0.0
+            nc_test_f1_weighted = np.round(f1_score(labels_np_nc_test, predictions_np_nc_test, average='weighted'), 3).item()
+            nc_test_f1_macro = np.round(f1_score(labels_np_nc_test, predictions_np_nc_test, average='macro'), 3).item()
+            nc_test_ll = np.round(log_loss(labels_np_nc_test, probs_np_nc_test, labels=np.arange(num_classes)), 3)
+            try:
+                nc_test_ece = np.round(um.ece(labels_np_nc_test, probs_np_nc_test, num_bins=30), 3)
+                nc_test_tace = np.round(um.tace(labels_np_nc_test, probs_np_nc_test, num_bins=30), 3)
+            except Exception as e:
+                print("Error calculating ECE/TACE: ", e)
+                nc_test_ece = 0.0
+                nc_test_tace = 0.0
         else:
+            nc_f1_weighted = 0
+            nc_f1_macro = 0
+            roc_auc_nc = 0
+            test_roc_auc_nc = 0
+            nc_test_f1_weighted = 0
+            nc_test_f1_macro = 0
+            nc_ll = 0
             nc_ece = 0
             nc_tace = 0
+            nc_test_ll = 0
             nc_test_ece = 0
             nc_test_tace = 0
         new_res = {
             "Ens_Val_Accuracy": ens_acc,
             "Ens_Val_Accuracy_NC": ens_acc_nc,
+            "Ens_Val_F1_Weighted": f1_weighted,
+            "Ens_Val_F1_Macro": f1_macro,
+            "Ens_Val_F1_Weighted_NC": nc_f1_weighted,
+            "Ens_Val_F1_Macro_NC": nc_f1_macro,
+            "Ens_Val_Log_Loss": ll,
+            "Ens_Val_Log_Loss_NC": nc_ll,
+            "Ens_Val_ROC_AUC": roc_auc,
+            "Ens_Val_ROC_AUC_NC": roc_auc_nc,
             "Ens_Val_ECE": ece,
             "Ens_Val_TACE": tace,
             "Ens_Val_ECE_NC": nc_ece,
             "Ens_Val_TACE_NC": nc_tace,
             "Ens_Test_Accuracy": ens_acc_test,
             "Ens_Test_Accuracy_NC": ens_acc_test_nc,
+            "Ens_Test_F1_Weighted": test_f1_weighted,
+            "Ens_Test_F1_Macro": test_f1_macro,
+            "Ens_Test_F1_Weighted_NC": nc_test_f1_weighted,
+            "Ens_Test_F1_Macro_NC": nc_test_f1_macro,
+            "Ens_Test_Log_Loss": test_ll,
+            "Ens_Test_Log_Loss_NC": nc_test_ll,
+            "Ens_Test_ROC_AUC": test_roc_auc,
+            "Ens_Test_ROC_AUC_NC": test_roc_auc_nc,
             "Ens_Test_ECE": test_ece,
             "Ens_Test_TACE": test_tace,
             "Ens_Test_ECE_NC": nc_test_ece,
@@ -1090,6 +1213,8 @@ def train(args, dataset, criterion, encoder_generator, emsize=200, nhid=200, nla
                 train_epoch(t_model, t_optim, boost_this_epoch)
             val_score = val_score_nc = val_score_concat = val_score_nc_concat = test_score = test_score_nc = test_ece = test_tace = val_ece = val_tace = val_ece_nc = val_tace_nc = test_ece_nc = test_tace_nc = None
             res_dict = dict()
+            res_dict['epoch_train_time'] = np.round(time.time() - epoch_start_time, 3).item()
+            res_dict['master_epoch_count'] = len(master_epoch_count)
             if real_prior \
                 and (epoch - 1) % validation_period == 0:
                 val_results, val_outputs, val_targets = real_data_eval(r_model=t_model, cl=real_data_qty, train_data=data_for_fitting, val_dl=val_dl)
@@ -1173,7 +1298,7 @@ def train(args, dataset, criterion, encoder_generator, emsize=200, nhid=200, nla
                     epoch_callback(model, epoch / epochs, res_dict)
                 if val_score is not None:
                     # save the log to a json file
-                    res_dict = dict(res_dict, **{'time' : get_time, 
+                    res_dict = dict(res_dict, **{
                                 'epoch': epoch, 
                     })
                     if extra_prior_kwargs_dict.get('wandb_log', False):
@@ -1255,7 +1380,8 @@ def train(args, dataset, criterion, encoder_generator, emsize=200, nhid=200, nla
             ensembling_acc[i] = update_ensemble_acc(res_dict_ensemble[i]['Val_Accuracy'], 
                                                     res_dict_ensemble[i]['Val_nc_Accuracy'], 
                                                     res_dict_ensemble[i]['Test_Accuracy'], 
-                                                    res_dict_ensemble[i]['Test_nc_Accuracy'])
+                                                    res_dict_ensemble[i]['Test_nc_Accuracy'],
+                                                    len(np.unique(labels_np)))
             if not do_concat:
                 with open(os.path.join(extra_prior_kwargs_dict.get('save_path'), 'ensembling_acc.json'), 'w') as f:
                     json.dump(ensembling_acc, f, indent=4)
@@ -1270,7 +1396,6 @@ def train(args, dataset, criterion, encoder_generator, emsize=200, nhid=200, nla
     # boosting logic
     if is_ensemble:
         for i in range(1, boosting_n_iters):
-            master_epoch_count.append(1)
             seed_all(extra_prior_kwargs_dict.get('rand_seed') + i)
             if extra_prior_kwargs_dict.get('reseed_data', True):
                 #load data
@@ -1350,7 +1475,11 @@ def train(args, dataset, criterion, encoder_generator, emsize=200, nhid=200, nla
                 labels_np_nc = test_targets[2]
                 probs_np_nc_test = output_dict[0][3]
                 labels_np_nc_test = test_targets[3]
-            ensembling_acc[i] = update_ensemble_acc(boosting_accs[0], boosting_accs[2], boosting_accs[1], boosting_accs[3])
+            ensembling_acc[i] = update_ensemble_acc(boosting_accs[0], 
+                                                    boosting_accs[2], 
+                                                    boosting_accs[1], 
+                                                    boosting_accs[3],
+                                                    len(np.unique(labels_np)))
             if do_prompt_tuning:
                 prefix_weights_l = save_prefix_weights(model, extra_prior_kwargs_dict.get('save_path'), i, do_concat, prefix_weights_l)
             # Save ensembled accuracy
@@ -1358,6 +1487,8 @@ def train(args, dataset, criterion, encoder_generator, emsize=200, nhid=200, nla
                 json.dump(ensembling_acc, f, indent=4)
             if extra_prior_kwargs_dict.get('wandb_log', False):
                 import wandb
+                master_epoch_count.append(1)
+                print("length of master epoch count is now: ", len(master_epoch_count))
                 wandb.log(ensembling_acc[i], step=len(master_epoch_count), commit=True)
 
     # break down training and return

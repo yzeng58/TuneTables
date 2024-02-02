@@ -140,7 +140,7 @@ pt1000_unif_dict['uniform_bptt'] = ''
 pt1000_unif_highep_lowlr_dict = copy.deepcopy(pt1000_unif_dict)
 pt1000_unif_highep_lowlr_dict['epochs'] = 101
 pt1000_unif_highep_lowlr_dict['lr'] = 0.05
-pt1000_unif_highep_lowlr_dict['save_every_k_epochs'] = 31
+pt1000_unif_highep_lowlr_dict['save_every_k_epochs'] = 102
 pt1000_unif_highep_lowlr_dict['validation_period'] = 5
 pt1000_unif_highep_lowlr_dict['early_stopping'] = 10
 pt1000_prop_dict = copy.deepcopy(pt1000_dict)
@@ -180,12 +180,29 @@ ens_bagged_avg_top2_reseed_dict['ensemble_size'] = 10
 ens_randinit_avg_top2_reseed_dict = copy.deepcopy(ens_randinit_avg_top2_dict)
 ens_randinit_avg_top2_reseed_dict['reseed_data'] = ''
 ens_randinit_avg_top2_reseed_dict['ensemble_size'] = 10
+ens_randinit_avg_top2_reseed_25cl_long_dict = copy.deepcopy(ens_randinit_avg_top2_reseed_dict)
+ens_randinit_avg_top2_reseed_25cl_long_dict['max_num_classes'] = 25
+ens_randinit_avg_top2_reseed_25cl_long_dict['epochs'] = 101
+ens_randinit_avg_top2_reseed_25cl_long_dict['lr'] = 0.05
+ens_randinit_avg_top2_reseed_25cl_long_dict['early_stopping'] = 10
+
 ens_randinit_avg_top2_lowlr_short_dict = copy.deepcopy(ens_randinit_avg_top2_reseed_dict)
 ens_randinit_avg_top2_lowlr_short_dict['lr'] = 0.03
 ens_randinit_avg_top2_lowlr_short_dict['epochs'] = 7
 ens_randinit_avg_top2_unif_reseed_dict = copy.deepcopy(ens_randinit_avg_top2_reseed_dict)
 ens_randinit_avg_top2_unif_reseed_dict['uniform_bptt'] = ''
 ens_randinit_avg_top2_unif_reseed_dict['topk_key'] = 'Val_nc_Accuracy'
+ens_randinit_avg_top2_unif_reseed_25cl_long_dict = copy.deepcopy(ens_randinit_avg_top2_unif_reseed_dict)
+ens_randinit_avg_top2_unif_reseed_25cl_long_dict['max_num_classes'] = 25
+ens_randinit_avg_top2_unif_reseed_25cl_long_dict['epochs'] = 101
+ens_randinit_avg_top2_unif_reseed_25cl_long_dict['lr'] = 0.05
+ens_randinit_avg_top2_unif_reseed_25cl_long_dict['early_stopping'] = 10
+ens_randinit_avg_top2_unif_reseed_stopearly_dict = copy.deepcopy(ens_randinit_avg_top2_unif_reseed_dict)
+ens_randinit_avg_top2_unif_reseed_stopearly_dict['early_stopping'] = 2
+ens_randinit_avg_top1_unif_reseed_stopearly_dict = copy.deepcopy(ens_randinit_avg_top2_unif_reseed_stopearly_dict)
+ens_randinit_avg_top1_unif_reseed_stopearly_dict['keep_topk_ensemble'] = 1
+ens_randinit_avg_top1_unif_reseed_stopearly_mutinf_dict = copy.deepcopy(ens_randinit_avg_top1_unif_reseed_stopearly_dict)
+ens_randinit_avg_top1_unif_reseed_stopearly_mutinf_dict['subset_features_method'] = 'mutual_information'
 ens_randinit_avg_top2_reseed_sumafter_pca_dict = copy.deepcopy(ens_randinit_avg_top2_reseed_dict)
 ens_randinit_avg_top2_reseed_sumafter_pca_dict['summerize_after_prep'] = ''
 ens_randinit_avg_top2_unif_reseed_sumafter_pca_dict = copy.deepcopy(ens_randinit_avg_top2_unif_reseed_dict)
@@ -193,6 +210,36 @@ ens_randinit_avg_top2_unif_reseed_sumafter_pca_dict['summerize_after_prep'] = ''
 ens_randinit_avg_top2_unif_reseed_lowlr_short_dict = copy.deepcopy(ens_randinit_avg_top2_unif_reseed_dict)
 ens_randinit_avg_top2_unif_reseed_lowlr_short_dict['lr'] = 0.03
 ens_randinit_avg_top2_unif_reseed_lowlr_short_dict['epochs'] = 7
+ens_randinit_avg_top3_unif_reseed_highlr_short_dict = copy.deepcopy(ens_randinit_avg_top2_unif_reseed_dict)
+ens_randinit_avg_top3_unif_reseed_highlr_short_dict['lr'] = 0.2
+ens_randinit_avg_top3_unif_reseed_highlr_short_dict['epochs'] = 7
+ens_randinit_avg_top3_unif_reseed_highlr_short_dict['keep_topk_ensemble'] = 3
+ens_randinit_avg_top1_unif_reseed_highlr_short_dict = copy.deepcopy(ens_randinit_avg_top3_unif_reseed_highlr_short_dict)
+ens_randinit_avg_top1_unif_reseed_highlr_short_dict['keep_topk_ensemble'] = 1
+ens_randinit_avg_top1_unif_reseed_highlr_short_powerall_dict = copy.deepcopy(ens_randinit_avg_top1_unif_reseed_highlr_short_dict)
+ens_randinit_avg_top1_unif_reseed_highlr_short_powerall_dict['preprocess_type'] = 'power_all'
+ens_randinit_avg_top1_unif_reseed_highlr_short_powerall_mutinf_dict = copy.deepcopy(ens_randinit_avg_top1_unif_reseed_highlr_short_powerall_dict)
+ens_randinit_avg_top1_unif_reseed_highlr_short_powerall_mutinf_dict['subset_features_method'] = 'mutual_information'
+ens_randinit_avg_top3_unif_reseed_sumafter_pca_highlr_short = copy.deepcopy(ens_randinit_avg_top3_unif_reseed_highlr_short_dict)
+ens_randinit_avg_top3_unif_reseed_sumafter_pca_highlr_short['summerize_after_prep'] = ''
+
+#ensemble size variation
+ens_randinit_avg_top1_reseed_large_highlr_longep_dict = copy.deepcopy(ens_randinit_avg_top2_reseed_dict)
+ens_randinit_avg_top1_reseed_large_highlr_longep_dict['reseed_data'] = ''
+ens_randinit_avg_top1_reseed_large_highlr_longep_dict['ensemble_size'] = 5
+ens_randinit_avg_top1_reseed_large_highlr_longep_dict['lr'] = 0.3
+ens_randinit_avg_top1_reseed_large_highlr_longep_dict['epochs'] = 101
+ens_randinit_avg_top1_reseed_large_highlr_longep_dict['save_every_k_epochs'] = 102
+ens_randinit_avg_top1_reseed_large_highlr_longep_dict['tuned_prompt_size'] = 2000
+ens_randinit_avg_top1_reseed_large_highlr_longep_dict['keep_topk_ensemble'] = 1
+ens_randinit_avg_top1_reseed_large_lowlr_longep_dict_noes = copy.deepcopy(ens_randinit_avg_top1_reseed_large_highlr_longep_dict)
+ens_randinit_avg_top1_reseed_large_lowlr_longep_dict_noes['lr'] = 0.05
+ens_randinit_avg_top1_reseed_large_lowlr_longep_dict_noes['early_stopping'] = 10
+ens_randinit_avg_top2_reseed_large_lowlr_longep_dict_noes = copy.deepcopy(ens_randinit_avg_top1_reseed_large_lowlr_longep_dict_noes)
+ens_randinit_avg_top2_reseed_large_lowlr_longep_dict_noes['keep_topk_ensemble'] = 2
+ens_randinit_avg_top1_reseed_large_highlr_longep_dict['ensemble_size'] = 10
+ens_randinit_avg_top1_reseed_small_highlr_longep_dict = copy.deepcopy(ens_randinit_avg_top1_reseed_large_highlr_longep_dict)
+ens_randinit_avg_top1_reseed_small_highlr_longep_dict['tuned_prompt_size'] = 10
 
 all_tasks = {
     'debug' : debug_dict,
@@ -252,10 +299,23 @@ all_tasks = {
     'pt1000-10ens-randinit-avg-top2-reseed' : ens_randinit_avg_top2_reseed_dict,
     'pt1000-10ens-randinit-avg-top2-reseed-sumafter-pca' : ens_randinit_avg_top2_reseed_sumafter_pca_dict,
     'pt1000-10ens-randinit-avg-top2-reseed-lowlr-short' : ens_randinit_avg_top2_lowlr_short_dict,
+    'pt1000-10ens-randinit-avg-top2-reseed-25cl-long' : ens_randinit_avg_top2_reseed_25cl_long_dict,
     'pt1000-10ens-randinit-avg-top2-unif-reseed' : ens_randinit_avg_top2_unif_reseed_dict,
     'pt1000-10ens-randinit-avg-top2-unif-reseed-sumafter-pca' : ens_randinit_avg_top2_unif_reseed_sumafter_pca_dict,
     'pt1000-10ens-randinit-avg-top2-unif-reseed-lowlr-short' : ens_randinit_avg_top2_unif_reseed_lowlr_short_dict,
-
+    'pt1000-10ens-randinit-avg-top3-unif-reseed-highlr-short' : ens_randinit_avg_top3_unif_reseed_highlr_short_dict,
+    'pt1000-10ens-randinit-avg-top3-unif-reseed-sumafter-pca-highlr-short' : ens_randinit_avg_top3_unif_reseed_sumafter_pca_highlr_short,
+    'pt1000-10ens-randinit-avg-top1-unif-reseed-stopearly' : ens_randinit_avg_top1_unif_reseed_stopearly_dict,
+    'pt1000-10ens-randinit-avg-top2-unif-reseed-stopearly' : ens_randinit_avg_top2_unif_reseed_stopearly_dict,
+    'pt1000-10ens-randinit-avg-top1-unif-reseed-stopearly-mutinf' : ens_randinit_avg_top1_unif_reseed_stopearly_mutinf_dict,
+    'pt1000-10ens-randinit-avg-top1-unif-reseed-highlr-short' : ens_randinit_avg_top1_unif_reseed_highlr_short_dict,
+    'pt1000-10ens-randinit-avg-top1-unif-reseed-highlr-short-powerall' : ens_randinit_avg_top1_unif_reseed_highlr_short_powerall_dict,
+    'pt1000-10ens-randinit-avg-top1-unif-reseed-highlr-short-powerall-mutinf' : ens_randinit_avg_top1_unif_reseed_highlr_short_powerall_mutinf_dict,
+    'pt1000-10ens-randinit-avg-top2-unif-reseed-25cl-long' : ens_randinit_avg_top2_unif_reseed_25cl_long_dict,
+    'pt2000-5ens-randinit-avg-top1-reseed-highlr-longep' : ens_randinit_avg_top1_reseed_large_highlr_longep_dict,
+    'pt2000-5ens-randinit-avg-top1-reseed-lowlr-longep-noes' : ens_randinit_avg_top1_reseed_large_lowlr_longep_dict_noes,
+    'pt2000-10ens-randinit-avg-top2-reseed-lowlr-longep-noes' : ens_randinit_avg_top2_reseed_large_lowlr_longep_dict_noes,
+    'pt10-5ens-randinit-avg-top1-reseed-highlr-longep' : ens_randinit_avg_top1_reseed_small_highlr_longep_dict,
 }
 
 def get_all_tasks():
