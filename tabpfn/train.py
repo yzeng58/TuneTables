@@ -604,7 +604,7 @@ def train(args, dataset, criterion, encoder_generator, emsize=200, nhid=200, nla
             from scripts.transformer_prediction_interface import TabPFNClassifier
             eval_model = TabPFNClassifier(device='cuda', 
                                                     N_ensemble_configurations=ens_size, 
-                                                    base_path="/home/benfeuer/TabPFN-pt/tabpfn",
+                                                    base_path="/home/yyyyyyyy/TabPFN-pt/tabpfn",
                                                     # seed=None,
                                                     seed=extra_prior_kwargs_dict.get('rand_seed', 0),
                                                     batch_size_inference=1,

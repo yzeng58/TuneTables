@@ -52,34 +52,6 @@ Here, we list some tips and tricks that might help you understand how to use it 
 - TabPFN does not use any statistics from the test set. That means predicting each test example one-by-one will yield the same result as feeding the whole test set together.
 - TabPFN is differentiable in principle, only the pre-processing is not and relies on numpy.
 
-## Our Paper
-Read our [paper](https://arxiv.org/abs/2207.01848) for more information about the setup (or contact us ☺️).
-If you use our method, please cite us using
-```
-@inproceedings{
-  hollmann2023tabpfn,
-  title={Tab{PFN}: A Transformer That Solves Small Tabular Classification Problems in a Second},
-  author={Noah Hollmann and Samuel M{\"u}ller and Katharina Eggensperger and Frank Hutter},
-  booktitle={The Eleventh International Conference on Learning Representations},
-  year={2023},
-  url={https://openreview.net/forum?id=cp5PvcI6w8_}
-}
-```
-
-## License
-Copyright 2022 Noah Hollmann, Samuel Müller, Katharina Eggensperger, Frank Hutter
-
-Licensed under the Apache License, Version 2.0 (the "License");
-you may not use this file except in compliance with the License.
-You may obtain a copy of the License at
-
-    http://www.apache.org/licenses/LICENSE-2.0
-
-Unless required by applicable law or agreed to in writing, software
-distributed under the License is distributed on an "AS IS" BASIS,
-WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-See the License for the specific language governing permissions and
-limitations under the License.
 
 ## TabPFN-PT notes
 

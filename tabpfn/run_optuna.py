@@ -86,7 +86,7 @@ def objective(trial):
     config['tuned_prompt_size'] = 1000
     config['num_eval_fitting_samples'] = 1000
     config['split'] = 0
-    config['data_path'] = "/home/benfeuer/TabPFN-pt/tabpfn/data/openml__airlines__189354"
+    config['data_path'] = "/home/yyyyyyyy/TabPFN-pt/tabpfn/data/openml__airlines__189354"
     config['concat_method'] = ""
 
     prior_type = "real"
@@ -96,7 +96,7 @@ def objective(trial):
         #TODO: check this
         config['prior_type'], config['differentiable'], config['flexible'] = 'real', True, False
 
-    resume = "/home/benfeuer/TabPFN-pt/tabpfn/models_diff/prior_diff_real_checkpoint_n_0_epoch_42.cpkt"
+    resume = "/home/yyyyyyyy/TabPFN-pt/tabpfn/models_diff/prior_diff_real_checkpoint_n_0_epoch_42.cpkt"
     if resume is not None:
         model_state, optimizer_state_load, config_sample_load = torch.load(resume, map_location='cpu')
         module_prefix = 'module.'
@@ -190,9 +190,9 @@ def objective(trial):
     # todo: for now, most are hard-coded
     config['wandb_log'] = True
     config['wandb_name'] = 'optuna_airlines_{}'.format(trial.number)
-    config['wandb_group'] = 'abacus'
+    config['wandb_group'] = 'aaaaaa'
     config['wandb_project'] = 'tabpfn'
-    config['wandb_entity'] = 'crwhite14'
+    config['wandb_entity'] = 'xxxxxxxxx'
     config['wandb_log_test_interval'] = 1
 
 

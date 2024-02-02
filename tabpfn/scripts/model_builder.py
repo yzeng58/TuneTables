@@ -40,7 +40,7 @@ def save_model(model, path, filename, config_sample):
     except:
         # NOTE: This seems to work as long as you run the script from the 'tabpfn' directory
         target_path = os.path.join("./models_diff", filename)
-        # target_path = os.path.join("/home/colin/TabPFN-pt/tabpfn/models_diff", filename)
+        # target_path = os.path.join("/home/xxxxx/TabPFN-pt/tabpfn/models_diff", filename)
         torch.save((model.state_dict(), None, config_sample), target_path)
 
 

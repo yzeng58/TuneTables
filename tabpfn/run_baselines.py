@@ -148,7 +148,7 @@ def run_eval(dataset_name, base_path, max_time):
             model_string = f"{dataset_name}" + '_' + f"{method}" + '_split_' + f"{i}" + '_' + datetime.now().strftime("%m_%d_%Y_%H_%M_%S")
             wandb.login(key=get_wandb_api_key())
             wandb.init(config=config, name=model_string, group='baselines',
-                project='tabpfn-pt', entity='nyu-dice-lab')
+                project='tabpfn-pt', entity='xxxxxxx')
             num_classes = len(np.unique(y_train))
 
             # if num_classes == 2 and method == 'lightgbm':
@@ -228,8 +228,8 @@ def run_eval(dataset_name, base_path, max_time):
 if __name__ == '__main__':
     # Parse arguments
     parser = argparse.ArgumentParser()
-    parser.add_argument('--dataset_path', type=str, default='/home/benfeuer/TabPFN-pt/tabpfn/data')
-    parser.add_argument('--datasets', type=str, default='/home/benfeuer/TabPFN-pt/tabpfn/metadata/subset.txt', help='Path to datasets text file')
+    parser.add_argument('--dataset_path', type=str, default='/home/yyyyyyyy/TabPFN-pt/tabpfn/data')
+    parser.add_argument('--datasets', type=str, default='/home/yyyyyyyy/TabPFN-pt/tabpfn/metadata/subset.txt', help='Path to datasets text file')
     parser.add_argument('--max_time', type=int, default=300, help='Allowed run time (in seconds)')
 
     args = parser.parse_args()

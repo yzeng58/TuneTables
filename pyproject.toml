@@ -6,10 +6,10 @@ build-backend = "hatchling.build"
 name = "tabpfn-pt"
 version = "0.1"
 authors = [
-{name="Ben Feuer"},
-{name="Niv Cohen"},
-{name="Valeriia Cherepanova"},
-{name="Colin White"},
+{name="YYYYY"},
+{name="ZZZZZ"},
+{name="WWWWW"},
+{name="XXXXX"},
 ]
 description = "TabPFN-PT is a tabular classification framework that extends the capabilities of prior-fitted networks'"
 readme = "README.md"
