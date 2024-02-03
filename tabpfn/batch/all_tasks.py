@@ -120,6 +120,9 @@ pt100_shorter_unif_dict = copy.deepcopy(pt100_shorter_dict)
 pt100_shorter_unif_dict['uniform_bptt'] = ''
 pt100_unif_dict = copy.deepcopy(pt100_dict)
 pt100_unif_dict['uniform_bptt'] = ''
+pt100_unif_kl_dict = copy.deepcopy(pt100_unif_dict)
+pt100_unif_kl_dict['kl_loss'] = ''
+pt100_unif_kl_dict['early_stopping'] = 2
 pt100_prop_dict = copy.deepcopy(pt100_dict)
 pt100_prop_dict['tuned_prompt_label_balance'] = 'proportional'
 pt100_pca_dict = copy.deepcopy(pt100_dict)
@@ -300,6 +303,7 @@ all_tasks = {
     'pt100-mut' : pt100_mut_dict,
     'pt100-rand' : pt100_rand_dict,
     'pt100-uniform' : pt100_unif_dict,
+    'pt100-uniform-kl' : pt100_unif_kl_dict,
     'pt100-powerall' : pt100_powerall_dict,
     'pt100-sumafter-pca' : pt100_sumafter_pca_dict,
     'pt100-sumafter-pca-uniform' : pt100_sumafter_pca_unif_dict,

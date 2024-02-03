@@ -1,1 +1,6 @@
 pt10-uniform
+pt100-uniform
+pt1000-uniform
+pt10-uniform-kl
+pt100-uniform-kl
+pt1000-uniform-kl
