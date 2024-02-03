@@ -940,6 +940,7 @@ def train(args, dataset, criterion, encoder_generator, emsize=200, nhid=200, nla
                         if real_data_preds.shape[1] < output.shape[1]:
                             real_data_preds = np.concatenate([real_data_preds, np.zeros((real_data_preds.shape[0], output.shape[1] - real_data_preds.shape[1]))], axis=1)
                         if real_data_preds.shape[0] != output.shape[0]:
+                            print(f"Real data preds and tuned prompt output have different shapes: ", real_data_preds.shape, output.shape)
                             smaller_shape = min(real_data_preds.shape[0], output.shape[0])
                             real_data_preds = real_data_preds[:smaller_shape, :]
                             output = output[:smaller_shape, :]
