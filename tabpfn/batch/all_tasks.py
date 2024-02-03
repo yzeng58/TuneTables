@@ -55,6 +55,13 @@ pt10_shorter_unif_dict = copy.deepcopy(pt10_shorter_dict)
 pt10_shorter_unif_dict['uniform_bptt'] = ''
 pt10_unif_dict = copy.deepcopy(pt10_dict)
 pt10_unif_dict['uniform_bptt'] = ''
+pt10_unif_kl_dict = copy.deepcopy(pt10_unif_dict)
+pt10_unif_kl_dict['kl_loss'] = ''
+pt10_unif_kl_dict['early_stopping'] = 2
+pt10_unif_kl_nopp_dict = copy.deepcopy(pt10_unif_kl_dict)
+pt10_unif_kl_nopp_dict.pop('do_preprocess')
+pt10_unif_kl_prop_dict = copy.deepcopy(pt10_unif_kl_dict)
+pt10_unif_kl_prop_dict['tuned_prompt_label_balance'] = 'proportional'
 pt10_prop_dict = copy.deepcopy(pt10_dict)
 pt10_prop_dict['tuned_prompt_label_balance'] = 'proportional'
 pt10_pca_dict = copy.deepcopy(pt10_dict)
@@ -73,6 +80,22 @@ pt10_sumafter_mutinf_dict = copy.deepcopy(pt10_mut_dict)
 pt10_sumafter_mutinf_dict['summerize_after_prep'] = ''
 pt10_sumafter_mutinf_unif_dict = copy.deepcopy(pt10_sumafter_mutinf_dict)
 pt10_sumafter_mutinf_unif_dict['uniform_bptt'] = ''
+
+pt5_dict = copy.deepcopy(pt10_dict)
+pt5_dict['tuned_prompt_size'] = 5
+pt5_unif_dict = copy.deepcopy(pt5_dict)
+pt5_unif_dict['uniform_bptt'] = ''
+pt5_unif_kl_dict = copy.deepcopy(pt5_unif_dict)
+pt5_unif_kl_dict['kl_loss'] = ''
+pt5_unif_kl_prop_dict = copy.deepcopy(pt5_unif_kl_dict)
+pt5_unif_kl_prop_dict['tuned_prompt_label_balance'] = 'proportional'
+
+pt2_dict = copy.deepcopy(pt10_dict)
+pt2_dict['tuned_prompt_size'] = 2
+pt2_unif_dict = copy.deepcopy(pt2_dict)
+pt2_unif_dict['uniform_bptt'] = ''
+pt2_unif_kl_dict = copy.deepcopy(pt2_unif_dict)
+pt2_unif_kl_dict['kl_loss'] = ''
 
 #Prompt tuning with 100 prompts
 debug_dict = copy.deepcopy(pt10_dict)
@@ -137,6 +160,9 @@ pt1000_shorter_unif_dict = copy.deepcopy(pt1000_shorter_dict)
 pt1000_shorter_unif_dict['uniform_bptt'] = ''
 pt1000_unif_dict = copy.deepcopy(pt1000_dict)
 pt1000_unif_dict['uniform_bptt'] = ''
+pt1000_unif_kl_dict = copy.deepcopy(pt1000_unif_dict)
+pt1000_unif_kl_dict['kl_loss'] = ''
+pt1000_unif_kl_dict['early_stopping'] = 2
 pt1000_unif_highep_lowlr_dict = copy.deepcopy(pt1000_unif_dict)
 pt1000_unif_highep_lowlr_dict['epochs'] = 101
 pt1000_unif_highep_lowlr_dict['lr'] = 0.05
@@ -244,12 +270,21 @@ ens_randinit_avg_top1_reseed_small_highlr_longep_dict['tuned_prompt_size'] = 10
 all_tasks = {
     'debug' : debug_dict,
     'ft' : base_dict,
+    'pt2' : pt2_dict,
+    'pt2-uniform' : pt2_unif_dict,
+    'pt2-uniform-kl' : pt2_unif_kl_dict,
+    'pt5' : pt5_dict,
+    'pt5-uniform' : pt5_unif_dict,
+    'pt5-uniform-kl' : pt5_unif_kl_dict,
     'pt10': pt10_dict,
     'pt10-prop' : pt10_prop_dict,
     'pt10-pca' : pt10_pca_dict,
     'pt10-mut' : pt10_mut_dict,
     'pt10-rand' : pt10_rand_dict,
     'pt10-uniform' : pt10_unif_dict,
+    'pt10-uniform-kl' : pt10_unif_kl_dict,
+    'pt10-uniform-kl-nopp' : pt10_unif_kl_nopp_dict,
+    'pt10-uniform-kl-prop' : pt10_unif_kl_prop_dict,
     'pt10-powerall' : pt10_powerall_dict,
     'pt10-sumafter-pca' : pt10_sumafter_pca_dict,
     'pt10-sumafter-pca-uniform' : pt10_sumafter_pca_unif_dict,
@@ -280,6 +315,7 @@ all_tasks = {
     'pt1000-mut' : pt1000_mut_dict,
     'pt1000-rand' : pt1000_rand_dict,
     'pt1000-uniform' : pt1000_unif_dict,
+    'pt1000-uniform-kl' : pt1000_unif_kl_dict,
     'pt1000-uniform-highep-lowlr' : pt1000_unif_highep_lowlr_dict,
     'pt1000-powerall' : pt1000_powerall_dict,
     'pt1000-sumafter-pca' : pt1000_sumafter_pca_dict,

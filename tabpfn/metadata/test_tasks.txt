@@ -1,1 +1,1 @@
-pt1000-10ens-randinit-avg-top2-unif-reseed-25cl-long
+pt10-uniform

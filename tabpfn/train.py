@@ -20,6 +20,7 @@ from transformer import TransformerModel
 from tabpfn.scripts.tabular_evaluation import predict_wrapper
 from tabpfn.utils import get_cosine_schedule_with_warmup, get_openai_lr, StoreDictKeyPair, get_weighted_single_eval_pos_sampler, get_uniform_single_eval_pos_sampler
 import tabpfn.priors as priors
+from losses import kl_divergence
 import sys
 script_path = os.path.abspath(__file__)
 project_path = os.path.dirname(os.path.dirname(script_path))
@@ -348,7 +349,8 @@ def train(args, dataset, criterion, encoder_generator, emsize=200, nhid=200, nla
     using_dist, rank, device = init_dist(device)
     start_time = time.time()
     max_time = extra_prior_kwargs_dict.get('max_time', 0)
-
+    do_kl_loss = extra_prior_kwargs_dict.get('kl_loss', False)
+    
     if extra_prior_kwargs_dict.get('pad_features', None):
         num_features = 100
     else:
@@ -365,7 +367,6 @@ def train(args, dataset, criterion, encoder_generator, emsize=200, nhid=200, nla
     else:
         do_prompt_tuning = False
         prefix_size = 0
-
 
     single_eval_pos_gen = single_eval_pos_gen if callable(single_eval_pos_gen) else lambda: single_eval_pos_gen
     real_data_qty = extra_prior_kwargs_dict.get('real_data_qty', 0)
@@ -487,7 +488,8 @@ def train(args, dataset, criterion, encoder_generator, emsize=200, nhid=200, nla
         # label balancing
         num_classes = len(np.unique(np.unique(y)))
         if do_prompt_tuning and extra_prior_kwargs_dict.get('tuned_prompt_label_balance', 'equal') == 'proportional':
-            label_weights = np.bincount(y) / len(y)
+            int_y = y.astype(int)
+            label_weights = np.bincount(int_y) / len(int_y)
             label_weights = torch.from_numpy(label_weights).float().to(device)
         else:
             label_weights = None
@@ -501,12 +503,15 @@ def train(args, dataset, criterion, encoder_generator, emsize=200, nhid=200, nla
             X_test = preprocess_input(torch.from_numpy(X_test.copy().astype(np.float32)), preprocess_type, summerize_after_prep)  
 
 
-            print("X",X.dtype)
+            #print("X",X.dtype)
             ## SummarizeAfter
             if args.summerize_after_prep:
                 X, X_val, X_test = SummarizeAfter(X, X_val, X_test, y, y_val, y_test, num_features, args.subset_features_method)            
-            print("X",X.dtype)
-
+            #print("X",X.dtype)
+        else:
+            X = torch.from_numpy(X.copy().astype(np.float32))
+            X_val = torch.from_numpy(X_val.copy().astype(np.float32))
+            X_test = torch.from_numpy(X_test.copy().astype(np.float32))
         if X.shape[1] < num_features and extra_prior_kwargs_dict.get("pad_features", True):
             
             def pad_data(data):
@@ -544,7 +549,7 @@ def train(args, dataset, criterion, encoder_generator, emsize=200, nhid=200, nla
         )
 
         test_dl = DataLoader(
-            test_ds, batch_size=min(128, y_test.shape[0] // 2), shuffle=False, num_workers=1,
+            test_ds, batch_size=min(128, y_val.shape[0] // 2), shuffle=False, num_workers=1,
         )
         # Fix the prior data TabPFN will use for fitting when including real data points
         X_data_for_fitting = []
@@ -553,22 +558,20 @@ def train(args, dataset, criterion, encoder_generator, emsize=200, nhid=200, nla
         for idx, (td, _, _) in enumerate(dl):
             X_data_for_fitting.append(td[0])
             y_data_for_fitting.append(td[1])
-            if idx == 10:
+            X_data_concat = torch.cat(X_data_for_fitting, dim=0)
+            y_data_concat = torch.cat(y_data_for_fitting, dim=0)
+            if X_data_concat.shape[0] >= real_data_qty:
                 break
-        X_data_concat = torch.cat(X_data_for_fitting, dim=0)
-        y_data_concat = torch.cat(y_data_for_fitting, dim=0)
         data_for_fitting = [X_data_concat, y_data_concat]
         return dl, val_dl, test_dl, bptt, data_for_fitting
 
 
-
+    #REAL PRIOR
     if real_prior:
-
 
         #load data
         not_zs = extra_prior_kwargs_dict.get('zs_eval_ensemble', 0) == 0
         seed_all(extra_prior_kwargs_dict.get('rand_seed'))
-        do_kl_loss = extra_prior_kwargs_dict.get('kl_loss', False)
 
         if do_kl_loss:
             if extra_prior_kwargs_dict['uniform_bptt'] == False:
@@ -577,19 +580,44 @@ def train(args, dataset, criterion, encoder_generator, emsize=200, nhid=200, nla
             
 
         data_for_fitting = None
-
         X, y, X_val, y_val, X_test, y_test, invert_perm_map, steps_per_epoch, num_classes, label_weights, train_ds, val_ds, test_ds = make_datasets(extra_prior_kwargs_dict, do_permute=not_zs, bptt=bptt, steps_per_epoch=steps_per_epoch)
         old_bptt = bptt
         dl, val_dl, test_dl, bptt, data_for_fitting  = make_dataloaders(bptt=bptt, not_zs=not_zs)
 
-        if do_kl_loss:
-            size_data = None
-            for batch, (data, targets, single_eval_pos) in enumerate(dl):
-                size_data = data.shape[1]
-                break
-            new_prefix_size = size_data
-            if new_prefix_size != prefix_size:
-                print("KL loss: Prefix size changed from {} to {}".format(prefix_size, new_prefix_size))
+        print("Dataset information: ")
+        print("Length, batch size of training dataloader: ", len(dl), dl.batch_size)
+        print("Length of validation dataloader: ", len(val_dl), val_dl.batch_size)
+        print("Length of test dataloader: ", len(test_dl), test_dl.batch_size)
+        if data_for_fitting:
+            print("Size of data for fitting: ", len(data_for_fitting[0]))
+
+        if (extra_prior_kwargs_dict.get('zs_eval_ensemble', 0) > 0) or do_kl_loss:
+            from scripts.transformer_prediction_interface import TabPFNClassifier
+            if extra_prior_kwargs_dict.get('zs_eval_ensemble', 0) > 0:
+                ens_size = extra_prior_kwargs_dict.get('zs_eval_ensemble', 0)
+            else:
+                ens_size = 32
+            eval_model = TabPFNClassifier(device='cuda', 
+                                                    N_ensemble_configurations=ens_size, 
+                                                    base_path="/home/benfeuer/TabPFN-pt/tabpfn",
+                                                    # seed=None,
+                                                    seed=extra_prior_kwargs_dict.get('rand_seed', 0),
+                                                    batch_size_inference=1,
+                                                    )
+            print("Eval model is: ", type(eval_model))
+            if do_kl_loss:
+                eval_model.fit(data_for_fitting[0], data_for_fitting[1], overwrite_warning=True)
+        else:
+            eval_model = None
+
+        # if do_kl_loss:
+        #     size_data = None
+        #     for batch, (data, targets, single_eval_pos) in enumerate(dl):
+        #         size_data = len(data[0])
+        #         break
+        #     new_prefix_size = size_data
+        #     if new_prefix_size != prefix_size:
+        #         print("KL loss: Prefix size changed from {} to {}".format(prefix_size, new_prefix_size))
 
         if old_bptt != bptt:
             print("bptt changed from {} to {}".format(old_bptt, bptt))
@@ -600,17 +628,6 @@ def train(args, dataset, criterion, encoder_generator, emsize=200, nhid=200, nla
             else:
                 single_eval_pos_gen = max_pos
         # print("Dataloader size: ", len(dl))
-        if extra_prior_kwargs_dict.get('zs_eval_ensemble', 0) > 0 or do_kl_loss:
-            from scripts.transformer_prediction_interface import TabPFNClassifier
-            eval_model = TabPFNClassifier(device='cuda', 
-                                                    N_ensemble_configurations=ens_size, 
-                                                    base_path="/home/benfeuer/TabPFN-pt/tabpfn",
-                                                    # seed=None,
-                                                    seed=extra_prior_kwargs_dict.get('rand_seed', 0),
-                                                    batch_size_inference=1,
-                                                    )
-            if do_kl_loss:
-                eval_model.fit(data_for_fitting[0], data_for_fitting[1], overwrite_warning=True)
         if extra_prior_kwargs_dict.get('zs_eval_ensemble', 0) > 0:
 
             def tpc_data_eval(cl=1000, X=None, y=None, X_val=None, y_val=None, ens_size=1):
@@ -639,6 +656,8 @@ def train(args, dataset, criterion, encoder_generator, emsize=200, nhid=200, nla
                     warnings.filterwarnings("ignore")
                     end_time = time.time()
                     results['Eval_Time'] = np.round(end_time - start_time, 3).item()
+                    #print("Targets (tpc): ", targets)
+                    #print("Predictions (tpc): ", predictions)
                     results['Accuracy'] = np.round(accuracy_score(targets, predictions), 3).item()
                     results['Log_Loss'] = np.round(log_loss(targets, outputs, labels=np.arange(num_classes_local)), 3).item()
                     results['F1_Weighted'] = np.round(f1_score(targets, predictions, average='weighted'), 3).item()
@@ -680,14 +699,14 @@ def train(args, dataset, criterion, encoder_generator, emsize=200, nhid=200, nla
     style_def = None
     #print(f'Style definition of first 3 examples: {style_def[:3] if style_def is not None else None}')
     style_encoder = style_encoder_generator(style_def.shape[1], emsize) if (style_def is not None) else None
-    if isinstance(criterion, nn.GaussianNLLLoss):
+    if do_kl_loss:
+        assert num_classes < 11, "KL loss with TabPFN-zs only supports 10 classes or fewer"
+        n_out = 10
+        criterion = kl_divergence
+    elif isinstance(criterion, nn.GaussianNLLLoss):
         n_out = 2
     elif isinstance(criterion, nn.CrossEntropyLoss):
         n_out = criterion.weight.shape[0]
-    elif do_kl_loss:
-        assert num_classes < 11, "KL loss with TabPFN-zs only supports 10 classes or fewer"
-        n_out = n_classes
-        criterion = losses.kl_divergence
     else:
         n_out = 1
     model = TransformerModel(encoder, n_out, emsize, nhead, nhid, nlayers, dropout, style_encoder=style_encoder,
@@ -700,6 +719,8 @@ def train(args, dataset, criterion, encoder_generator, emsize=200, nhid=200, nla
     if load_weights_from_this_state_dict is not None:
         encoder_mismatch = False
         decoder_mismatch = False
+        if do_kl_loss:
+            load_weights_from_this_state_dict.pop('criterion.weight')
         if num_classes > 10:
             #initialize a new decoder head
             decoder_mismatch = True
@@ -765,8 +786,6 @@ def train(args, dataset, criterion, encoder_generator, emsize=200, nhid=200, nla
     # check that everything uses up-to-date APIs
     utils.check_compatibility(dl)
 
-    eval_model = None
-
     master_epoch_count = []
     
     def real_data_eval(r_model, cl=1000, train_data=None, val_dl=None, softmax_temperature = torch.log(torch.tensor([0.8]))):
@@ -784,11 +803,11 @@ def train(args, dataset, criterion, encoder_generator, emsize=200, nhid=200, nla
             target_list = []
             output_list = []
             for batch, (data, targets, _) in enumerate(val_dl):
-                batch_data = tuple([torch.cat((td[0], data[0]), dim=0), torch.cat((td[1], data[1]), dim=0)])
+                batch_data = tuple([torch.cat((td[0], data[0]), dim=0).to(torch.float32), torch.cat((td[1], data[1]), dim=0).to(torch.float32)])
                 output = r_model(tuple(e.to(device) if torch.is_tensor(e) else e for e in batch_data) if isinstance(batch_data, tuple) else batch_data.to(device)
                     , single_eval_pos=single_eval_pos)
                 #invert permutation of labels
-                _, predicted = torch.max(output.cpu().data, 1)
+                # _, predicted = torch.max(output.cpu().data, 1)
                 # print("In real data eval: ")
                 # print("Original preds: ", predicted[:20, ...])
                 new_output = loop_translate(output, invert_perm_map)
@@ -811,6 +830,8 @@ def train(args, dataset, criterion, encoder_generator, emsize=200, nhid=200, nla
         results = dict()
         warnings.filterwarnings("ignore")
         results['Eval_Time'] = np.round(time.time() - start_time, 3).item()
+        # print("Targets: ", targets)
+        # print("Predictions: ", predictions)
         results['Accuracy'] = np.round(accuracy_score(targets, predictions), 3).item()
         results['Log_Loss'] = np.round(log_loss(targets, outputs, labels=np.arange(num_classes_local)), 3).item()
         results['F1_Weighted'] = np.round(f1_score(targets, predictions, average='weighted'), 3).item()
@@ -835,7 +856,7 @@ def train(args, dataset, criterion, encoder_generator, emsize=200, nhid=200, nla
 
         return results, outputs, targets
     
-    def train_epoch(e_model, e_optimizer, boost_this_epoch=False):
+    def train_epoch(e_model, e_optimizer, boost_this_epoch=False, eval_model=None):
         if max_time > 0 and time.time() - start_time > max_time:
             print("Max time reached. Exiting")
             exit(0)
@@ -895,7 +916,7 @@ def train(args, dataset, criterion, encoder_generator, emsize=200, nhid=200, nla
                 # print("Batch size: ", targets.shape[0])
                 with autocast(enabled=scaler is not None):
                     # If style is set to None, it should not be transferred to device
-                    output = e_model(tuple(e.to(device) if torch.is_tensor(e) else e for e in data) if isinstance(data, tuple) else data.to(device)
+                    output = e_model(tuple(e.to(torch.float32).to(device) if torch.is_tensor(e) else e for e in data) if isinstance(data, tuple) else data.to(device)
                                    , single_eval_pos=single_eval_pos)
                     assert output.requires_grad, "Output does not require gradients"
                     forward_time = time.time() - before_forward
@@ -913,13 +934,22 @@ def train(args, dataset, criterion, encoder_generator, emsize=200, nhid=200, nla
                     elif isinstance(criterion, nn.CrossEntropyLoss):
                         losses = criterion(output.reshape(-1, n_out), targets.to(device).long().flatten())
                     elif do_kl_loss:
-                        tuned_prompt_output = output[:single_eval_pos, ...]
+                        #TODO: investigate shape mismatches
+                        # print("output shape: ", output.shape)
                         real_data_preds = eval_model.predict_proba(data[0])
-                        assert len(real_data_preds) == len(tuned_prompt_output), f"Real data preds and tuned prompt output have different lengths: {len(real_data_preds)} vs {len(tuned_prompt_output)}"
-                        losses = criterion(tuned_prompt_output, real_data_preds)
+                        if real_data_preds.shape[1] < output.shape[1]:
+                            real_data_preds = np.concatenate([real_data_preds, np.zeros((real_data_preds.shape[0], output.shape[1] - real_data_preds.shape[1]))], axis=1)
+                        if real_data_preds.shape[0] != output.shape[0]:
+                            smaller_shape = min(real_data_preds.shape[0], output.shape[0])
+                            real_data_preds = real_data_preds[:smaller_shape, :]
+                            output = output[:smaller_shape, :]
+                        real_data_preds = torch.tensor(real_data_preds).to(device)
+                        assert real_data_preds.shape == output.shape, f"Real data preds and tuned prompt output have different shapes: {real_data_preds.shape} and {output.shape}"
+                        losses = criterion(output, real_data_preds)
+                        # print("KL loss is ", losses, criterion)
                     else:
                         losses = criterion(output, targets)
-                    if boosting:
+                    if boosting or do_kl_loss:
                         loss = losses.mean()
                         nan_share = torch.tensor([0])
                     else:
@@ -981,12 +1011,13 @@ def train(args, dataset, criterion, encoder_generator, emsize=200, nhid=200, nla
 
                 if not torch.isnan(loss):
                     total_loss += losses.mean().cpu().detach().item()
-                    total_positional_losses += losses.mean(1).cpu().detach() if single_eval_pos is None else \
-                        nn.functional.one_hot(torch.tensor(single_eval_pos), bptt)*\
-                        losses[:bptt-single_eval_pos].mean().cpu().detach()
+                    if not do_kl_loss:
+                        total_positional_losses += losses.mean(1).cpu().detach() if single_eval_pos is None else \
+                            nn.functional.one_hot(torch.tensor(single_eval_pos), bptt)*\
+                            losses[:bptt-single_eval_pos].mean().cpu().detach()
 
-                    total_positional_losses_recorded += torch.ones(bptt) if single_eval_pos is None else \
-                        nn.functional.one_hot(torch.tensor(single_eval_pos), bptt)
+                        total_positional_losses_recorded += torch.ones(bptt) if single_eval_pos is None else \
+                            nn.functional.one_hot(torch.tensor(single_eval_pos), bptt)
                 nan_steps += nan_share
                 ignore_steps += (targets == -100).float().mean()
             before_get_batch = time.time()
@@ -1189,7 +1220,8 @@ def train(args, dataset, criterion, encoder_generator, emsize=200, nhid=200, nla
         }
         return new_res
 
-    def train_test_loop(t_model, t_optim, t_sched, dl, val_dl, test_dl):        
+    def train_test_loop(t_model, t_optim, t_sched, eval_model, dl, val_dl, test_dl):      
+        # print("Eval model: ", type(eval_model))  
         # Select a fixed training data prior of size bptt
         return_outputs = None
         return_targets = None
@@ -1210,7 +1242,7 @@ def train(args, dataset, criterion, encoder_generator, emsize=200, nhid=200, nla
             epoch_start_time = time.time()
             master_epoch_count.append(1)
             total_loss, total_positional_losses, time_to_get_batch, forward_time, step_time, nan_share, ignore_share =\
-                train_epoch(t_model, t_optim, boost_this_epoch)
+                train_epoch(t_model, t_optim, boost_this_epoch, eval_model=eval_model)
             val_score = val_score_nc = val_score_concat = val_score_nc_concat = test_score = test_score_nc = test_ece = test_tace = val_ece = val_tace = val_ece_nc = val_tace_nc = test_ece_nc = test_tace_nc = None
             res_dict = dict()
             res_dict['epoch_train_time'] = np.round(time.time() - epoch_start_time, 3).item()
@@ -1317,7 +1349,7 @@ def train(args, dataset, criterion, encoder_generator, emsize=200, nhid=200, nla
             # stepping with wallclock time based scheduler
             t_sched.step()
 
-        if do_prompt_tuning and isinstance(best_val_embed, torch.Tensor):
+        if do_prompt_tuning and not do_kl_loss and isinstance(best_val_embed, torch.Tensor):
             t_model.prefix_embedding.weight = nn.Parameter(best_val_embed.to(device))
             #set requires grad to true
             t_model.prefix_embedding.weight.requires_grad = True
@@ -1361,7 +1393,7 @@ def train(args, dataset, criterion, encoder_generator, emsize=200, nhid=200, nla
                                             agg_k_grads=aggregate_k_gradients)
         prior_grad_dict = None
         gradient_dict = {}
-        output_dict[i], test_targets, results_dict = train_test_loop(model, optimizer, sched_obj, dl, val_dl, test_dl)
+        output_dict[i], test_targets, results_dict = train_test_loop(model, optimizer, sched_obj, eval_model, dl, val_dl, test_dl)
         res_dict_ensemble[i] = results_dict
         prior_grad_dict = gradient_dict
         # probs np and labels np are used by update_ensemble_acc for ECE and TACE

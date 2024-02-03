@@ -1,2 +1,3 @@
-openml__higgs__146606
+openml__blood-transfusion-service-center__10101
+openml__breast-cancer__145799
 openml__connect-4__146195
