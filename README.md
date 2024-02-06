@@ -1,21 +1,23 @@
-# TabPFN
+<br/>
+<p align="center"><img src="img/tunetables_logo.png" width=700 /></p>
 
-The TabPFN is a neural network that learned to do tabular data prediction.
-This is the original CUDA-supporting pytorch impelementation.
+----
+![Crates.io](https://img.shields.io/crates/l/Ap?color=orange)
 
-We created a [Colab](https://colab.research.google.com/drive/194mCs6SEPEW6C0rcP7xWzcEtt1RBc8jJ), that lets you play with our scikit-learn interface.
+We introduce TuneTables, a tabular classification algorithm that overcomes the limitations of prior-data fitted networks to achieve strong performance on large datasets.
+
+
+While TabPFN achieves very strong performance on small tabular datasets, its current limitations include fewer than 1000 datapoints, fewer than 100 features, and fewer than 10 class labels. In this work, we overcome these limitations and substantially improve the performance of PFNs by developing context optimization techniques; specifically, we propose TuneTables, a novel prompt-tuning strategy. TuneTables scales TabPFN to be competitive with state-of-the-art tabular classification methods on larger datasets, while having additional benefits as well: (1) substantially lower inference time than TabPFN, (2) can be used as an interpretability tool, and (3) can mitigate biases by optimizing a fairness objective.
+
+<p align="center"><img src="img/tunetables_overview.png" width=700 /></p>
+
+This codebase extends the excellent public repository [TabPFN]([xxx](https://github.com/automl/tabpfn)), by Noah Hollmann, Samuel Müller, Katharina Eggensperger, and Frank Hutter.
 
 ## Installation
 
 ```bash
 pip install tabpfn
 ```
-
-If you want to train and evaluate our method like we did in the paper (including baselines) please install with
-```bash
-pip install tabpfn[full]
-```
-To run the autogluon and autosklearn baseline please create a separate environment and install autosklearn==0.14.5 / autogluon==0.4.0, installation in the same environment as our other baselines is not possible.
 
 ## Getting started
 
