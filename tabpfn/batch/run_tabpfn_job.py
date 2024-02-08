@@ -31,6 +31,7 @@ async def run_command(cmd):
 def main_f(args):
 
     def run_tunetables(dataset_path, task, split, log_dir, args, base_cmd, gcp_txt):
+        #TODO: Full impl
         if args.gcp_run:
             raise NotImplementedError("GCP run not yet supported for tunetables task, please run each task individually and aggregate results.")
         args.real_data_qty = MAX_SAMPLES
@@ -38,9 +39,8 @@ def main_f(args):
         n_classes = metadata['num_classes']
         n_features = metadata['num_features']
         n_samples = metadata['num_instances']
-        all_res = {
-
-        }
+        all_res = {}
+        all_res_d = {}
         if n_features > MAX_FEATURES:
             print("Sweeping feature subselection methods.")
             #NOTE: Other options: zs-isomap-32, zs-ica-32, zs-random-32, zs-sparse_random_projection-32
@@ -48,6 +48,7 @@ def main_f(args):
             for task in tt_tasks:
                 res = run_single_job(dataset_path, task, split, log_dir, args, base_cmd, gcp_txt)
                 all_res[task] = res["Val_Accuracy"]
+                all_res_d[task] = res
             best_task = max(all_res, key=all_res.get)
             feat_sel_method = "-" + best_task.split('-')[1]
         else:
@@ -55,15 +56,21 @@ def main_f(args):
         if n_classes > 25:
             raise NotImplementedError("Please add a task to all_tasks for the correct number of classes (modify task pt1000-10ens-randinit-avg-top2-unif-reseed-25cl-long).")
         if n_classes > MAX_CLASSES and n_classes < 25:
-            tt_tasks = ['pt1000-10ens-randinit-avg-top2-reseed-25cl-long' + feat_sel_method, 'pt1000-10ens-randinit-avg-top2-unif-reseed-25cl-long' + feat_sel_method]
-        #TODO: complete this
+            tt_tasks = [f'pt1000-10ens-randinit-avg-top2-reseed-25cl-long', f'pt1000-10ens-randinit-avg-top2-unif-reseed-25cl-long']
+        if n_samples <= MAX_SAMPLES:
+            if feat_sel_method == '':
+                feat_sel_method = 'random'
+            tt_tasks = ['zs-{feat_sel_method}-2', 'zs-{feat_sel_method}-16', 'zs-{feat_sel_method}-32']
         for task in tt_tasks:
+            if all_res_d.get(task, None) is not None:
+                continue
             args.bptt = args.bptt_backup
             if 'unif' in task:
                 args.bptt_backup = args.bptt
                 args.bptt = 128
             res = run_single_job(dataset_path, task, split, log_dir, args, base_cmd, gcp_txt)
-            all_res.append(res)
+            all_res_d[task] = res
+            all_res[task] = max(res.get("Val_Accuracy", 0.0), res.get("Val_nc_Accuracy", 0.0), res.get("Ens_Val_Accuracy", 0.0), res.get("Ens_Val_Accuracy_NC", 0.0))
 
     def run_single_job(dataset_path, task, split, log_dir, args, base_cmd, gcp_txt):
             # Get task name
