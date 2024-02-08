@@ -231,7 +231,9 @@ def preprocess_input(eval_xs, preprocess_transform, summerize_after_prep):
             pt = RobustScaler(unit_variance=True)
     eval_position = eval_xs.shape[0]
     eval_xs = normalize_data(eval_xs, normalize_positions=eval_position)
-
+    # Removing empty features
+    sel = [len(torch.unique(eval_xs[:1000, col])) > 1 for col in range(eval_xs.shape[1])]
+    eval_xs = eval_xs[:, sel]
     warnings.simplefilter('error')
     if preprocess_transform != 'none':
         eval_xs = eval_xs.cpu().numpy()
@@ -781,7 +783,7 @@ def train(args, dataset, criterion, encoder_generator, emsize=200, nhid=200, nla
         td[1] = td[1][:cl, ...]
         single_eval_pos = len(td[0])
         softmax_temperature = softmax_temperature.to(device)
-        with torch.no_grad():
+        with torch.inference_mode():
             # correct = 0
             # total = len(val_dl.dataset)
             prediction_list = []

@@ -89,6 +89,10 @@ pt5_unif_dict['uniform_bptt'] = ''
 pt5_unif_dict['topk_key'] = 'Val_nc_Accuracy'
 pt5_unif_kl_dict = copy.deepcopy(pt5_unif_dict)
 pt5_unif_kl_dict['kl_loss'] = ''
+pt5_unif_kl_nopp_dict = copy.deepcopy(pt5_unif_kl_dict)
+pt5_unif_kl_nopp_dict.pop('do_preprocess')
+pt5_unif_kl_nopp_lowlr_dict = copy.deepcopy(pt5_unif_kl_nopp_dict)
+pt5_unif_kl_nopp_lowlr_dict['lr'] = 0.01
 pt5_unif_kl_prop_dict = copy.deepcopy(pt5_unif_kl_dict)
 pt5_unif_kl_prop_dict['tuned_prompt_label_balance'] = 'proportional'
 
@@ -303,6 +307,8 @@ all_tasks = {
     'pt5' : pt5_dict,
     'pt5-uniform' : pt5_unif_dict,
     'pt5-uniform-kl' : pt5_unif_kl_dict,
+    'pt5-uniform-kl-nopp' : pt5_unif_kl_nopp_dict,
+    'pt5-uniform-kl-nopp-lowlr' : pt5_unif_kl_nopp_lowlr_dict,
     'pt10': pt10_dict,
     'pt10-prop' : pt10_prop_dict,
     'pt10-pca' : pt10_pca_dict,

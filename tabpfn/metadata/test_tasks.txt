@@ -1,2 +1,1 @@
-pt10-uniform-kl-nopp
-pt100-uniform-kl-nopp
+pt10-uniform-kl
