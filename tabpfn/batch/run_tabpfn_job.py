@@ -78,6 +78,8 @@ def main_f(args):
                         npp = True
                         task = task.replace('-nopreproc', '')
                     next_task = all_tasks[task]
+                    if args.wandb_project != '':
+                        next_task['wandb_project'] = args.wandb_project
                     if npp:
                         try:
                             next_task.pop('do_preprocess')
@@ -174,6 +176,7 @@ if __name__ == '__main__':
     parser.add_argument('--run_optuna', action='store_true', help='Whether to run optuna hyperparameter search.')
     parser.add_argument('--real_data_qty', type=int, default=0, help='Number of real data points to use for fitting.')
     parser.add_argument('--gcp_run', action='store_true', help='Whether to launch the job on a GCP instance.')
+    parser.add_argument('--wandb_project', type=str, default='', help='Project name for wandb logging')
 
     args = parser.parse_args()
     main_f(args)
