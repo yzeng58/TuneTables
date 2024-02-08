@@ -946,7 +946,7 @@ def train(args, dataset, criterion, encoder_generator, emsize=200, nhid=200, nla
                             output = output[:smaller_shape, :]
                         real_data_preds = torch.tensor(real_data_preds).to(device)
                         assert real_data_preds.shape == output.shape, f"Real data preds and tuned prompt output have different shapes: {real_data_preds.shape} and {output.shape}"
-                        losses = criterion(output, real_data_preds)
+                        losses = criterion(real_data_preds, output)
                         # print("KL loss is ", losses, criterion)
                     else:
                         losses = criterion(output, targets)
