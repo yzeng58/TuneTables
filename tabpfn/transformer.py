@@ -9,8 +9,6 @@ from torch.nn import Module, TransformerEncoder
 from tabpfn.layer import TransformerEncoderLayer, _get_activation_fn
 from tabpfn.utils import SeqBN, bool_mask_to_att_mask
 
-
-
 class TransformerModel(nn.Module):
     def __init__(self, encoder, n_out, ninp, nhead, nhid, nlayers, dropout=0.0, style_encoder=None, y_encoder=None,
                  pos_encoder=None, decoder=None, input_normalization=False, init_method=None, pre_norm=False,

@@ -31,7 +31,7 @@ def main_f(args):
     all_tasks = get_all_tasks()
 
     if args.run_optuna:
-        base_cmd = 'run_optuna_n.py'
+        base_cmd = 'run_optuna.py'
     else:
         base_cmd = 'train_loop.py'
 
@@ -78,8 +78,12 @@ def main_f(args):
                         npp = True
                         task = task.replace('-nopreproc', '')
                     next_task = all_tasks[task]
+                    if not args.wandb_log:
+                        next_task.pop('wandb_log')
                     if args.wandb_project != '':
                         next_task['wandb_project'] = args.wandb_project
+                    if args.resume != '':
+                        next_task['resume'] = args.resume
                     if npp:
                         try:
                             next_task.pop('do_preprocess')
@@ -170,12 +174,14 @@ if __name__ == '__main__':
     parser.add_argument('--base_path', type=str, default='/home/yyyyyyyy/TabPFN-pt/tabpfn/data', help='Path to TabPFN-pt dataset directory')
     parser.add_argument('--datasets', type=str, default='/home/yyyyyyyy/TabPFN-pt/tabpfn/metadata/subset.txt', help='Path to datasets text file')
     parser.add_argument('--tasks', type=str, default='/home/yyyyyyyy/TabPFN-pt/tabpfn/metadata/subset_tasks.txt', help='Tasks to run')
+    parser.add_argument('--resume', type=str, default='/home/yyyyyyyy/TabPFN-pt/tabpfn/models_diff/prior_diff_real_checkpoint_n_0_epoch_42.cpkt', help='TabPFN checkpoint to resume from')
     parser.add_argument('--bptt', type=int, default=-1, help='bptt batch size')
     parser.add_argument('--splits', nargs='+', type=int, default=[0], help='Splits to run')
     parser.add_argument('--shuffle_every_epoch', action='store_true', help='Whether to shuffle the order of the data every epoch (can help when bptt is large).')
     parser.add_argument('--run_optuna', action='store_true', help='Whether to run optuna hyperparameter search.')
     parser.add_argument('--real_data_qty', type=int, default=0, help='Number of real data points to use for fitting.')
     parser.add_argument('--gcp_run', action='store_true', help='Whether to launch the job on a GCP instance.')
+    parser.add_argument('--wandb_log', action='store_true', help='Whether to log to wandb.')
     parser.add_argument('--wandb_project', type=str, default='', help='Project name for wandb logging')
 
     args = parser.parse_args()

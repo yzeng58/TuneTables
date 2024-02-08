@@ -1,39 +1,30 @@
-# import matplotlib.pyplot as plt
-# import seaborn as sns
-# import numpy as np
 import argparse
 import os
 from pathlib import Path
 from datetime import datetime
 import time
 import warnings
-# import json
-import pandas as pd
 
+import pandas as pd
 import torch
 import wandb
-from utils import get_wandb_api_key
-
 import uncertainty_metrics.numpy as um
-
-# from datasets import load_openml_list, valid_dids_classification, test_dids_classification, open_cc_dids
-
-from scripts import tabular_baselines
-from scripts.tabular_baselines import *
-from scripts.tabular_evaluation import evaluate
-from scripts.tabular_metrics import calculate_score, make_ranks_and_wins_table, make_metric_matrix
-from scripts import tabular_metrics
-from scripts.baseline_prediction_interface import baseline_predict
-
-from priors.real import TabularDataset
-from priors.real import process_data
-
 from sklearn.metrics import (
     accuracy_score,
     f1_score,
     log_loss,
     roc_auc_score,
 )
+
+from tabpfn.utils import get_wandb_api_key
+from tabpfn.scripts import tabular_baselines
+from tabpfn.scripts.tabular_baselines import *
+from tabpfn.scripts.tabular_evaluation import evaluate
+from tabpfn.scripts.tabular_metrics import calculate_score, make_ranks_and_wins_table, make_metric_matrix
+from tabpfn.scripts import tabular_metrics
+from tabpfn.scripts.baseline_prediction_interface import baseline_predict
+from tabpfn.priors.real import TabularDataset
+from tabpfn.priors.real import process_data
 
 def eval_method(splits, device, method, cat_idx, metric_used, max_time=300):
 

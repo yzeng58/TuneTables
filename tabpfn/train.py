@@ -8,52 +8,44 @@ import json
 from contextlib import nullcontext
 import copy
 import warnings
+import sys
 
 import torch
 from torch import nn
 from torch.utils.data import DataLoader
 from torch import autograd
 from torch.utils.data import Subset
-
-import tabpfn.utils as utils
-from transformer import TransformerModel
-from tabpfn.scripts.tabular_evaluation import predict_wrapper
-from tabpfn.utils import get_cosine_schedule_with_warmup, get_openai_lr, StoreDictKeyPair, get_weighted_single_eval_pos_sampler, get_uniform_single_eval_pos_sampler
-import tabpfn.priors as priors
-from losses import kl_divergence
-import sys
-script_path = os.path.abspath(__file__)
-project_path = os.path.dirname(os.path.dirname(script_path))
-sys.path.insert(0, os.path.join(project_path + "/tabpfn/priors"))
-
-import real
-
-import tabpfn.encoders as encoders
-import tabpfn.positional_encodings as positional_encodings
-from utils import init_dist, seed_all, EmbeddingConcatenator
-
 from torch.cuda.amp import autocast, GradScaler
 from torch import nn
 from torch.utils.data import Dataset
-
 import numpy as np
-
 import uncertainty_metrics.numpy as um
-#from priors.real import process_data
-from tabpfn.utils import normalize_data, to_ranking_low_mem, remove_outliers, NOP, normalize_by_used_features_f
-
 from sklearn.metrics import (
     accuracy_score,
     f1_score,
     log_loss,
     roc_auc_score,
 )
-
 from sklearn.compose import ColumnTransformer
 from sklearn.impute import SimpleImputer
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import OneHotEncoder, QuantileTransformer, RobustScaler, PowerTransformer
 
+import tabpfn.utils as utils
+from tabpfn.transformer import TransformerModel
+from tabpfn.scripts.tabular_evaluation import predict_wrapper
+from tabpfn.utils import get_cosine_schedule_with_warmup, get_openai_lr, StoreDictKeyPair, get_weighted_single_eval_pos_sampler, get_uniform_single_eval_pos_sampler
+import tabpfn.priors as priors
+from tabpfn.losses import kl_divergence
+import tabpfn.encoders as encoders
+import tabpfn.positional_encodings as positional_encodings
+from tabpfn.utils import init_dist, seed_all, EmbeddingConcatenator, normalize_data, to_ranking_low_mem, remove_outliers, NOP, normalize_by_used_features_f
+
+script_path = os.path.abspath(__file__)
+project_path = os.path.dirname(os.path.dirname(script_path))
+sys.path.insert(0, os.path.join(project_path + "/tabpfn/priors"))
+
+import real
 
 def process_data(
     dataset,
@@ -228,7 +220,6 @@ class TabDS(Dataset):
 
 
 def preprocess_input(eval_xs, preprocess_transform, summerize_after_prep):
-    import warnings
 
     if preprocess_transform != 'none':
         if preprocess_transform == 'power' or preprocess_transform == 'power_all':

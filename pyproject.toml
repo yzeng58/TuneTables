@@ -3,15 +3,15 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "tabpfn-pt"
-version = "0.1"
+name = "tabpfn"
+version = "0.2"
 authors = [
 {name="YYYYY"},
 {name="ZZZZZ"},
 {name="WWWWW"},
 {name="XXXXX"},
 ]
-description = "TabPFN-PT is a tabular classification framework that extends the capabilities of prior-fitted networks'"
+description = "TabPFN is a tabular classification framework that extends the capabilities of prior-fitted networks'"
 readme = "README.md"
 requires-python = ">=3.7"
 dependencies=[
@@ -20,6 +20,8 @@ dependencies=[
         'pyyaml>=5.4.1',
         'numpy>=1.21.2',
         'requests>=2.23.0',
+        'uncertainty_metrics',
+        'wandb>=0.16.1',
 ]
 classifiers = [
     "Programming Language :: Python :: 3",

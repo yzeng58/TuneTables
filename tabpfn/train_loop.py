@@ -2,15 +2,15 @@ import time
 from datetime import datetime
 import json
 import os
+
 import wandb
-
-from scripts.model_builder import get_model, save_model
-from scripts.model_configs import *
-from priors.utils import uniform_int_sampler_f
-from notebook_utils import *
-from utils import make_serializable, wandb_init
-
 import ConfigSpace
+
+from tabpfn.scripts.model_builder import get_model, save_model
+from tabpfn.scripts.model_configs import *
+from tabpfn.priors.utils import uniform_int_sampler_f
+from tabpfn.notebook_utils import *
+from tabpfn.utils import make_serializable, wandb_init
 
 def train_function(config_sample, i=0, add_name=''):
 

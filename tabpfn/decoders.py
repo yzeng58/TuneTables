@@ -1,7 +1,7 @@
-import torch
-from torch import nn
 import random
 
+import torch
+from torch import nn
 
 class ScaledDecoder(nn.Module):
     def __init__(self, ninp, nhid, nout):
