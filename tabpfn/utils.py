@@ -407,7 +407,8 @@ def get_wandb_api_key(api_key_file="./config/wandb_api_key.txt"):
         return key.strip()
     
 def wandb_init(config, model_string):
-    wandb.login(key=get_wandb_api_key())
+    mkey = get_wandb_api_key()
+    wandb.login(key=mkey)
     simple_config = make_serializable(config)
     if simple_config['state_dict'] is not None:
         simple_config['state_dict'] = 'omitted'

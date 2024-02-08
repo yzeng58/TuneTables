@@ -266,7 +266,7 @@ def parse_args():
     parser.add_argument('--wandb_log', action='store_true', help='Whether to log to wandb.')
     parser.add_argument('--wandb_group', type=str, default='temp', help='Group for wandb logging.')
     parser.add_argument('--wandb_project', type=str, default='tabpfn-pt', help='Project for wandb logging.')
-    parser.add_argument('--wandb_entity', type=str, default='xxxxxx', help='Entity for wandb logging.')
+    parser.add_argument('--wandb_entity', type=str, default='nyu-dice-lab', help='Entity for wandb logging.')
     parser.add_argument('--subset_features_method', type=str, default='mutual_information', help='Method for feature subset selection ("mutual_information, random, first, pca").')
     parser.add_argument('--pad_features', action='store_true', help='Whether to pad features to the maximum number of features.')
     parser.add_argument('--do_preprocess', action='store_true', help='Whether to add tabpfn-style preprocessing to the data.')

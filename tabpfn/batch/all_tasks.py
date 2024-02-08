@@ -4,7 +4,7 @@ import copy
 base_dict = {
     'prior_type' : 'real',
     'pad_features' : '',
-    'resume' : '/home/yyyyyyyy/TabPFN-pt/tabpfn/models_diff/prior_diff_real_checkpoint_n_0_epoch_42.cpkt',
+    'resume' : '/home/benfeuer/TabPFN-pt/tabpfn/models_diff/prior_diff_real_checkpoint_n_0_epoch_42.cpkt',
     'epochs' : 31,
     'validation_period' : 3,
     'save_every_k_epochs' : 15,
@@ -328,6 +328,7 @@ all_tasks = {
     'pt100-rand' : pt100_rand_dict,
     'pt100-uniform' : pt100_unif_dict,
     'pt100-uniform-kl' : pt100_unif_kl_dict,
+    'pt100-uniform-kl-nopp' : pt100_unif_kl_nopp_dict,
     'pt100-uniform-sumafter-pca' : pt100_sumafter_pca_unif_dict,
     'pt100-uniform-sumafter-mutual_information' : pt100_sumafter_mutinf_unif_dict,
     'pt100-uniform-short' : pt100_short_unif_dict,

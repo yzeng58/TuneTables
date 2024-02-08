@@ -152,17 +152,19 @@ def main_f(args):
             if args.gcp_run:
                 gcp_txt += "\'" + ' '.join(command) + '\'\n'
             else:
-                result = subprocess.run(command, capture_output=True, text=True)
+                returncode, stdout, stderr = asyncio.run(run_command(' '.join(command)))
+                stdout = stdout.decode()
+                print("Stderr:", stderr.decode())
                 if args.print_stdout:
-                    print("Stdout:", result.stdout)
+                    print("Stdout:", stdout)
                 # Initialize an empty dictionary to hold the parsed output
                 output_dict = {}
                 # Define the marker indicating the start of the JSON output
                 json_start_marker = "^RESULTS\n"
                 # Check if the marker is in the stdout
-                if json_start_marker in result.stdout:
+                if json_start_marker in stdout:
                     # Extract the JSON string part. Assume the JSON starts immediately after the marker
-                    json_str = result.stdout.split(json_start_marker, 1)[1]
+                    json_str = stdout.split(json_start_marker, 1)[1]
                     
                     # Attempt to parse the JSON string into a Python dictionary
                     try:
@@ -233,10 +235,10 @@ def main_f(args):
         
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Run TabPFN')
-    parser.add_argument('--base_path', type=str, default='/home/yyyyyyyy/TabPFN-pt/tabpfn/data', help='Path to TabPFN-pt dataset directory')
-    parser.add_argument('--datasets', type=str, default='/home/yyyyyyyy/TabPFN-pt/tabpfn/metadata/subset.txt', help='Path to datasets text file')
-    parser.add_argument('--tasks', type=str, default='/home/yyyyyyyy/TabPFN-pt/tabpfn/metadata/subset_tasks.txt', help='Tasks to run')
-    parser.add_argument('--resume', type=str, default='/home/yyyyyyyy/TabPFN-pt/tabpfn/models_diff/prior_diff_real_checkpoint_n_0_epoch_42.cpkt', help='TabPFN checkpoint to resume from')
+    parser.add_argument('--base_path', type=str, default='/home/benfeuer/TabPFN-pt/tabpfn/data', help='Path to TabPFN-pt dataset directory')
+    parser.add_argument('--datasets', type=str, default='/home/benfeuer/TabPFN-pt/tabpfn/metadata/subset.txt', help='Path to datasets text file')
+    parser.add_argument('--tasks', type=str, default='/home/benfeuer/TabPFN-pt/tabpfn/metadata/subset_tasks.txt', help='Tasks to run')
+    parser.add_argument('--resume', type=str, default='/home/benfeuer/TabPFN-pt/tabpfn/models_diff/prior_diff_real_checkpoint_n_0_epoch_42.cpkt', help='TabPFN checkpoint to resume from')
     parser.add_argument('--bptt', type=int, default=-1, help='bptt batch size')
     parser.add_argument('--splits', nargs='+', type=int, default=[0], help='Splits to run')
     parser.add_argument('--shuffle_every_epoch', action='store_true', help='Whether to shuffle the order of the data every epoch (can help when bptt is large).')
