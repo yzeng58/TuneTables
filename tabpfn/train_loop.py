@@ -315,8 +315,9 @@ def train_loop():
 
     if config['wandb_log']:
         wandb.finish()
-
-    print("Done")
+    print("run complete")
+    print("^RESULTS\n" + json.dumps(results_dict))
+    return results_dict
 
 if __name__ == '__main__':
     import signal
@@ -328,4 +329,4 @@ if __name__ == '__main__':
     
     signal.signal(signal.SIGINT, signal_handler)
 
-    train_loop()
+    _ = train_loop()

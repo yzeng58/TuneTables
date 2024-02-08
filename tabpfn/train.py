@@ -36,16 +36,17 @@ from tabpfn.transformer import TransformerModel
 from tabpfn.scripts.tabular_evaluation import predict_wrapper
 from tabpfn.utils import get_cosine_schedule_with_warmup, get_openai_lr, StoreDictKeyPair, get_weighted_single_eval_pos_sampler, get_uniform_single_eval_pos_sampler
 import tabpfn.priors as priors
+from tabpfn.priors import real
 from tabpfn.losses import kl_divergence
 import tabpfn.encoders as encoders
 import tabpfn.positional_encodings as positional_encodings
 from tabpfn.utils import init_dist, seed_all, EmbeddingConcatenator, normalize_data, to_ranking_low_mem, remove_outliers, NOP, normalize_by_used_features_f
 
-script_path = os.path.abspath(__file__)
-project_path = os.path.dirname(os.path.dirname(script_path))
-sys.path.insert(0, os.path.join(project_path + "/tabpfn/priors"))
+# script_path = os.path.abspath(__file__)
+# project_path = os.path.dirname(os.path.dirname(script_path))
+# sys.path.insert(0, os.path.join(project_path + "/tabpfn/priors"))
 
-import real
+# import real
 
 def process_data(
     dataset,
@@ -562,6 +563,7 @@ def train(args, dataset, criterion, encoder_generator, emsize=200, nhid=200, nla
 
         #load data
         not_zs = extra_prior_kwargs_dict.get('zs_eval_ensemble', 0) == 0
+        do_zs = (not not_zs) and (not do_kl_loss)
         seed_all(extra_prior_kwargs_dict.get('rand_seed'))
 
         if do_kl_loss:
@@ -582,7 +584,7 @@ def train(args, dataset, criterion, encoder_generator, emsize=200, nhid=200, nla
         if data_for_fitting:
             print("Size of data for fitting: ", len(data_for_fitting[0]))
 
-        if (extra_prior_kwargs_dict.get('zs_eval_ensemble', 0) > 0) or do_kl_loss:
+        if do_zs or do_kl_loss:
             from scripts.transformer_prediction_interface import TabPFNClassifier
             if extra_prior_kwargs_dict.get('zs_eval_ensemble', 0) > 0:
                 ens_size = extra_prior_kwargs_dict.get('zs_eval_ensemble', 0)
@@ -601,15 +603,6 @@ def train(args, dataset, criterion, encoder_generator, emsize=200, nhid=200, nla
         else:
             eval_model = None
 
-        # if do_kl_loss:
-        #     size_data = None
-        #     for batch, (data, targets, single_eval_pos) in enumerate(dl):
-        #         size_data = len(data[0])
-        #         break
-        #     new_prefix_size = size_data
-        #     if new_prefix_size != prefix_size:
-        #         print("KL loss: Prefix size changed from {} to {}".format(prefix_size, new_prefix_size))
-
         if old_bptt != bptt:
             print("bptt changed from {} to {}".format(old_bptt, bptt))
             max_pos = int((len(data_for_fitting[0]) // 10) * (.8))
@@ -619,8 +612,7 @@ def train(args, dataset, criterion, encoder_generator, emsize=200, nhid=200, nla
             else:
                 single_eval_pos_gen = max_pos
         # print("Dataloader size: ", len(dl))
-        if extra_prior_kwargs_dict.get('zs_eval_ensemble', 0) > 0:
-
+        if do_zs:
             def tpc_data_eval(cl=1000, X=None, y=None, X_val=None, y_val=None, ens_size=1):
                     #update num_classes depending on the data
                     num_classes_local = len(np.unique(y))
@@ -675,15 +667,17 @@ def train(args, dataset, criterion, encoder_generator, emsize=200, nhid=200, nla
             res_dict = dict(res_dict, **{"Val_" + k : v for k, v in val_results.items()})
             test_results = tpc_data_eval(cl=real_data_qty, X=data_for_fitting[0], y=data_for_fitting[1], X_val=X_test, y_val=y_test, ens_size=extra_prior_kwargs_dict.get('zs_eval_ensemble', 0))
             res_dict = dict(res_dict, **{"Test_" + k : v for k, v in test_results.items()})
-            print("Results: ", res_dict)
             with open(os.path.join(extra_prior_kwargs_dict.get('save_path'), 'zs_eval_ensemble.json'), 'w') as f:
                 json.dump(res_dict, f)
             if extra_prior_kwargs_dict.get('wandb_log', False):
                 import wandb
                 wandb.log(res_dict, step=1, commit=True)
-            exit(0)
     else:
         raise Exception("Excepted a real dataset")
+
+    if do_zs:
+        print("^RESULTS\n" + json.dumps(res_dict))
+        return _, res_dict
 
     encoder = encoder_generator(num_features, emsize)
     #style_def = dl.get_test_batch()[0][0] # the style in batch of the form ((style, x, y), target, single_eval_pos)
@@ -1373,6 +1367,7 @@ def train(args, dataset, criterion, encoder_generator, emsize=200, nhid=200, nla
     i = 0
     ensembling_acc = dict()
     res_dict_ensemble = dict()
+    best_results = dict()
     try:
         print("Starting training loop \n \n")
         if bagging:
@@ -1386,7 +1381,7 @@ def train(args, dataset, criterion, encoder_generator, emsize=200, nhid=200, nla
         prior_grad_dict = None
         gradient_dict = {}
         output_dict[i], test_targets, results_dict = train_test_loop(model, optimizer, sched_obj, eval_model, dl, val_dl, test_dl)
-        res_dict_ensemble[i] = results_dict
+        res_dict_ensemble[i] = best_results = results_dict
         prior_grad_dict = gradient_dict
         # probs np and labels np are used by update_ensemble_acc for ECE and TACE
         #OUTPUT_DICT[0] contains val_outputs, test_outputs, val_outputs_nc, test_outputs_nc
@@ -1499,7 +1494,7 @@ def train(args, dataset, criterion, encoder_generator, emsize=200, nhid=200, nla
                 labels_np_nc = test_targets[2]
                 probs_np_nc_test = output_dict[0][3]
                 labels_np_nc_test = test_targets[3]
-            ensembling_acc[i] = update_ensemble_acc(boosting_accs[0], 
+            best_results = ensembling_acc[i] = update_ensemble_acc(boosting_accs[0], 
                                                     boosting_accs[2], 
                                                     boosting_accs[1], 
                                                     boosting_accs[3],
@@ -1522,9 +1517,9 @@ def train(args, dataset, criterion, encoder_generator, emsize=200, nhid=200, nla
             dl = None
         # todo: model_builder.py expects two outputs: model, results_dict
         #return total_loss, total_positional_losses, model.to('cpu'), dl
-        return model, results_dict
+        return model, best_results
 
-    return model, results_dict
+    return model, best_results
 
 def _parse_args(config_parser, parser):
     # Do we have a config file to parse?

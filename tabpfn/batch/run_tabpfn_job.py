@@ -2,11 +2,19 @@ import subprocess
 import asyncio
 import os
 import time
+import datetime
 import argparse
-from tqdm.auto import tqdm
-from all_tasks import get_all_tasks
+import json
 import shutil
 from pathlib import Path
+
+from tqdm.auto import tqdm
+
+from all_tasks import get_all_tasks
+
+MAX_CLASSES = 10
+MAX_FEATURES = 100
+MAX_SAMPLES = 3000
 
 async def run_command(cmd):
     # Start the subprocess
@@ -21,6 +29,151 @@ async def run_command(cmd):
     return process.returncode, stdout, stderr
 
 def main_f(args):
+
+    def run_tunetables(dataset_path, task, split, log_dir, args, base_cmd, gcp_txt):
+        if args.gcp_run:
+            raise NotImplementedError("GCP run not yet supported for tunetables task, please run each task individually and aggregate results.")
+        args.real_data_qty = MAX_SAMPLES
+        metadata = json.load(open(os.path.join(dataset_path, 'metadata.json')))
+        n_classes = metadata['num_classes']
+        n_features = metadata['num_features']
+        n_samples = metadata['num_instances']
+        all_res = {
+
+        }
+        if n_features > MAX_FEATURES:
+            print("Sweeping feature subselection methods.")
+            #NOTE: Other options: zs-isomap-32, zs-ica-32, zs-random-32, zs-sparse_random_projection-32
+            tt_tasks = ['zs-pca_white-16', 'zs-mutual_information-16']
+            for task in tt_tasks:
+                res = run_single_job(dataset_path, task, split, log_dir, args, base_cmd, gcp_txt)
+                all_res[task] = res["Val_Accuracy"]
+            best_task = max(all_res, key=all_res.get)
+            feat_sel_method = "-" + best_task.split('-')[1]
+        else:
+            feat_sel_method = ''
+        if n_classes > 25:
+            raise NotImplementedError("Please add a task to all_tasks for the correct number of classes (modify task pt1000-10ens-randinit-avg-top2-unif-reseed-25cl-long).")
+        if n_classes > MAX_CLASSES and n_classes < 25:
+            tt_tasks = ['pt1000-10ens-randinit-avg-top2-reseed-25cl-long' + feat_sel_method, 'pt1000-10ens-randinit-avg-top2-unif-reseed-25cl-long' + feat_sel_method]
+        #TODO: complete this
+        for task in tt_tasks:
+            args.bptt = args.bptt_backup
+            if 'unif' in task:
+                args.bptt_backup = args.bptt
+                args.bptt = 128
+            res = run_single_job(dataset_path, task, split, log_dir, args, base_cmd, gcp_txt)
+            all_res.append(res)
+
+    def run_single_job(dataset_path, task, split, log_dir, args, base_cmd, gcp_txt):
+            # Get task name
+            task = task.strip()
+            task_str = task
+            if args.run_optuna:
+                task_str += '_optuna'
+            if args.bptt > -1:
+                task_str += '_bptt_' + str(args.bptt)
+            if args.shuffle_every_epoch:
+                task_str += '_shuffleep_'
+            task_str += '_rdq_' + str(args.real_data_qty)
+            task_str += '_split_' + str(split)
+            if task.startswith('zs'):
+                ensemble_size = int(task.split('-')[-1])
+                subset_ft_method = task.split('-')[-2]
+                command = ['python', base_cmd, 
+                        '--data_path', dataset_path,
+                        '--subset_features_method', subset_ft_method,
+                        '--split', str(split),
+                        '--real_data_qty', str(args.real_data_qty),
+                        '--zs-eval-ensemble', str(ensemble_size)]
+                if args.wandb_log:
+                    command = command + [
+                        '--wandb_log',
+                        '--wandb_group', dataset.strip() + "_" + task_str + "_" + subset_ft_method, 
+                    ]
+            else:
+                # Get task args
+                npp = False
+                npad = False
+                if '-npad' in task:
+                    npad = True
+                    task = task.replace('-npad', '')
+                if '-nopreproc' in task:
+                    npp = True
+                    task = task.replace('-nopreproc', '')
+                next_task = all_tasks[task]
+                if not args.wandb_log:
+                    next_task.pop('wandb_log')
+                if args.wandb_project != '':
+                    next_task['wandb_project'] = args.wandb_project
+                if args.resume != '':
+                    next_task['resume'] = args.resume
+                if npp:
+                    try:
+                        next_task.pop('do_preprocess')
+                    except:
+                        pass
+                    task_str += '_nopreproc'
+                if npad:
+                    try:
+                        next_task.pop('pad_features')
+                    except:
+                        pass
+                    task_str += '_npad'
+                addl_args = []
+                for k, v in next_task.items():
+                    addl_args.append("--" + k)
+                    val = str(v)
+                    if val != '':
+                        addl_args.append(val)
+                if args.gcp_run:
+                    #dataset_path = dataset_path.replace(r'(', r'\(').replace(r')', r'\)')
+                    command = ['python', base_cmd, '--data_path \"' + dataset_path + "\"", '--split', str(split), '--real_data_qty', str(args.real_data_qty), '--wandb_group', dataset.strip().replace("(", "").replace(")", "") + "_" + task_str] + addl_args
+                else:
+                    command = ['python', base_cmd, '--data_path', dataset_path, '--split', str(split), '--real_data_qty', str(args.real_data_qty), '--wandb_group', dataset.strip() + "_" + task_str] + addl_args
+                if args.run_optuna:
+                    if args.wandb_project == '':
+                        command = command + ["--wandb_project", args.wandb_project]
+                    else:
+                        command = command + ["--wandb_project", "tabpfn-pt-optuna"]
+            if args.bptt > -1:
+                command.append("--bptt")
+                command.append(str(args.bptt))     
+            if args.shuffle_every_epoch:
+                command.append("--shuffle_every_epoch")           
+            print("Running command:", ' '.join(command))
+            if args.gcp_run:
+                gcp_txt += "\'" + ' '.join(command) + '\'\n'
+            else:
+                result = subprocess.run(command, capture_output=True, text=True)
+                if args.print_stdout:
+                    print("Stdout:", result.stdout)
+                # Initialize an empty dictionary to hold the parsed output
+                output_dict = {}
+                # Define the marker indicating the start of the JSON output
+                json_start_marker = "^RESULTS\n"
+                # Check if the marker is in the stdout
+                if json_start_marker in result.stdout:
+                    # Extract the JSON string part. Assume the JSON starts immediately after the marker
+                    json_str = result.stdout.split(json_start_marker, 1)[1]
+                    
+                    # Attempt to parse the JSON string into a Python dictionary
+                    try:
+                        output_dict = json.loads(json_str)
+                    except json.JSONDecodeError as e:
+                        print(f"Error decoding JSON: {e}")
+                        output_dict = {}
+                # Parse and relocate logs
+                new_outputs = Path('logs').glob('_multiclass*')
+                updated_outputs = []
+                for output in new_outputs:
+                    new_name = output.name.replace('_multiclass', task_str)
+                    new_path = os.path.join(output.parent, new_name)
+                    os.rename(output, new_path)
+                    updated_outputs.append(new_path)
+                for output in updated_outputs:
+                    shutil.move(output, log_dir)
+                return output_dict
 
     with open(args.datasets) as f:
         datasets = f.readlines()
@@ -45,112 +198,13 @@ def main_f(args):
             os.mkdir(log_dir)
         for split in args.splits:
             for task in tasks:
-                # Get task name
-                task = task.strip()
-                task_str = task
-                if args.run_optuna:
-                    task_str += '_optuna'
-                if args.bptt > -1:
-                    task_str += '_bptt_' + str(args.bptt)
-                if args.shuffle_every_epoch:
-                    task_str += '_shuffleep_'
-                task_str += '_rdq_' + str(args.real_data_qty)
-                task_str += '_split_' + str(split)
-                if task.startswith('zs'):
-                    ensemble_size = int(task.split('-')[-1])
-                    subset_ft_method = task.split('-')[-2]
-                    command = ['python', base_cmd, 
-                            '--data_path', dataset_path,
-                            '--subset_features_method', subset_ft_method,
-                            '--split', str(split),
-                            '--wandb_log',
-                            '--wandb_group', dataset.strip() + "_" + task_str + "_" + subset_ft_method, 
-                            '--real_data_qty', str(args.real_data_qty),
-                            '--zs-eval-ensemble', str(ensemble_size)]
+                if task == 'tunetables':
+                    res = run_tunetables(dataset_path, task, split, log_dir, args, base_cmd, gcp_txt)
                 else:
-                    # Get task args
-                    npp = False
-                    npad = False
-                    if '-npad' in task:
-                        npad = True
-                        task = task.replace('-npad', '')
-                    if '-nopreproc' in task:
-                        npp = True
-                        task = task.replace('-nopreproc', '')
-                    next_task = all_tasks[task]
-                    if not args.wandb_log:
-                        next_task.pop('wandb_log')
-                    if args.wandb_project != '':
-                        next_task['wandb_project'] = args.wandb_project
-                    if args.resume != '':
-                        next_task['resume'] = args.resume
-                    if npp:
-                        try:
-                            next_task.pop('do_preprocess')
-                        except:
-                            pass
-                        task_str += '_nopreproc'
-                    if npad:
-                        try:
-                            next_task.pop('pad_features')
-                        except:
-                            pass
-                        task_str += '_npad'
-                    addl_args = []
-                    for k, v in next_task.items():
-                        addl_args.append("--" + k)
-                        val = str(v)
-                        if val != '':
-                            addl_args.append(val)
-                    if args.gcp_run:
-                        #dataset_path = dataset_path.replace(r'(', r'\(').replace(r')', r'\)')
-                        command = ['python', base_cmd, '--data_path \"' + dataset_path + "\"", '--split', str(split), '--real_data_qty', str(args.real_data_qty), '--wandb_group', dataset.strip().replace("(", "").replace(")", "") + "_" + task_str] + addl_args
-                    else:
-                        command = ['python', base_cmd, '--data_path', dataset_path, '--split', str(split), '--real_data_qty', str(args.real_data_qty), '--wandb_group', dataset.strip() + "_" + task_str] + addl_args
-                    if args.run_optuna:
-                        command = command + ["--wandb_project", "tabpfn-pt-optuna"]
-                if args.bptt > -1:
-                    command.append("--bptt")
-                    command.append(str(args.bptt))     
-                if args.shuffle_every_epoch:
-                    command.append("--shuffle_every_epoch")           
-                print("Running command:", ' '.join(command))
-                if args.gcp_run:
-                    gcp_txt += "\'" + ' '.join(command) + '\'\n'
-
-                    # Check if there are already 10 jobs running
-                    # current_op_count = int(subprocess.check_output("gcloud compute instances list --filter='status=RUNNING' | wc -l", shell=True))
-                    # while current_op_count > 10:
-                    #     print("Waiting for a slot to open up...")
-                    #     time.sleep(30)
-                    #     # await(running_tasks[-1])
-                    #     current_op_count = int(subprocess.check_output("gcloud compute instances list --filter='status=RUNNING' | wc -l", shell=True))
-                    # with open("run_command.txt", "w") as f:
-                    #     f.write(' '.join(command))
-                    # 
-                    # # running_tasks.append(t)
-                    # # time.sleep(30)
-                    # if returncode != 0:
-                    #     print("GCP launch failed.")
-                    #     print("Stdout:")
-                    #     print(stdout.decode())
-                    #     print("Stderr:")
-                    #     print(stderr.decode())
-                    #     exit()
-                    # else:
-
-                else:
-                    subprocess.call(command)
-                    new_outputs = Path('logs').glob('_multiclass*')
-                    updated_outputs = []
-                    for output in new_outputs:
-                        new_name = output.name.replace('_multiclass', task_str)
-                        new_path = os.path.join(output.parent, new_name)
-                        os.rename(output, new_path)
-                        updated_outputs.append(new_path)
-                    for output in updated_outputs:
-                        shutil.move(output, log_dir)
+                    res = run_single_job(dataset_path, task, split, log_dir, args, base_cmd, gcp_txt)
+                print("Results:", res)
     if args.gcp_run:
+        task_str = "tunetables_gcp_" + dataset.strip() + "_" + datetime.datetime.now().strftime("%Y%m%d%H%M%S")
         gcp_txt += ")"
         with open("run_commands.sh", "w") as f:
             f.write(gcp_txt)
@@ -158,10 +212,11 @@ def main_f(args):
         print("Starting GCP run.")
         returncode, stdout, stderr = asyncio.run(run_command('bash batch/run_gcp_expt.sh'))
         print("GCP run finished in", time.time() - start_time, "seconds.")
-        print("Stdout:")
-        print(stdout.decode())
-        print("Stderr:")
-        print(stderr.decode())
+        if args.print_stdout:
+            print("Stdout:")
+            print(stdout.decode())
+            print("Stderr:")
+            print(stderr.decode())
         target_dir = os.path.join(log_dir, task_str)
         os.makedirs(target_dir, exist_ok=True)
         with open(os.path.join(target_dir, "stdout.txt"), "w") as f:
@@ -183,6 +238,6 @@ if __name__ == '__main__':
     parser.add_argument('--gcp_run', action='store_true', help='Whether to launch the job on a GCP instance.')
     parser.add_argument('--wandb_log', action='store_true', help='Whether to log to wandb.')
     parser.add_argument('--wandb_project', type=str, default='', help='Project name for wandb logging')
-
+    parser.add_argument('--print_stdout', action='store_true', help='Whether to print stdout from each run.')
     args = parser.parse_args()
     main_f(args)
