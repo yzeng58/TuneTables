@@ -15,16 +15,26 @@ This codebase extends the excellent public repository [TabPFN]([xxx](https://git
 ## Installation
 
 1. Clone TabPFN-pt (TuneTables) repository to your local instance.
-2. From the TabPFN-pt directory, run --
+2. Initialize a clean environment of your preference, E.G.:
+
+```bash
+conda create --name "TuneTables" python=3.10
+```
+
+3. From the TabPFN-pt directory, run --
 
 ```bash
 pip install . 
 ```
 
-## Getting started
+All TabPFN-pt commands should be run from within the `tabpfn` directory.
+
+```
+cd tabpfn
+```
+
+## Getting started with TuneTables
 
 ## TabPFN-PT notes
-
-* Everything expects to run from TabPFN-pt/tabpfn
 
 python3 batch/run_tabpfn_job.py --resume models_diff/prior_diff_real_checkpoint_n_0_epoch_42.cpkt --base_path data --datasets metadata/test_datasets.txt --tasks metadata/test_tasks.txt --bptt 128

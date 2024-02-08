@@ -2,7 +2,10 @@ import time
 
 import torch
 from torch import nn
-import gpytorch
+try:
+    import gpytorch
+except ImportError:
+    print("gpytorch not installed, please install it using 'pip install gpytorch' to enable fast_gp prior")
 
 from .utils import get_batch_to_dataloader
 from tabpfn.utils import default_device
