@@ -43,6 +43,10 @@ pt10_short_dict['save_every_k_epochs'] = 12
 pt10_short_dict['early_stopping'] = 7
 pt10_short_dict['validation_period'] = 3
 pt10_short_dict['lr'] = 0.2
+pt10_short_lowlr_dict = copy.deepcopy(pt10_short_dict)
+pt10_short_lowlr_dict['lr'] = 0.05
+pt10_short_lowlr_prop_dict = copy.deepcopy(pt10_short_lowlr_dict)
+pt10_short_lowlr_prop_dict['tuned_prompt_label_balance'] = 'proportional'
 pt10_shorter_dict = copy.deepcopy(pt10_dict)
 pt10_shorter_dict['epochs'] = 4
 pt10_shorter_dict['save_every_k_epochs'] = 5
@@ -63,6 +67,8 @@ pt10_unif_kl_nopp_dict = copy.deepcopy(pt10_unif_kl_dict)
 pt10_unif_kl_nopp_dict.pop('do_preprocess')
 pt10_unif_kl_prop_dict = copy.deepcopy(pt10_unif_kl_dict)
 pt10_unif_kl_prop_dict['tuned_prompt_label_balance'] = 'proportional'
+pt10_unif_kl_nopp_prop_dict = copy.deepcopy(pt10_unif_kl_nopp_dict)
+pt10_unif_kl_nopp_prop_dict['tuned_prompt_label_balance'] = 'proportional'
 pt10_prop_dict = copy.deepcopy(pt10_dict)
 pt10_prop_dict['tuned_prompt_label_balance'] = 'proportional'
 pt10_pca_dict = copy.deepcopy(pt10_dict)
@@ -95,6 +101,7 @@ pt5_unif_kl_nopp_lowlr_dict = copy.deepcopy(pt5_unif_kl_nopp_dict)
 pt5_unif_kl_nopp_lowlr_dict['lr'] = 0.01
 pt5_unif_kl_prop_dict = copy.deepcopy(pt5_unif_kl_dict)
 pt5_unif_kl_prop_dict['tuned_prompt_label_balance'] = 'proportional'
+
 
 pt2_dict = copy.deepcopy(pt10_dict)
 pt2_dict['tuned_prompt_size'] = 2
@@ -318,11 +325,14 @@ all_tasks = {
     'pt10-sumafter-pca' : pt10_sumafter_pca_dict,
     'pt10-sumafter-mutual_information' : pt10_sumafter_mutinf_dict,
     'pt10-short' : pt10_short_dict,
+    'pt10-short-lowlr' : pt10_short_lowlr_dict,
+    'pt10-short-lowlr-prop' : pt10_short_lowlr_prop_dict,
     'pt10-shorter' : pt10_shorter_dict,
     'pt10-uniform' : pt10_unif_dict,
     'pt10-uniform-kl' : pt10_unif_kl_dict,
     'pt10-uniform-kl-nopp' : pt10_unif_kl_nopp_dict,
     'pt10-uniform-kl-prop' : pt10_unif_kl_prop_dict,
+    'pt10-uniform-kl-nopp-prop' : pt10_unif_kl_nopp_prop_dict,
     'pt10-uniform-sumafter-pca' : pt10_sumafter_pca_unif_dict,
     'pt10-uniform-sumafter-mutual_information' : pt10_sumafter_mutinf_unif_dict,
     'pt10-uniform-short' : pt10_short_unif_dict,
