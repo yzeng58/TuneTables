@@ -2,7 +2,8 @@ import gzip
 import json
 from pathlib import Path
 from typing import Optional
-from utils import seed_all
+import time
+import warnings
 
 try:
     import faiss
@@ -11,8 +12,10 @@ except ImportError:
 
 import numpy as np
 from sklearn.preprocessing import LabelEncoder
-
-import time
+from sklearn.impute import SimpleImputer
+from sklearn.compose import ColumnTransformer
+from sklearn.pipeline import Pipeline
+from sklearn.preprocessing import QuantileTransformer, RobustScaler, PowerTransformer, OneHotEncoder
 from sklearn.feature_selection import SelectKBest, mutual_info_classif
 from sklearn.decomposition import PCA
 from sklearn.decomposition import FastICA
@@ -22,14 +25,44 @@ from sklearn.random_projection import SparseRandomProjection
 from sklearn.manifold import LocallyLinearEmbedding
 from sklearn.manifold import TSNE
 import torch
-from torch.utils.data import DataLoader
+from torch.utils.data import Dataset
 
-from tabpfn.utils import normalize_data, to_ranking_low_mem, remove_outliers, NOP, normalize_by_used_features_f
+from tabpfn.utils import normalize_data, remove_outliers, normalize_by_used_features_f
+from tabpfn.priors import real
 
 try:
     import umap
 except ImportError:
     print("umap is not available; subset maker umap will not work until it is installed")
+
+class TabDS(Dataset):
+    def __init__(self, X, y):
+        #check if NaNs are present in y
+        if np.isnan(y).any():
+            print("WARNING: NaNs present in y, dropping them")
+            nan_mask = ~np.isnan(y)
+            X = X[nan_mask, ...]
+            y = y[nan_mask, ...]
+            print("New X shape: ", X.shape)
+            print("New y shape: ", y.shape)
+
+        if isinstance(X, np.ndarray):
+            self.X = torch.from_numpy(X.copy().astype(np.float32))
+        else:
+            self.X = X
+
+        self.y_float = torch.from_numpy(y.copy().astype(np.float32))
+        self.y = torch.from_numpy(y.copy().astype(np.int64))
+
+        print(f"TabDS: X.shape = {self.X.shape}, y.shape = {self.y.shape}")
+
+    def __len__(self):
+        return len(self.y)
+
+    def __getitem__(self, idx):
+        #(X,y) data, y target, single_eval_pos
+        ret_item = tuple([self.X[idx], self.y_float[idx]]), self.y[idx], torch.tensor([])
+        return ret_item
 
 class TabularDataset(object):
     def __init__(
@@ -603,5 +636,233 @@ def data_prep(X, y):
     X, y = data_split(X, y, nan_mask)
     return X, y
 
+def process_data(
+    dataset,
+    train_index,
+    val_index,
+    test_index,
+    verbose=False,
+    scaler="None",
+    one_hot_encode=False,
+    impute=True,
+    args=None,
+):
+    
+
+    X_train, y_train = dataset.X[train_index], dataset.y[train_index]
+    X_val, y_val = dataset.X[val_index], dataset.y[val_index]
+    X_test, y_test = dataset.X[test_index], dataset.y[test_index]
+
+    # validate the scaler
+    assert scaler in ["None"], f"scaler not recognized: {scaler}"
 
 
+    num_mask = np.ones(dataset.X.shape[1], dtype=int)
+    num_mask[dataset.cat_idx] = 0
+
+    # Impute numerical features
+    if impute:
+        num_idx = np.where(num_mask)[0]
+
+        # The imputer drops columns that are fully NaN. So, we first identify columns that are fully NaN and set them to
+        # zero. This will effectively drop the columns without changing the column indexing and ordering that many of
+        # the functions in this repository rely upon.
+        fully_nan_num_idcs = np.nonzero(
+            (~np.isnan(X_train[:, num_idx].astype("float"))).sum(axis=0) == 0
+        )[0]
+        if fully_nan_num_idcs.size > 0:
+            X_train[:, num_idx[fully_nan_num_idcs]] = 0
+            X_val[:, num_idx[fully_nan_num_idcs]] = 0
+            X_test[:, num_idx[fully_nan_num_idcs]] = 0
+
+        # Impute numerical features, and pass through the rest
+        numeric_transformer = Pipeline(steps=[("imputer", SimpleImputer())])
+        preprocessor = ColumnTransformer(
+            transformers=[
+                ("num", numeric_transformer, num_idx),
+                ("pass", "passthrough", dataset.cat_idx),
+                # ("cat", categorical_transformer, categorical_features),
+            ],
+            # remainder="passthrough",
+        )
+        X_train = preprocessor.fit_transform(X_train)
+        X_val = preprocessor.transform(X_val)
+        X_test = preprocessor.transform(X_test)
+
+        # Re-order columns (ColumnTransformer permutes them)
+        perm_idx = []
+        running_num_idx = 0
+        running_cat_idx = 0
+        for is_num in num_mask:
+            if is_num > 0:
+                perm_idx.append(running_num_idx)
+                running_num_idx += 1
+            else:
+                perm_idx.append(running_cat_idx + len(num_idx))
+                running_cat_idx += 1
+        assert running_num_idx == len(num_idx)
+        assert running_cat_idx == len(dataset.cat_idx)
+        X_train = X_train[:, perm_idx]
+        X_val = X_val[:, perm_idx]
+        X_test = X_test[:, perm_idx]
+
+    if scaler != "None":
+        if verbose:
+            print(f"Scaling the data using {scaler}...")
+        X_train[:, num_mask] = scaler_function.fit_transform(X_train[:, num_mask])
+        X_val[:, num_mask] = scaler_function.transform(X_val[:, num_mask])
+        X_test[:, num_mask] = scaler_function.transform(X_test[:, num_mask])
+
+    if one_hot_encode:
+        ohe = OneHotEncoder(sparse=False, handle_unknown="ignore")
+        new_x1 = ohe.fit_transform(X_train[:, dataset.cat_idx])
+        X_train = np.concatenate([new_x1, X_train[:, num_mask]], axis=1)
+        new_x1_test = ohe.transform(X_test[:, dataset.cat_idx])
+        X_test = np.concatenate([new_x1_test, X_test[:, num_mask]], axis=1)
+        new_x1_val = ohe.transform(X_val[:, dataset.cat_idx])
+        X_val = np.concatenate([new_x1_val, X_val[:, num_mask]], axis=1)
+        if verbose:
+            print("New Shape:", X_train.shape)
+
+    args.num_features = X_train.shape[1]
+    # create subset of dataset if needed
+    if (
+        args is not None
+        and (args.subset_features > 0 or args.subset_rows > 0)
+        and (
+            args.subset_features < args.num_features or args.subset_rows < len(X_train)
+        )
+    ):
+            
+        if getattr(dataset, "ssm", None) is None:
+            subset_maker = real.SubsetMaker(
+                args.subset_features,
+                args.subset_rows,
+                args.subset_features_method,
+                args.subset_rows_method,
+                give_full_features = args.summerize_after_prep, #if we summerize after prep, we don't want to summerize here
+            )
+        X_train, y_train = subset_maker.make_subset(
+            X_train,
+            y_train,
+            split="train",
+            seed=args.rand_seed,
+        )
+        if args.subset_features < args.num_features:
+            X_val, y_val = subset_maker.make_subset(
+                X_val,
+                y_val,
+                split="val",
+                seed=args.rand_seed,
+            )
+            X_test, y_test = subset_maker.make_subset(
+                X_test,
+                y_test,
+                split="test",
+                seed=args.rand_seed,
+            )
+    return {
+        "data_train": (X_train, y_train),
+        "data_val": (X_val, y_val),
+        "data_test": (X_test, y_test),
+    }
+
+def SummarizeAfter(X, X_val, X_test, y, y_val, y_test, num_features, subset_features_method, subset_rows, subset_rows_method="random"):
+
+        SM = real.SubsetMaker(
+                num_features,
+                subset_rows, #subset_rows = 10^8 ablate this part here
+                subset_features_method,
+                subset_rows_method, #args.subset_rows_method is not used anyhow
+            )
+
+        X, y = SM.make_subset(
+            X,
+            y,
+            split="train",
+        )
+
+        X_val, y = SM.make_subset(
+            X_val, 
+            y,
+            split="val",
+        )
+            
+        X_test, y = SM.make_subset(
+            X_test, 
+            y,
+            split="test",
+        )
+        if isinstance(X, torch.Tensor):
+            return X.to(torch.float32), X_val.to(torch.float32), X_test.to(torch.float32)
+        elif isinstance(X, np.ndarray):
+            return torch.from_numpy(X).to(torch.float32), torch.from_numpy(X_val).to(torch.float32), torch.from_numpy(X_test).to(torch.float32)
+        else:
+            raise Exception(f"X is {type(X)}, not a tensor or numpy array")
+
+def loop_translate(a, my_dict):
+    new_a = np.empty(a.shape)
+    if a.ndim == 1:
+        for i,elem in enumerate(a):
+            new_a[i] = my_dict.get(elem)
+    elif a.ndim == 2:
+        # print("In loop translate: ")
+        # print("a shape: ", a.shape)
+        # print("a: ", a[:5, ...])
+        new_a = []
+        for val in list(my_dict.keys()):
+            new_a.append(a[:, val])
+        if isinstance(new_a[0], np.ndarray):
+            new_a = np.stack(new_a, axis=1)
+        else:
+            #torch tensor
+            new_a = torch.stack(new_a, axis=1)
+        # print("new_a shape: ", new_a.shape)
+        # print("new_a: ", new_a[:5, ...])
+    return new_a
+
+def preprocess_input(eval_xs, preprocess_transform, summerize_after_prep):
+
+    if preprocess_transform != 'none':
+        if preprocess_transform == 'power' or preprocess_transform == 'power_all':
+            pt = PowerTransformer(standardize=True)
+        elif preprocess_transform == 'quantile' or preprocess_transform == 'quantile_all':
+            pt = QuantileTransformer(output_distribution='normal')
+        elif preprocess_transform == 'robust' or preprocess_transform == 'robust_all':
+            pt = RobustScaler(unit_variance=True)
+    eval_position = eval_xs.shape[0]
+    eval_xs = normalize_data(eval_xs, normalize_positions=eval_position)
+    # Removing empty features
+    sel = [len(torch.unique(eval_xs[:1000, col])) > 1 for col in range(eval_xs.shape[1])]
+    eval_xs = eval_xs[:, sel]
+    warnings.simplefilter('error')
+    if preprocess_transform != 'none':
+        eval_xs = eval_xs.cpu().numpy()
+        feats = set(range(eval_xs.shape[1]))
+        for col in feats:
+            try:
+                pt.fit(eval_xs[0:eval_position, col:col + 1])
+                trans = pt.transform(eval_xs[:, col:col + 1])
+                # print(scipy.stats.spearmanr(trans[~np.isnan(eval_xs[:, col:col+1])], eval_xs[:, col:col+1][~np.isnan(eval_xs[:, col:col+1])]))
+                eval_xs[:, col:col + 1] = trans
+            except:
+                pass
+        eval_xs = torch.tensor(eval_xs).float()
+    warnings.simplefilter('default')
+
+    eval_xs = eval_xs.unsqueeze(1)
+
+    eval_xs = remove_outliers(eval_xs, normalize_positions=eval_position)
+    # Rescale X
+    #hard-coded
+    max_features = 100
+
+    if summerize_after_prep:
+        eval_xs = normalize_by_used_features_f(eval_xs, min(eval_xs.shape[-1],max_features), max_features,
+                                            normalize_with_sqrt=False)        
+    else:
+        eval_xs = normalize_by_used_features_f(eval_xs, eval_xs.shape[-1], max_features,
+                                                normalize_with_sqrt=False)
+
+    eval_xs = eval_xs.squeeze(1)
+    return eval_xs

@@ -8,7 +8,8 @@ import tabpfn.encoders as encoders
 from tabpfn.transformer import TransformerModel
 from utils import get_uniform_single_eval_pos_sampler, get_fixed_batch_sampler
 import priors
-from train import train, Losses
+from train import train
+from losses import Losses
 
 import torch
 import math
@@ -361,6 +362,7 @@ def get_model(config, device, should_train=True, verbose=False, state_dict=None,
                         , 'real_data_qty': config.get('real_data_qty', False)
                         , 'max_time': config.get('max_time', 0)
                         , 'kl_loss': config.get('kl_loss', False)
+                        , 'subsampling': config.get('subsampling', False)
                         , **extra_kwargs
     }
 

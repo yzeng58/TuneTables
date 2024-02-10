@@ -96,7 +96,7 @@ def main_f(args):
                 if args.wandb_log:
                     command = command + [
                         '--wandb_log',
-                        '--wandb_group', dataset.strip() + "_" + task_str + "_" + subset_ft_method, 
+                        '--wandb_group', "\"" + dataset.strip() + "_" + task_str + "_" + subset_ft_method + "\"", 
                     ]
             else:
                 # Get task args
@@ -134,10 +134,9 @@ def main_f(args):
                     if val != '':
                         addl_args.append(val)
                 if args.gcp_run:
-                    #dataset_path = dataset_path.replace(r'(', r'\(').replace(r')', r'\)')
-                    command = ['python', base_cmd, '--data_path \"' + dataset_path + "\"", '--split', str(split), '--real_data_qty', str(args.real_data_qty), '--wandb_group', dataset.strip().replace("(", "").replace(")", "") + "_" + task_str] + addl_args
+                    command = ['python', base_cmd, '--data_path \"' + dataset_path + "\"", '--split', str(split), '--real_data_qty', str(args.real_data_qty), '--wandb_group', "\"" + dataset.strip() + "_" + task_str + "\""] + addl_args
                 else:
-                    command = ['python', base_cmd, '--data_path', dataset_path, '--split', str(split), '--real_data_qty', str(args.real_data_qty), '--wandb_group', dataset.strip() + "_" + task_str] + addl_args
+                    command = ['python', base_cmd, '--data_path', dataset_path, '--split', str(split), '--real_data_qty', str(args.real_data_qty), '--wandb_group', "\"" + dataset.strip() + "_" + task_str +  "\""] + addl_args
                 if args.run_optuna:
                     if args.wandb_project == '':
                         command = command + ["--wandb_project", args.wandb_project]
@@ -201,7 +200,10 @@ def main_f(args):
 
     for dataset in tqdm(datasets):
         print("Starting dataset: ", dataset.strip())
-        dataset_path = os.path.join(args.base_path, dataset.strip())
+        dataset_path = "\"" + os.path.join(args.base_path, dataset.strip()) + '\"'
+        #sanitize name
+        # dataset_path = dataset_path.replace(r'(', r'\(').replace(r')', r'\)')
+        # print("Dataset path:", dataset_path)
         log_dir = './logs/' + dataset.strip()
         if not os.path.exists(log_dir):
             os.mkdir(log_dir)

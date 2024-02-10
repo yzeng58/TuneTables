@@ -1,6 +1,14 @@
 import torch
 from torch import nn
 
+class Losses():
+    gaussian = nn.GaussianNLLLoss(full=True, reduction='none')
+    mse = nn.MSELoss(reduction='none')
+    def ce(num_classes):
+        num_classes = num_classes.shape[0] if torch.is_tensor(num_classes) else num_classes
+        return nn.CrossEntropyLoss(reduction='none', weight=torch.ones(num_classes))
+    bce = nn.BCEWithLogitsLoss(reduction='none')
+
 class CrossEntropyForMulticlassLoss(torch.nn.CrossEntropyLoss):
     # This loss applies cross entropy after reducing the number of prediction
     # dimensions to the number of classes in the target

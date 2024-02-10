@@ -1,1 +1,2 @@
-pt10-short-lowlr-prop
+pt1000-10ens-randinit-avg-top2-unif-reseed-ss10000
+pt1000-10ens-randinit-avg-top4-unif-reseed-ss10000

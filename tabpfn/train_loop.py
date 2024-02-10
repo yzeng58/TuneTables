@@ -200,7 +200,7 @@ def reload_config(config_type='causal', task_type='multiclass', longer=0, args=N
 
     #Feature subset selection
     config['subset_features'] = 100
-    config['subset_rows'] = -1
+    config['subset_rows'] =  args.subsampling
     config['subset_features_method'] = args.subset_features_method
     config['subset_rows_method'] = 'random'
 
@@ -252,6 +252,7 @@ def parse_args():
     parser.add_argument('--split', type=int, default=0, help='Which split to use (0-9?).')
     parser.add_argument('--boosting', action='store_true', help='Whether to use boosting.')
     parser.add_argument('--bagging', action='store_true', help='Whether to produce a bagged ensemble.')
+    parser.add_argument('--subsampling', type=int, default=0, help='Qty of data to subsample during training (0 = no subsampling).')
     parser.add_argument('--rand_init_ensemble', action='store_true', help='Ensemble over random initialization.')
     parser.add_argument('--ensemble_lr', type=float, default=0.5, help='Additive learning factor for boosting / ensembling.')
     parser.add_argument('--ensemble_size', type=int, default=5, help='Number of ensemble members.')
