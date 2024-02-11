@@ -24,8 +24,10 @@ from sklearn.manifold import Isomap
 from sklearn.random_projection import SparseRandomProjection
 from sklearn.manifold import LocallyLinearEmbedding
 from sklearn.manifold import TSNE
+
 import torch
 from torch.utils.data import Dataset
+from torch.utils.data import DataLoader
 
 from tabpfn.utils import normalize_data, remove_outliers, normalize_by_used_features_f
 from tabpfn.priors import real
@@ -866,3 +868,29 @@ def preprocess_input(eval_xs, preprocess_transform, summerize_after_prep):
 
     eval_xs = eval_xs.squeeze(1)
     return eval_xs
+
+def get_train_dataloader(ds, bptt=1000, shuffle=True, num_workers=1, drop_last=True, agg_k_grads=1, not_zs=True):
+        # old_bptt = bptt
+        dl = DataLoader(
+            ds, batch_size=bptt, shuffle=shuffle, num_workers=num_workers, drop_last=drop_last,
+        )
+        if len(dl) == 0:
+            ds_len = len(ds)
+            if not_zs:
+                n_batches = 10
+            else:
+                n_batches = 1
+            bptt = int(ds_len // n_batches)
+            # bptt = int(bptt // 2)
+            dl = DataLoader(
+                ds, batch_size=bptt, shuffle=shuffle, num_workers=num_workers, drop_last=drop_last,
+            )
+        while len(dl) % agg_k_grads != 0:
+            bptt += 1
+            dl = DataLoader(
+                ds, batch_size=bptt, shuffle=shuffle, num_workers=num_workers, drop_last=drop_last,
+            )
+            # raise ValueError(f'Number of batches {len(dl)} not divisible by {agg_k_grads}, please modify aggregation factor.')
+        # if old_bptt != bptt:
+        #     print(f'Batch size changed from {old_bptt} to {bptt} to be divisible by {agg_k_grads} (with last batch dropped).')
+        return dl, bptt

@@ -10,10 +10,10 @@ import warnings
 
 import torch
 from torch import nn
-from torch.utils.data import DataLoader
 from torch import autograd
 from torch.utils.data import Subset
 from torch.cuda.amp import autocast, GradScaler
+from torch.utils.data import DataLoader
 from torch import nn
 import numpy as np
 import uncertainty_metrics.numpy as um
@@ -28,7 +28,7 @@ import tabpfn.utils as utils
 from tabpfn.transformer import TransformerModel
 from tabpfn.utils import get_cosine_schedule_with_warmup, get_openai_lr, StoreDictKeyPair, get_weighted_single_eval_pos_sampler, get_uniform_single_eval_pos_sampler
 import tabpfn.priors as priors
-from priors.real import SummarizeAfter, process_data, loop_translate, TabDS, preprocess_input
+from priors.real import SummarizeAfter, process_data, loop_translate, TabDS, preprocess_input, get_train_dataloader
 from tabpfn.losses import kl_divergence
 import tabpfn.encoders as encoders
 import tabpfn.positional_encodings as positional_encodings
@@ -37,32 +37,6 @@ from tabpfn.utils import init_dist, seed_all, EmbeddingConcatenator
 # script_path = os.path.abspath(__file__)
 # project_path = os.path.dirname(os.path.dirname(script_path))
 # sys.path.insert(0, os.path.join(project_path + "/tabpfn/priors"))
-
-def get_train_dataloader(ds, bptt=1000, shuffle=True, num_workers=1, drop_last=True, agg_k_grads=1, not_zs=True):
-        # old_bptt = bptt
-        dl = DataLoader(
-            ds, batch_size=bptt, shuffle=shuffle, num_workers=num_workers, drop_last=drop_last,
-        )
-        if len(dl) == 0:
-            ds_len = len(ds)
-            if not_zs:
-                n_batches = 10
-            else:
-                n_batches = 1
-            bptt = int(ds_len // n_batches)
-            # bptt = int(bptt // 2)
-            dl = DataLoader(
-                ds, batch_size=bptt, shuffle=shuffle, num_workers=num_workers, drop_last=drop_last,
-            )
-        while len(dl) % agg_k_grads != 0:
-            bptt += 1
-            dl = DataLoader(
-                ds, batch_size=bptt, shuffle=shuffle, num_workers=num_workers, drop_last=drop_last,
-            )
-            # raise ValueError(f'Number of batches {len(dl)} not divisible by {agg_k_grads}, please modify aggregation factor.')
-        # if old_bptt != bptt:
-        #     print(f'Batch size changed from {old_bptt} to {bptt} to be divisible by {agg_k_grads} (with last batch dropped).')
-        return dl, bptt
 
 def train(args, dataset, criterion, encoder_generator, emsize=200, nhid=200, nlayers=6, nhead=2, dropout=0.0,
           epochs=10, steps_per_epoch=100, batch_size=200, bptt=10, lr=None, weight_decay=0.0, warmup_epochs=10, input_normalization=False,
@@ -102,18 +76,16 @@ def train(args, dataset, criterion, encoder_generator, emsize=200, nhid=200, nla
     if real_data_qty <= 0:
         real_data_qty = bptt
 
-    print("Real data qty (for fitting): ", real_data_qty)
-
-    def eval_pos_seq_len_sampler():
-        single_eval_pos = single_eval_pos_gen()
-        if bptt_extra_samples:
-            return single_eval_pos, single_eval_pos + bptt_extra_samples
-        else:
-            return single_eval_pos, bptt
+    # print("Real data qty (for fitting): ", real_data_qty)
+    # def eval_pos_seq_len_sampler():
+    #     single_eval_pos = single_eval_pos_gen()
+    #     if bptt_extra_samples:
+    #         return single_eval_pos, single_eval_pos + bptt_extra_samples
+    #     else:
+    #         return single_eval_pos, bptt
 
     def make_datasets(extra_prior_kwargs_dict, do_permute=True, bptt = 0, steps_per_epoch=None):
-        """  """
-        dataset_built = False
+
         for i, split_dictionary in enumerate(dataset.split_indeces):
             # TODO: make stopping index a hyperparameter
             if i != extra_prior_kwargs_dict.get('split'): # config['split']:
@@ -146,9 +118,7 @@ def train(args, dataset, criterion, encoder_generator, emsize=200, nhid=200, nla
             if bptt > n_samples:
                 print(f"WARNING: bptt {bptt} is larger than the number of samples in the training set, {n_samples}. Setting bptt=128.")
                 bptt = 128
-
-            priordataloader_class = [[X_train, y_train], [X_val, y_val], [X_test, y_test]]
-            dataset_built = True
+                
             break
         
         seed_all(extra_prior_kwargs_dict.get('rand_seed'))
@@ -232,8 +202,6 @@ def train(args, dataset, criterion, encoder_generator, emsize=200, nhid=200, nla
 
 
         return X, y, X_val, y_val, X_test, y_test, invert_perm_map, steps_per_epoch, num_classes, label_weights, train_ds, val_ds, test_ds
-    
-
 
     def make_dataloaders(bptt=bptt, not_zs=True):
 
@@ -266,10 +234,8 @@ def train(args, dataset, criterion, encoder_generator, emsize=200, nhid=200, nla
         data_for_fitting = [X_data_concat, y_data_concat]
         return dl, val_dl, test_dl, bptt, data_for_fitting
 
-
     #REAL PRIOR
     if real_prior:
-
         #load data
         not_zs = extra_prior_kwargs_dict.get('zs_eval_ensemble', 0) == 0
         do_zs = (not not_zs) and (not do_kl_loss)
@@ -1058,12 +1024,19 @@ def train(args, dataset, criterion, encoder_generator, emsize=200, nhid=200, nla
     # main training loop
     bagging = extra_prior_kwargs_dict.get("bagging", False)
     if bagging:
+        split_size = extra_prior_kwargs_dict.get("subset_rows_bagging", 10000)
+        if split_size == 0:
+            print("--subsampling was 0, using full dataset for bagging")
+            split_size = len(dl.dataset)
         dl_backup = dl
-        split_size = 0.5
         split_indices = []
         for i in range(boosting_n_iters):
             np.random.seed(extra_prior_kwargs_dict.get('rand_seed') + i)
-            split_indices.append(np.random.choice(np.arange(len(dl_backup.dataset)), size=int(split_size * len(dl_backup.dataset)), replace=False))
+            #NOTE: split sizes as absolute numbers
+            split_indices.append(np.random.choice(np.arange(len(dl_backup.dataset)), size=split_size, replace=True))
+            #NOTE: split sizes as percentages of the dataset
+            # split_size = 0.5
+            # split_indices.append(np.random.choice(np.arange(len(dl_backup.dataset)), size=int(split_size * len(dl_backup.dataset)), replace=False))
         # dl_backup = dl
         # split_indices = np.array_split(np.arange(len(dl_backup.dataset)), boosting_n_iters)
     is_ensemble = (boosting or bagging or rand_init_ensemble)
@@ -1076,7 +1049,18 @@ def train(args, dataset, criterion, encoder_generator, emsize=200, nhid=200, nla
     ensembling_acc = dict()
     res_dict_ensemble = dict()
     best_results = dict()
+
+    #***
+    #train/ENSEMBLING 1st loop
+    #***
+
     try:
+        ens_patience = 0
+        topk_key = extra_prior_kwargs_dict.get('topk_key', 'Val_Accuracy')
+        if "nc_" in topk_key:
+            topk_ens_key = "Ens_" + topk_key.replace("nc_", "") + "_NC"
+        else:
+            topk_ens_key = "Ens_" + topk_key
         print("Starting training loop \n \n")
         if bagging:
             subset_dataset = Subset(dl_backup.dataset, split_indices[i])
@@ -1104,6 +1088,7 @@ def train(args, dataset, criterion, encoder_generator, emsize=200, nhid=200, nla
             labels_np_nc_test = test_targets[3]
         if is_ensemble:
             master_epoch_count.append(1)
+            best_ens_acc = res_dict_ensemble[i][topk_key]
             ensembling_acc[i] = update_ensemble_acc(res_dict_ensemble[i]['Val_Accuracy'], 
                                                     res_dict_ensemble[i]['Val_nc_Accuracy'], 
                                                     res_dict_ensemble[i]['Test_Accuracy'], 
@@ -1120,7 +1105,10 @@ def train(args, dataset, criterion, encoder_generator, emsize=200, nhid=200, nla
     except KeyboardInterrupt:
         pass
 
-    # boosting logic
+    #***
+    #train/ENSEMBLING 2-nth loop
+    #***
+
     if is_ensemble:
         for i in range(1, boosting_n_iters):
             seed_all(extra_prior_kwargs_dict.get('rand_seed') + i)
@@ -1162,7 +1150,6 @@ def train(args, dataset, criterion, encoder_generator, emsize=200, nhid=200, nla
             current_preds = dict()
             boosting_accs = dict()
             topk_ens_val = extra_prior_kwargs_dict.get('keep_topk_ensemble', 0)
-            topk_key = extra_prior_kwargs_dict.get('topk_key', 'Val_Accuracy')
             if topk_ens_val > 0:
                 print("keeping top {} of {} models, per provided key {}".format(topk_ens_val, i+1, topk_key))
                 #sort by val score
@@ -1207,6 +1194,12 @@ def train(args, dataset, criterion, encoder_generator, emsize=200, nhid=200, nla
                                                     boosting_accs[1], 
                                                     boosting_accs[3],
                                                     len(np.unique(labels_np)))
+            cur_ens_acc = ensembling_acc[i][topk_ens_key]
+            if cur_ens_acc > best_ens_acc:
+                ens_patience = 0
+                best_ens_acc = cur_ens_acc
+            else:
+                ens_patience += 1
             if do_prompt_tuning:
                 prefix_weights_l = save_prefix_weights(model, extra_prior_kwargs_dict.get('save_path'), i, do_concat, prefix_weights_l)
             # Save ensembled accuracy
@@ -1217,6 +1210,11 @@ def train(args, dataset, criterion, encoder_generator, emsize=200, nhid=200, nla
                 master_epoch_count.append(1)
                 print("length of master epoch count is now: ", len(master_epoch_count))
                 wandb.log(ensembling_acc[i], step=len(master_epoch_count), commit=True)
+            
+            # Early stopping
+            if ens_patience > extra_prior_kwargs_dict.get('early_stopping_patience', 2):
+                print("Early stopping after {} ensembles".format(i))
+                break
 
     # break down training and return
     if rank == 0: # trivially true for non-parallel training

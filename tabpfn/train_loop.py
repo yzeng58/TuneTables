@@ -200,7 +200,12 @@ def reload_config(config_type='causal', task_type='multiclass', longer=0, args=N
 
     #Feature subset selection
     config['subset_features'] = 100
-    config['subset_rows'] =  args.subsampling
+    if args.bagging:
+        config['subset_rows'] = 0
+        config['subset_rows_bagging'] = args.subsampling
+    else:
+        config['subset_rows'] =  args.subsampling
+        config['subset_rows_bagging'] = 0
     config['subset_features_method'] = args.subset_features_method
     config['subset_rows_method'] = 'random'
 

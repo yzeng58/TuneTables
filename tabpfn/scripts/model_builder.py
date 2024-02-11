@@ -362,7 +362,7 @@ def get_model(config, device, should_train=True, verbose=False, state_dict=None,
                         , 'real_data_qty': config.get('real_data_qty', False)
                         , 'max_time': config.get('max_time', 0)
                         , 'kl_loss': config.get('kl_loss', False)
-                        , 'subsampling': config.get('subsampling', False)
+                        , 'subset_rows_bagging': config.get('subset_rows_bagging', 0)
                         , **extra_kwargs
     }
 
