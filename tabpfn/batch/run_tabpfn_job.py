@@ -143,7 +143,9 @@ def main_f(args):
             command.append("--bptt")
             command.append(str(args.bptt))     
         if args.shuffle_every_epoch:
-            command.append("--shuffle_every_epoch")           
+            command.append("--shuffle_every_epoch")
+        if args.verbose:
+            command.append("--verbose")         
         # print("Running command:", ' '.join(command))
         job_str = "\'" + ' '.join(command) + '\'\n'
         if args.gcp_run:
@@ -251,5 +253,6 @@ if __name__ == '__main__':
     parser.add_argument('--wandb_log', action='store_true', help='Whether to log to wandb.')
     parser.add_argument('--wandb_project', type=str, default='', help='Project name for wandb logging')
     parser.add_argument('--print_stdout', action='store_true', help='Whether to print stdout from each run.')
+    parser.add_argument('--verbose', action='store_true', help='Whether to print verbose output.')
     args = parser.parse_args()
     main_f(args)

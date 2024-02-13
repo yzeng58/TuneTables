@@ -42,7 +42,7 @@ def train(args, dataset, criterion, encoder_generator, emsize=200, nhid=200, nla
           epochs=10, steps_per_epoch=100, batch_size=200, bptt=10, lr=None, weight_decay=0.0, warmup_epochs=10, input_normalization=False,
           y_encoder_generator=None, pos_encoder_generator=None, decoder=None, extra_prior_kwargs_dict={}, scheduler=get_cosine_schedule_with_warmup,
           load_weights_from_this_state_dict=None, validation_period=10, single_eval_pos_gen=None, bptt_extra_samples=None, gpu_device='cuda:0',
-          aggregate_k_gradients=1, verbose=True, style_encoder_generator=None, epoch_callback=None,
+          aggregate_k_gradients=1, verbose=False, style_encoder_generator=None, epoch_callback=None,
           initializer=None, initialize_with_model=None, train_mixed_precision=False, efficient_eval_masking=True, 
           boosting=False, boosting_lr=1e-3, boosting_n_iters=10, rand_init_ensemble=False, do_concat="", **model_extra_args
           ):
@@ -78,14 +78,6 @@ def train(args, dataset, criterion, encoder_generator, emsize=200, nhid=200, nla
     if real_data_qty <= 0:
         real_data_qty = bptt
 
-    # print("Real data qty (for fitting): ", real_data_qty)
-    # def eval_pos_seq_len_sampler():
-    #     single_eval_pos = single_eval_pos_gen()
-    #     if bptt_extra_samples:
-    #         return single_eval_pos, single_eval_pos + bptt_extra_samples
-    #     else:
-    #         return single_eval_pos, bptt
-
     def make_datasets(extra_prior_kwargs_dict, do_permute=True, bptt = 0, steps_per_epoch=None):
 
         for i, split_dictionary in enumerate(dataset.split_indeces):
@@ -118,7 +110,8 @@ def train(args, dataset, criterion, encoder_generator, emsize=200, nhid=200, nla
             steps_per_epoch = len(X_train) // bptt
 
             if bptt > n_samples:
-                print(f"WARNING: bptt {bptt} is larger than the number of samples in the training set, {n_samples}. Setting bptt=128.")
+                if verbose:
+                    print(f"WARNING: bptt {bptt} is larger than the number of samples in the training set, {n_samples}. Setting bptt=128.")
                 bptt = 128
                 
             break
@@ -126,11 +119,7 @@ def train(args, dataset, criterion, encoder_generator, emsize=200, nhid=200, nla
         seed_all(extra_prior_kwargs_dict.get('rand_seed'))
 
         X, y = X_train, y_train
-        ##X, y = priordataloader_class[0][0], priordataloader_class[0][1]
-        # print("In make datasets: ")
-        #print("unique y: ", np.unique(y))
-        ##X_val, y_val = priordataloader_class[1][0], priordataloader_class[1][1]
-        ##X_test, y_test = priordataloader_class[2][0], priordataloader_class[2][1]
+
         #shuffle data
         if do_permute:
             label_perm = np.random.permutation(num_classes)
@@ -151,13 +140,9 @@ def train(args, dataset, criterion, encoder_generator, emsize=200, nhid=200, nla
         idx = np.random.permutation(X.shape[0])
         X = X[idx, ...]
         y = y[idx, ...]
-        # print("y: ", y[:20, ...])
-        # print("Label perm: ", label_perm)
+
         y = loop_translate(y, rev_invert_perm_map)
-        # for i in range(num_classes):
-        #     new_y[i] = y[rev_invert_perm_map[i]]
-        # print("New y: ", new_y[:20, ...])
-        # y = label_perm[y[idx, ...]]
+
         X = X[:, feat_idx, ...]
         X_val = X_val[:, feat_idx, ...]
         X_test = X_test[:, feat_idx, ...]
@@ -180,7 +165,6 @@ def train(args, dataset, criterion, encoder_generator, emsize=200, nhid=200, nla
             X_test = preprocess_input(torch.from_numpy(X_test.copy().astype(np.float32)), preprocess_type, summerize_after_prep)
             if args.summerize_after_prep:
                 X, X_val, X_test = SummarizeAfter(X, X_val, X_test, y, y_val, y_test, num_features, args.subset_features_method)            
-            #print("X",X.dtype)
         else:
             X = torch.from_numpy(X.copy().astype(np.float32))
             X_val = torch.from_numpy(X_val.copy().astype(np.float32))
@@ -194,14 +178,9 @@ def train(args, dataset, criterion, encoder_generator, emsize=200, nhid=200, nla
             X_val = pad_data(X_val)
             X_test = pad_data(X_test)
 
-
-        print('aggregate_k_gradients',aggregate_k_gradients)
-
-
         train_ds = TabDS(X, y)
         val_ds = TabDS(X_val, y_val)
         test_ds = TabDS(X_test, y_test)
-
 
         return X, y, X_val, y_val, X_test, y_test, invert_perm_map, steps_per_epoch, num_classes, label_weights, train_ds, val_ds, test_ds
 
@@ -253,12 +232,13 @@ def train(args, dataset, criterion, encoder_generator, emsize=200, nhid=200, nla
         old_bptt = bptt
         dl, val_dl, test_dl, bptt, data_for_fitting  = make_dataloaders(bptt=bptt, not_zs=not_zs)
 
-        print("Dataset information: ")
-        print("Length, batch size of training dataloader: ", len(dl), dl.batch_size)
-        print("Length of validation dataloader: ", len(val_dl), val_dl.batch_size)
-        print("Length of test dataloader: ", len(test_dl), test_dl.batch_size)
-        if data_for_fitting:
-            print("Size of data for fitting: ", len(data_for_fitting[0]))
+        if verbose:
+            print("Dataset information: ")
+            print("Length, batch size of training dataloader: ", len(dl), dl.batch_size)
+            print("Length of validation dataloader: ", len(val_dl), val_dl.batch_size)
+            print("Length of test dataloader: ", len(test_dl), test_dl.batch_size)
+            if data_for_fitting:
+                print("Size of data for fitting: ", len(data_for_fitting[0]))
 
         if do_zs or do_kl_loss:
             from scripts.transformer_prediction_interface import TabPFNClassifier
@@ -273,21 +253,20 @@ def train(args, dataset, criterion, encoder_generator, emsize=200, nhid=200, nla
                                                     seed=extra_prior_kwargs_dict.get('rand_seed', 0),
                                                     batch_size_inference=1,
                                                     )
-            print("Eval model is: ", type(eval_model))
             if do_kl_loss:
                 eval_model.fit(data_for_fitting[0], data_for_fitting[1], overwrite_warning=True)
         else:
             eval_model = None
 
         if old_bptt != bptt:
-            print("bptt changed from {} to {}".format(old_bptt, bptt))
             max_pos = int((len(data_for_fitting[0]) // 10) * (.8))
-            print("max_pos: ", max_pos)
+            if verbose:
+                print("bptt changed from {} to {}".format(old_bptt, bptt))
+                print("max_pos: ", max_pos)
             if extra_prior_kwargs_dict.get('uniform_bptt', False):
                 single_eval_pos_gen = lambda: np.random.randint(0, max_pos)
             else:
                 single_eval_pos_gen = max_pos
-        # print("Dataloader size: ", len(dl))
         if do_zs:
             def tpc_data_eval(cl=1000, X=None, y=None, X_val=None, y_val=None, ens_size=1):
                     #update num_classes depending on the data
@@ -315,8 +294,6 @@ def train(args, dataset, criterion, encoder_generator, emsize=200, nhid=200, nla
                     warnings.filterwarnings("ignore")
                     end_time = time.time()
                     results['Eval_Time'] = np.round(end_time - start_time, 3).item()
-                    #print("Targets (tpc): ", targets)
-                    #print("Predictions (tpc): ", predictions)
                     results['Accuracy'] = np.round(accuracy_score(targets, predictions), 3).item()
                     results['Log_Loss'] = np.round(log_loss(targets, outputs, labels=np.arange(num_classes_local)), 3).item()
                     results['F1_Weighted'] = np.round(f1_score(targets, predictions, average='weighted'), 3).item()
@@ -327,13 +304,15 @@ def train(args, dataset, criterion, encoder_generator, emsize=200, nhid=200, nla
                         else:
                             results['ROC_AUC'] = np.round(roc_auc_score(targets, outputs, labels=np.arange(num_classes_local), multi_class='ovr'), 3).item()
                     except Exception as e:
-                        print("Error calculating ROC AUC: ", e)
+                        if verbose:
+                            print("Error calculating ROC AUC: ", e)
                         results['ROC_AUC'] = 0.0
                     try:
                         results['ECE'] = np.round(um.ece(targets, outputs, num_bins=30), 3).item()
                         results['TACE'] = np.round(um.tace(targets, outputs, num_bins=30), 3).item()
                     except Exception as e:
-                        print("Error calculating ECE/TACE: ", e)
+                        if verbose:
+                            print("Error calculating ECE/TACE: ", e)
                         results['ECE'] = 0.0
                         results['TACE'] = 0.0
                     warnings.filterwarnings("default")
@@ -352,7 +331,8 @@ def train(args, dataset, criterion, encoder_generator, emsize=200, nhid=200, nla
         raise Exception("Excepted a real dataset")
 
     if do_zs:
-        print("^RESULTS\n" + json.dumps(res_dict))
+        if verbose:
+            print("^RESULTS\n" + json.dumps(res_dict))
         return _, res_dict
 
     encoder = encoder_generator(num_features, emsize)
@@ -403,7 +383,8 @@ def train(args, dataset, criterion, encoder_generator, emsize=200, nhid=200, nla
             model_shape = model.state_dict().get('encoder.weight', None).shape
             if load_shape != model_shape:
                 encoder_mismatch = True
-                print("Encoder weight shape mismatch: ", load_shape, model_shape, "Using randomly initialized encoder weights from model instead")
+                if verbose:
+                    print("Encoder weight shape mismatch: ", load_shape, model_shape, "Using randomly initialized encoder weights from model instead")
                 load_weights_from_this_state_dict['encoder.weight'] = model.state_dict()['encoder.weight']
         model.load_state_dict(load_weights_from_this_state_dict)
     if initialize_with_model is not None:
@@ -417,9 +398,10 @@ def train(args, dataset, criterion, encoder_generator, emsize=200, nhid=200, nla
     if decoder_mismatch:
         params_to_optimize.append("decoder.2")
         params_to_optimize.append("criterion")
-    print("Params to optimize: ", params_to_optimize)
+    if verbose:
+        print("Params to optimize: ", params_to_optimize)
 
-    print(f"Using a Transformer with {sum(p.numel() for p in model.parameters())/1000/1000:.{2}f} M parameters")
+        print(f"Using a Transformer with {sum(p.numel() for p in model.parameters())/1000/1000:.{2}f} M parameters")
 
     try:
         for (k, v), (k2, v2) in zip(model.state_dict().items(), initialize_with_model.state_dict().items()):
@@ -429,7 +411,6 @@ def train(args, dataset, criterion, encoder_generator, emsize=200, nhid=200, nla
 
     model.to(device)
     if using_dist:
-        print("Distributed training")
         model = torch.nn.parallel.DistributedDataParallel(model, device_ids=[rank], output_device=rank, broadcast_buffers=False)
     
     if not real_prior:
@@ -438,7 +419,8 @@ def train(args, dataset, criterion, encoder_generator, emsize=200, nhid=200, nla
     # learning rate
     if lr is None:
         lr = get_openai_lr(model)
-        print(f"Using OpenAI max lr of {lr}.")
+        if verbose:
+            print(f"Using OpenAI max lr of {lr}.")
     optimizer = torch.optim.AdamW(model.parameters(), lr=lr, weight_decay=weight_decay)
     sched_obj = scheduler(optimizer, warmup_epochs, epochs if epochs is not None else 100) # when training for fixed time lr schedule takes 100 steps
 
@@ -468,20 +450,12 @@ def train(args, dataset, criterion, encoder_generator, emsize=200, nhid=200, nla
                 output = r_model(tuple(e.to(device) if torch.is_tensor(e) else e for e in batch_data) if isinstance(batch_data, tuple) else batch_data.to(device)
                     , single_eval_pos=single_eval_pos)
                 #invert permutation of labels
-                # _, predicted = torch.max(output.cpu().data, 1)
-                # print("In real data eval: ")
-                # print("Original preds: ", predicted[:20, ...])
                 new_output = loop_translate(output, invert_perm_map)
-                # new_output = torch.zeros_like(output)
-                # for i in range(num_classes_local):
-                #     new_output[:, invert_perm_map[i]] = output[:, i]
                 output = new_output
                 output = output[:, 0:num_classes_local] / torch.exp(softmax_temperature)
                 output = torch.nn.functional.softmax(output, dim=-1)
                 output_list.append(output)
                 _, predicted = torch.max(output.cpu().data, 1)
-                # print("New preds: ", predicted[:20, ...])
-                # print("Targets: ", targets[:20, ...])
                 prediction_list.append(predicted)
                 target_list.append(targets)
             outputs = torch.cat(output_list, dim=0).cpu().numpy()
@@ -491,8 +465,6 @@ def train(args, dataset, criterion, encoder_generator, emsize=200, nhid=200, nla
         results = dict()
         warnings.filterwarnings("ignore")
         results['Eval_Time'] = np.round(time.time() - start_time, 3).item()
-        # print("Targets: ", targets)
-        # print("Predictions: ", predictions)
         results['Accuracy'] = np.round(accuracy_score(targets, predictions), 3).item()
         results['Log_Loss'] = np.round(log_loss(targets, outputs, labels=np.arange(num_classes_local)), 3).item()
         results['F1_Weighted'] = np.round(f1_score(targets, predictions, average='weighted'), 3).item()
@@ -503,13 +475,15 @@ def train(args, dataset, criterion, encoder_generator, emsize=200, nhid=200, nla
             else:
                 results['ROC_AUC'] = np.round(roc_auc_score(targets, outputs, labels=np.arange(num_classes_local), multi_class='ovr'), 3).item()
         except Exception as e:
-            print("Error calculating ROC AUC: ", e)
+            if verbose:
+                print("Error calculating ROC AUC: ", e)
             results['ROC_AUC'] = 0.0
         try:
             results['ECE'] = np.round(um.ece(targets, outputs, num_bins=30), 3).item()
             results['TACE'] = np.round(um.tace(targets, outputs, num_bins=30), 3).item()
         except Exception as e:
-            print("Error calculating ECE/TACE: ", e)
+            if verbose:
+                print("Error calculating ECE/TACE: ", e)
             results['ECE'] = 0.0
             results['TACE'] = 0.0
 
@@ -551,7 +525,6 @@ def train(args, dataset, criterion, encoder_generator, emsize=200, nhid=200, nla
             if isinstance(single_eval_pos, torch.Tensor) and single_eval_pos.numel() == 0:
                 single_eval_pos = None
             if using_dist and not (batch % aggregate_k_gradients == aggregate_k_gradients - 1):
-                print("using dist, No sync")
                 cm = e_model.no_sync()
             else:
                 cm = nullcontext()
@@ -571,10 +544,6 @@ def train(args, dataset, criterion, encoder_generator, emsize=200, nhid=200, nla
                     single_eval_pos = single_eval_pos_gen() if callable(single_eval_pos_gen) else single_eval_pos_gen
                 else:
                     single_eval_pos = targets.shape[0] - bptt_extra_samples
-                # print("Size of data: ", len(data[0]))
-                # print("Single eval pos: ", single_eval_pos)
-                # print("BPTT extra samples: ", bptt_extra_samples)
-                # print("Batch size: ", targets.shape[0])
                 with autocast(enabled=scaler is not None):
                     # If style is set to None, it should not be transferred to device
                     output = e_model(tuple(e.to(torch.float32).to(device) if torch.is_tensor(e) else e for e in data) if isinstance(data, tuple) else data.to(device)
@@ -596,19 +565,18 @@ def train(args, dataset, criterion, encoder_generator, emsize=200, nhid=200, nla
                         losses = criterion(output.reshape(-1, n_out), targets.to(device).long().flatten())
                     elif do_kl_loss:
                         #TODO: investigate shape mismatches
-                        # print("output shape: ", output.shape)
                         real_data_preds = eval_model.predict_proba(data[0])
                         if real_data_preds.shape[1] < output.shape[1]:
                             real_data_preds = np.concatenate([real_data_preds, np.zeros((real_data_preds.shape[0], output.shape[1] - real_data_preds.shape[1]))], axis=1)
                         if real_data_preds.shape[0] != output.shape[0]:
-                            print(f"Real data preds and tuned prompt output have different shapes: ", real_data_preds.shape, output.shape)
+                            if verbose:
+                                print(f"Real data preds and tuned prompt output have different shapes: ", real_data_preds.shape, output.shape)
                             smaller_shape = min(real_data_preds.shape[0], output.shape[0])
                             real_data_preds = real_data_preds[:smaller_shape, :]
                             output = output[:smaller_shape, :]
                         real_data_preds = torch.tensor(real_data_preds).to(device)
                         assert real_data_preds.shape == output.shape, f"Real data preds and tuned prompt output have different shapes: {real_data_preds.shape} and {output.shape}"
                         losses = criterion(real_data_preds, output)
-                        # print("KL loss is ", losses, criterion)
                     else:
                         losses = criterion(output, targets)
                     if boosting or do_kl_loss:
@@ -617,8 +585,6 @@ def train(args, dataset, criterion, encoder_generator, emsize=200, nhid=200, nla
                     else:
                         if len(output.shape) == 2:
                             output = output.unsqueeze(1)
-                        # print("Losses shape: ", losses.shape)
-                        # print("Outputs shape: ", output.shape)
                         losses = losses.view(*output.shape[0:2])
 
                         loss, nan_share = utils.torch_nanmean(losses.mean(0), return_nanshare=True)
@@ -633,7 +599,6 @@ def train(args, dataset, criterion, encoder_generator, emsize=200, nhid=200, nla
                     else:
                         prior_grad_iter = prior_grad_dict[batch].to(output.device)
                     output_grad = autograd.grad(loss, output)[0]
-                    # print("Output grad shape: ", output_grad.shape)
                     gradient_dict[batch] = output_grad.detach().cpu().clone()
                     # cur_grads.append(output_grad.detach().cpu().clone())
 
@@ -644,10 +609,6 @@ def train(args, dataset, criterion, encoder_generator, emsize=200, nhid=200, nla
                         flat_prior_grad = prior_grad_iter.flatten()
                         cur_weight = 0.65
                         flat_grad_new = torch.sqrt(cur_weight * torch.pow(flat_grad, 2) + (1 - cur_weight) * torch.pow(flat_prior_grad, 2))
-                        # ones = torch.ones_like(flat_grad)
-                        # print("Flat grad shape: ", flat_grad.shape)
-                        # print("Flat prior grad shape: ", flat_prior_grad.shape)
-                        # flat_grad_new = torch.pow(flat_grad, ones + torch.log(torch.abs(flat_prior_grad)))
                         flat_grad_new_signs = torch.sign(flat_grad_new)
                         flat_grad_new[flat_grad_new_signs != grad_signs] *= -1
                         output_grad = flat_grad_new.reshape(grad_shape)
@@ -695,10 +656,6 @@ def train(args, dataset, criterion, encoder_generator, emsize=200, nhid=200, nla
             total_positional_losses = torch.zeros(bptt)
         if isinstance(total_positional_losses_recorded, float):
             total_positional_losses_recorded = torch.ones(bptt)
-        # if do_prompt_tuning:
-        #     wbn = e_model.prefix_embedding.weight.detach().clone()
-        #     print("Prompt weights after: ", wbn[:10, ...])
-            # print("Prompt requires grad: ", e_model.prefix_embedding.weight.requires_grad)
 
         return total_loss / max(steps_per_epoch, 1), (total_positional_losses / total_positional_losses_recorded).tolist(),\
                time_to_get_batch, forward_time, step_time, nan_steps.cpu().item()/(batch+1),\
@@ -712,8 +669,9 @@ def train(args, dataset, criterion, encoder_generator, emsize=200, nhid=200, nla
             ec.concatenated_y_embedding = torch.cat([ec.original_y_embedding, ec.original_y_embedding], dim=0).to(device)
             ec.prefix_size = ec.original_prefix_size * 2
         elif method.startswith("rand-init"):
-            num_to_concat = min(int(method.split("-")[-1]), len(ec.prefix_weights)+1)                
-            print("Concatenating {} embeddings".format(num_to_concat))
+            num_to_concat = min(int(method.split("-")[-1]), len(ec.prefix_weights)+1)    
+            if verbose:            
+                print("Concatenating {} embeddings".format(num_to_concat))
             if num_to_concat == 1:
                 ec.concatenated_embedding = ec.original_embedding
                 ec.concatenated_y_embedding = ec.original_y_embedding
@@ -769,7 +727,6 @@ def train(args, dataset, criterion, encoder_generator, emsize=200, nhid=200, nla
         return prefix_weights_l
 
     def update_ensemble_acc(ens_acc, ens_acc_nc, ens_acc_test, ens_acc_test_nc, num_classes):
-        print("probs_np shape: ", probs_np.shape)
         predictions_np = np.argmax(probs_np, axis=1)
         predictions_np_test = np.argmax(probs_np_test, axis=1)
         try:
@@ -780,7 +737,8 @@ def train(args, dataset, criterion, encoder_generator, emsize=200, nhid=200, nla
                 roc_auc = np.round(roc_auc_score(labels_np, probs_np, labels=np.arange(num_classes), multi_class='ovr'), 3).item()
                 test_roc_auc = np.round(roc_auc_score(labels_np_test, probs_np_test, labels=np.arange(num_classes), multi_class='ovr'), 3).item()
         except Exception as e:
-            print("Error calculating ROC AUC: ", e)
+            if verbose:
+                print("Error calculating ROC AUC: ", e)
             roc_auc = 0.0
             test_roc_auc = 0.0
         f1_weighted = np.round(f1_score(labels_np, predictions_np, average='weighted'), 3).item()
@@ -790,7 +748,8 @@ def train(args, dataset, criterion, encoder_generator, emsize=200, nhid=200, nla
             ece = np.round(um.ece(labels_np, probs_np, num_bins=30), 3)
             tace = np.round(um.tace(labels_np, probs_np, num_bins=30), 3)
         except Exception as e:
-            print("Error calculating ECE/TACE: ", e)
+            if verbose:
+                print("Error calculating ECE/TACE: ", e)
             ece = 0.0
             tace = 0.0
         test_f1_weighted = np.round(f1_score(labels_np_test, predictions_np_test, average='weighted'), 3).item()
@@ -800,7 +759,8 @@ def train(args, dataset, criterion, encoder_generator, emsize=200, nhid=200, nla
             test_ece = np.round(um.ece(labels_np_test, probs_np_test, num_bins=30), 3)
             test_tace = np.round(um.tace(labels_np_test, probs_np_test, num_bins=30), 3)
         except Exception as e:
-            print("Error calculating ECE/TACE: ", e)
+            if verbose:
+                print("Error calculating ECE/TACE: ", e)
             test_ece = 0.0
             test_tace = 0.0
         if do_prompt_tuning:
@@ -816,7 +776,8 @@ def train(args, dataset, criterion, encoder_generator, emsize=200, nhid=200, nla
                     roc_auc_nc = np.round(roc_auc_score(labels_np_nc, probs_np_nc, labels=np.arange(num_classes), multi_class='ovr'), 3).item()
                     test_roc_auc_nc = np.round(roc_auc_score(labels_np_nc_test, probs_np_nc_test, labels=np.arange(num_classes), multi_class='ovr'), 3).item()
             except Exception as e:
-                print("Error calculating ROC AUC: ", e)
+                if verbose:
+                    print("Error calculating ROC AUC: ", e)
                 roc_auc_nc = 0.0
                 test_roc_auc_nc = 0.0
             nc_ll = np.round(log_loss(labels_np_nc, probs_np_nc, labels=np.arange(num_classes)), 3)
@@ -824,7 +785,8 @@ def train(args, dataset, criterion, encoder_generator, emsize=200, nhid=200, nla
                 nc_ece = np.round(um.ece(labels_np_nc, probs_np_nc, num_bins=30), 3)
                 nc_tace = np.round(um.tace(labels_np_nc, probs_np_nc, num_bins=30), 3)
             except Exception as e:
-                print("Error calculating ECE/TACE: ", e)
+                if verbose:
+                    print("Error calculating ECE/TACE: ", e)
                 nc_ece = 0.0
                 nc_tace = 0.0
             nc_test_f1_weighted = np.round(f1_score(labels_np_nc_test, predictions_np_nc_test, average='weighted'), 3).item()
@@ -834,7 +796,8 @@ def train(args, dataset, criterion, encoder_generator, emsize=200, nhid=200, nla
                 nc_test_ece = np.round(um.ece(labels_np_nc_test, probs_np_nc_test, num_bins=30), 3)
                 nc_test_tace = np.round(um.tace(labels_np_nc_test, probs_np_nc_test, num_bins=30), 3)
             except Exception as e:
-                print("Error calculating ECE/TACE: ", e)
+                if verbose:
+                    print("Error calculating ECE/TACE: ", e)
                 nc_test_ece = 0.0
                 nc_test_tace = 0.0
         else:
@@ -883,7 +846,6 @@ def train(args, dataset, criterion, encoder_generator, emsize=200, nhid=200, nla
         return new_res
 
     def train_test_loop(t_model, t_optim, t_sched, eval_model, dl, val_dl, test_dl):      
-        # print("Eval model: ", type(eval_model))  
         # Select a fixed training data prior of size bptt
         return_outputs = None
         return_targets = None
@@ -899,7 +861,8 @@ def train(args, dataset, criterion, encoder_generator, emsize=200, nhid=200, nla
 
         for epoch in (range(1, epochs + 1) if epochs is not None else itertools.count(1)):
             is_best = False
-            print('epoch', epoch, 'of', epochs)
+            if verbose:
+                print('epoch', epoch, 'of', epochs)
             boost_this_epoch = True if epoch == 1 else False
             epoch_start_time = time.time()
             master_epoch_count.append(1)
@@ -914,10 +877,6 @@ def train(args, dataset, criterion, encoder_generator, emsize=200, nhid=200, nla
                 val_results, val_outputs, val_targets = real_data_eval(r_model=t_model, cl=real_data_qty, train_data=data_for_fitting, val_dl=val_dl)
                 res_dict = dict(res_dict, **{"Val_" + k : v for k, v in val_results.items()})
                 val_score = res_dict["Val_Accuracy"]
-                # val_score2, val_outputs2, val_targets2 = real_data_eval(r_model=t_model, cl=bptt, train_data=data_for_fitting, val_dl=val_dl)
-                # if val_score != val_score2:
-                #     print("Val score mismatch: ", val_score, val_score2)
-                #     raise ValueError("Val score mismatch")
 
                 test_results, test_outputs, test_targets = real_data_eval(r_model=t_model, cl=real_data_qty, train_data=data_for_fitting, val_dl=test_dl)
                 res_dict = dict(res_dict, **{"Test_" + k : v for k, v in test_results.items()})
@@ -969,7 +928,8 @@ def train(args, dataset, criterion, encoder_generator, emsize=200, nhid=200, nla
                     val_score = dl.validate(model)
 
             if patience > extra_prior_kwargs_dict.get('early_stopping_patience', 2):
-                print("Early stopping after {} epochs".format(epoch))
+                if verbose:
+                    print("Early stopping after {} epochs".format(epoch))
                 break
 
             if verbose:
@@ -986,9 +946,6 @@ def train(args, dataset, criterion, encoder_generator, emsize=200, nhid=200, nla
                 )
                 print('-' * 89)
                 if epoch_callback is not None and rank == 0:
-                    # print("Calling epoch callback")
-                    # print("res dict is now")
-                    # print(res_dict)
                     epoch_callback(model, epoch / epochs, res_dict)
                 if val_score is not None:
                     # save the log to a json file
@@ -1018,8 +975,8 @@ def train(args, dataset, criterion, encoder_generator, emsize=200, nhid=200, nla
             t_optim = torch.optim.AdamW(t_model.parameters(), lr=lr, weight_decay=weight_decay)
             t_sched = scheduler(t_optim, warmup_epochs, epochs if epochs is not None else 100)
             v_scr, val_outputs, val_targets = real_data_eval(r_model=t_model, cl=real_data_qty, train_data=data_for_fitting, val_dl=val_dl)
-            if v_scr['Accuracy'] != best_res_dict['Val_Accuracy']:
-                print("Best embedding score {} does not match best score {}!".format(v_scr, best_res_dict['Val_Accuracy']))
+            if (v_scr['Accuracy'] != best_res_dict['Val_Accuracy']) and verbose:
+                print("WARNING: Best embedding score {} does not match best score {}!".format(v_scr, best_res_dict['Val_Accuracy']))
 
         return best_outputs, best_targets, best_res_dict
 
@@ -1028,7 +985,8 @@ def train(args, dataset, criterion, encoder_generator, emsize=200, nhid=200, nla
     if bagging:
         split_size = extra_prior_kwargs_dict.get("subset_rows_bagging", 10000)
         if split_size == 0:
-            print("--subsampling was 0, using full dataset for bagging")
+            if verbose:
+                print("WARNING: subsampling was 0, using full dataset for bagging")
             split_size = len(dl.dataset)
         dl_backup = dl
         split_indices = []
@@ -1121,7 +1079,8 @@ def train(args, dataset, criterion, encoder_generator, emsize=200, nhid=200, nla
                 old_bptt = bptt
                 dl, val_dl, test_dl, bptt, data_for_fitting  = make_dataloaders(bptt=bptt)
                 if old_bptt != bptt:
-                    print("bptt changed from {} to {}".format(old_bptt, bptt))
+                    if verbose:
+                        print("bptt changed from {} to {}".format(old_bptt, bptt))
                     if extra_prior_kwargs_dict.get('uniform_bptt', False): 
                         single_eval_pos_gen = lambda: np.random.randint(0, bptt)
                     else:
@@ -1153,7 +1112,8 @@ def train(args, dataset, criterion, encoder_generator, emsize=200, nhid=200, nla
             boosting_accs = dict()
             topk_ens_val = extra_prior_kwargs_dict.get('keep_topk_ensemble', 0)
             if topk_ens_val > 0:
-                print("keeping top {} of {} models, per provided key {}".format(topk_ens_val, i+1, topk_key))
+                if verbose:
+                    print("keeping top {} of {} models, per provided key {}".format(topk_ens_val, i+1, topk_key))
                 #sort by val score
                 sorted_res = sorted(res_dict_ensemble.items(), key=lambda x: x[1][topk_key], reverse=True)
                 models_to_include = [x[0] for x in sorted_res][:topk_ens_val]
@@ -1210,7 +1170,6 @@ def train(args, dataset, criterion, encoder_generator, emsize=200, nhid=200, nla
             if extra_prior_kwargs_dict.get('wandb_log', False):
                 import wandb
                 master_epoch_count.append(1)
-                print("length of master epoch count is now: ", len(master_epoch_count))
                 wandb.log(ensembling_acc[i], step=len(master_epoch_count), commit=True)
             
             # Early stopping
