@@ -1,82 +1,153 @@
-# TabPFN
+<br/>
+<p align="center"><img src="img/tunetables_logo.png" width=700 /></p>
 
-The TabPFN is a neural network that learned to do tabular data prediction.
-This is the original CUDA-supporting pytorch impelementation.
+----
+![Crates.io](https://img.shields.io/crates/l/Ap?color=orange)
 
-We created a [Colab](https://colab.research.google.com/drive/194mCs6SEPEW6C0rcP7xWzcEtt1RBc8jJ), that lets you play with our scikit-learn interface.
+We introduce TuneTables, a tabular classification algorithm that overcomes the limitations of prior-data fitted networks to achieve strong performance on large datasets.
+
+While TabPFN achieves very strong performance on small tabular datasets, its current limitations include fewer than 1000 datapoints, fewer than 100 features, and fewer than 10 class labels. In this work, we overcome these limitations and substantially improve the performance of PFNs by developing context optimization techniques; specifically, we propose TuneTables, a novel prompt-tuning strategy. TuneTables scales TabPFN to be competitive with state-of-the-art tabular classification methods on larger datasets, while having additional benefits as well: (1) substantially lower inference time than TabPFN, (2) can be used as an interpretability tool, and (3) can mitigate biases by optimizing a fairness objective.
+
+<p align="center"><img src="img/tunetables_overview.png" width=700 /></p>
+
+This codebase extends the excellent public repository [TabPFN]([xxx](https://github.com/automl/tabpfn)), by Noah Hollmann, Samuel Müller, Katharina Eggensperger, and Frank Hutter.
+
+## Table of Contents
+1. [Hardware Requirements](#hardware-requirements)
+2. [Installation](#installation)
+3. [Datasets](#datasets)
+4. [Running Experiments](#running-experiments)
+
+## Hardware Requirements
+
+* Any modern Linux workstation should be compatible with the packages called by TuneTables.
+* We recommend running TuneTables on a GPU. In our experiments, we use a single NVIDIA L4 with 24GB VRAM.
 
 ## Installation
 
+1. Clone TabPFN-pt (TuneTables) repository to your local instance.
+2. Initialize a clean environment of your preference, E.G.:
+
 ```bash
-pip install tabpfn
+conda create --name "TuneTables" python=3.10
 ```
 
-If you want to train and evaluate our method like we did in the paper (including baselines) please install with
+3. From the TabPFN-pt directory, run --
+
 ```bash
-pip install tabpfn[full]
-```
-To run the autogluon and autosklearn baseline please create a separate environment and install autosklearn==0.14.5 / autogluon==0.4.0, installation in the same environment as our other baselines is not possible.
-
-## Getting started
-
-A simple usage of our sklearn interface is:
-```python
-from sklearn.metrics import accuracy_score
-from sklearn.datasets import load_breast_cancer
-from sklearn.model_selection import train_test_split
-
-from tabpfn import TabPFNClassifier
-
-X, y = load_breast_cancer(return_X_y=True)
-X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.33, random_state=42)
-
-# N_ensemble_configurations controls the number of model predictions that are ensembled with feature and class rotations (See our work for details).
-# When N_ensemble_configurations > #features * #classes, no further averaging is applied.
-
-classifier = TabPFNClassifier(device='cpu', N_ensemble_configurations=32)
-
-classifier.fit(X_train, y_train)
-y_eval, p_eval = classifier.predict(X_test, return_winning_probability=True)
-
-print('Accuracy', accuracy_score(y_test, y_eval))
+pip install . 
 ```
 
-### TabPFN Usage
+All commands should be run from within the `tabpfn` directory.
 
-TabPFN is different from other methods you might know for tabular classification.
-Here, we list some tips and tricks that might help you understand how to use it best.
-
-- Do not preprocess inputs to TabPFN. TabPFN pre-processes inputs internally. It applies a z-score normalization (`x-train_x.mean()/train_x.std()`) per feature (fitted on the training set) and log-scales outliers [heuristically](https://github.com/automl/TabPFN/blob/f7402ec1916aa78d953574daf95508045af5953e/tabpfn/utils.py#L201). Finally, TabPFN  applies a PowerTransform to all features for every second ensemble member. Pre-processing is important for the TabPFN to make sure that the real-world dataset lies in the distribution of the synthetic datasets seen during training. So to get the best results, do not apply a PowerTransformation to the inputs.
-- TabPFN expects scalar values only (you need to encode categoricals as integers e.g. with [OrdinalEncoder](https://scikit-learn.org/stable/modules/generated/sklearn.preprocessing.OrdinalEncoder.html#sklearn.preprocessing.OrdinalEncoder)). It works best on data that does not contain any categorical or NaN data (see [Appendix B.1](https://arxiv.org/abs/2207.01848)).
-- TabPFN ensembles multiple input encodings per default. It feeds different index rotations of the features and labels to the model per ensemble member. You can control the ensembling with `TabPFNClassifier(...,N_ensemble_configurations=?)`
-- TabPFN does not use any statistics from the test set. That means predicting each test example one-by-one will yield the same result as feeding the whole test set together.
-- TabPFN is differentiable in principle, only the pre-processing is not and relies on numpy.
-
-## Our Paper
-Read our [paper](https://arxiv.org/abs/2207.01848) for more information about the setup (or contact us ☺️).
-If you use our method, please cite us using
 ```
-@inproceedings{
-  hollmann2023tabpfn,
-  title={Tab{PFN}: A Transformer That Solves Small Tabular Classification Problems in a Second},
-  author={Noah Hollmann and Samuel M{\"u}ller and Katharina Eggensperger and Frank Hutter},
-  booktitle={The Eleventh International Conference on Learning Representations},
-  year={2023},
-  url={https://openreview.net/forum?id=cp5PvcI6w8_}
-}
+cd tabpfn
 ```
 
-## License
-Copyright 2022 Noah Hollmann, Samuel Müller, Katharina Eggensperger, Frank Hutter
+## Datasets
 
-Licensed under the Apache License, Version 2.0 (the "License");
-you may not use this file except in compliance with the License.
-You may obtain a copy of the License at
+TuneTables was tested on over 40 datasets sourced from [OpenML](https://www.openml.org/). We recommend downloading some of the datasets listed in order to get familiar with our software.
 
-    http://www.apache.org/licenses/LICENSE-2.0
+### Dataset Preparation
 
-Unless required by applicable law or agreed to in writing, software
-distributed under the License is distributed on an "AS IS" BASIS,
-WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-See the License for the specific language governing permissions and
-limitations under the License.
+In order to prepare your dataset(s) for TuneTables, we recommend following the dataset preparation steps outlined in the [TabZilla](https://github.com/naszilla/tabzilla?tab=readme-ov-file#datasets) repository, which we used in our experiments. We also include two preprocessed datasets, `openml__elevators__3711` and `openml__har__14970` in `TabPFN-pt\sample_datasets`, for testing purposes.
+
+### List of OpenML Datasets
+
+An extended list of datasets we use for experiments are included below.
+
+```
+openml__Bioresponse__9910
+openml__blood-transfusion-service-center__10101
+openml__breast-cancer__145799
+openml__BNG(labor)__2137
+openml__BNG(vote)__212
+openml__christine__168908
+openml__Click_prediction_small__7294
+openml__climate-model-simulation-crashes__146819
+openml__colic__27
+openml__connect-4__146195
+openml__dilbert__168909
+openml__dresses-sales__125920
+openml__eeg-eye-state__14951
+openml__elevators__3711
+openml__har__14970
+openml__higgs__146606
+openml__poker-hand__9890
+openml__riccardo__168338
+openml__robert__168332
+openml__volkert__168331
+openml__balance-scale__11
+openml__cmc__23
+openml__cylinder-bands__14954
+openml__heart-c__48
+openml__kc1__3917
+openml__Agrawal1__146093
+openml__airlines__189354
+openml__albert__189356
+```
+
+## Running Experiments
+
+### Datasets
+
+Dataset names are stored in plaintext files, newline separated. 
+
+```
+openml__airlines__189354
+openml__albert__189356
+```
+
+Examples of task and dataset lists can be found in the `tabpfn/metadata` directory.
+
+### Tasks
+
+TuneTables jobs are organized into `tasks`, which are then executed in batches over a list of `datasets`. Examples of task and dataset lists can be found in the `tabpfn/metadata` directory. Here are some example tasks which can be included in a TuneTables batch.
+
+```bash
+ft #fine tune TabPFN end-to-end
+pt10 #learn a prompt with an embedding of dimensions (10, ndim)
+pt1000-10ens-randinit-avg-top2-reseed #learn an ensemble of 10 prompts, each randomly initialized, with reseeded data
+tunetables-long #the algorithm collection used for the results in our paper (note -- this will be slow on large datasets!)
+tunetables-short #an abbreviated version of TuneTables which runs much faster on large datasets, at the cost of some accuracy
+```
+
+The complete list of prompt-tuning and fine-tuning tuning tasks can be found in `tabpfn/batch/all_tasks.py`.
+
+### Zero-Shot Tasks
+
+It is also possible to run zero-shot TabPFN tasks via TuneTables, across a range of context sizes, ensemble sizes, feature subsampling methods. Here are some example zero-shot tasks which can be included in a TuneTables batch.
+
+```bash
+zs-pca_white-32 #ensemble size 32, feature selection via principal component analysis with whitening
+zs-sparse_random_projection-16 #ensemble size 16, feature selection via sparse_random_projection
+zs-mutual_information-8 #ensemble size 8, feature selection via mutual information
+```
+
+### Jobs
+
+As mentioned earlier, TuneTables `jobs` are organized into `tasks`, which are then executed in batches over a list of `datasets`. A task accepts as input a dataset in a valid format, and returns a suite of performance metrics for that dataset-task pair. Jobs are invoked via `batch\run_tt_job.py`.
+
+Since prompt tuning requires a pretrained and frozen transformer, we need to `--resume` from a previous checkpoint. A TabPFN checkpoint is included in the repository: `tabpfn/models_diff/prior_diff_real_checkpoint_n_0_epoch_42.cpkt`.
+
+Also required is the `--base_path` where the datasets you wish to evaluate are stored.
+
+Here is an example of how you might run a job in TuneTables:
+
+```bash
+python3 batch/run_tt_job.py --resume PATH/TO/CHECKPOINT --base_path PATH/TO/DATASETS --datasets metadata/test_datasets.txt --tasks metadata/test_tasks.txt
+```
+
+### Special Flags
+
+The `run_tt_job` script accepts several special flags. We describe their function here.
+
+`--splits`: A space-separated list of splits to evaluate for each dataset, `0` by default. Our results are usually reported on an average: `--splits 0 1 2`.
+
+`--real_data_qty`: Controls how much of the dataset is passed as context to the model during validation (`C / CT` setting only)
+
+`--bptt`: Controls the length of the sequence passed to the model during training. When the task type is uniform, `bptt` is processed as a constant. When the task type is non-uniform, `bptt` is processed as the argmax of a random variable.
+
+`--verbose`: If you pass this argument, TuneTables will log a lot more information about your runs to the console. This is useful for debugging or digging into the code.
+
+`--print_stdout`: If you pass this argument, TuneTables will print stdout and stderr to the console after each task completes.

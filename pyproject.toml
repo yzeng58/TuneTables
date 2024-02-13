@@ -3,23 +3,28 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "tabpfn"
-version = "0.1.9"
+name = "tunetables"
+version = "0.2"
 authors = [
-{name="Noah Hollmann"},
-{name="Samuel Muller", email="muellesa@tf.uni-freiburg.de"},
-{name="Katharina Eggensperger"},
-{name="Frank Hutter"},
+{name="Benjamin Feuer"},
+{name="Niv Cohen"},
+{name="Colin White"},
+{name="Valeriia Cherepanova"},
 ]
-description = "Interface for using TabPFN and library to train TabPFN'"
+description = "TuneTables is a tabular classification framework that extends the capabilities of pretrained prior-fitted networks like TabPFN'"
 readme = "README.md"
 requires-python = ">=3.7"
 dependencies=[
-        'torch>=1.9.0',
-        'scikit-learn>=0.24.2',
-        'pyyaml>=5.4.1',
-        'numpy>=1.21.2',
+        'torch>=1.9.0,<=2.0.1',
+        'scikit-learn>=0.24.2,<=1.4.0',
+        'pyyaml>=5.4.1,<=6.0.1',
+        'numpy>=1.21.2,<=1.26.4',
         'requests>=2.23.0',
+        'uncertainty_metrics',
+        'wandb==0.16.1',
+        'tqdm>=4.62.1,<=4.66.1',
+        'configspace==0.4.21',
+        'pandas>=1.3.3,<=2.2.0',
 ]
 classifiers = [
     "Programming Language :: Python :: 3",
@@ -30,7 +35,11 @@ classifiers = [
 [tool.hatch.build]
 exclude = [
   "*.cpkt",
-  "tabpfn/datasets/*.pickle",
+  "tunetables/data/*",
+  "tunetables/logs/*",
+  "tunetables/config/*",
+  "tunetables/wandb/*",
+  "tunetables/datasets/*.pickle",
 ]
 
 [project.optional-dependencies]
@@ -43,8 +52,7 @@ full = [
     'configspace>=0.4.21', # baselins + training + evaluation
     'openml>=0.12.2', # evaluation + baselines
     'seaborn==0.11', # evaluation
-    'tqdm>=4.62.1', # training + evaluation
 ]
 
 [project.urls]
-"Homepage" = "https://github.com/automl/TabPFN'"
+"Homepage" = "https://github.com/penfever/TabPFN-pt/'"
