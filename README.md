@@ -38,10 +38,10 @@ conda create --name "TuneTables" python=3.10
 pip install . 
 ```
 
-All commands should be run from within the `tabpfn` directory.
+All commands should be run from within the `tunetables` directory.
 
 ```
-cd tabpfn
+cd tunetables
 ```
 
 ## Datasets
@@ -98,11 +98,11 @@ openml__airlines__189354
 openml__albert__189356
 ```
 
-Examples of task and dataset lists can be found in the `tabpfn/metadata` directory.
+Examples of task and dataset lists can be found in the `tunetables/metadata` directory.
 
 ### Tasks
 
-TuneTables jobs are organized into `tasks`, which are then executed in batches over a list of `datasets`. Examples of task and dataset lists can be found in the `tabpfn/metadata` directory. Here are some example tasks which can be included in a TuneTables batch.
+TuneTables jobs are organized into `tasks`, which are then executed in batches over a list of `datasets`. Examples of task and dataset lists can be found in the `tunetables/metadata` directory. Here are some example tasks which can be included in a TuneTables batch.
 
 ```bash
 ft #fine tune TabPFN end-to-end
@@ -112,7 +112,7 @@ tunetables-long #the algorithm collection used for the results in our paper (not
 tunetables-short #an abbreviated version of TuneTables which runs much faster on large datasets, at the cost of some accuracy
 ```
 
-The complete list of prompt-tuning and fine-tuning tuning tasks can be found in `tabpfn/batch/all_tasks.py`.
+The complete list of prompt-tuning and fine-tuning tuning tasks can be found in `tunetables/batch/all_tasks.py`.
 
 ### Zero-Shot Tasks
 
@@ -128,7 +128,7 @@ zs-mutual_information-8 #ensemble size 8, feature selection via mutual informati
 
 As mentioned earlier, TuneTables `jobs` are organized into `tasks`, which are then executed in batches over a list of `datasets`. A task accepts as input a dataset in a valid format, and returns a suite of performance metrics for that dataset-task pair. Jobs are invoked via `batch\run_tt_job.py`.
 
-Since prompt tuning requires a pretrained and frozen transformer, we need to `--resume` from a previous checkpoint. A TabPFN checkpoint is included in the repository: `tabpfn/models_diff/prior_diff_real_checkpoint_n_0_epoch_42.cpkt`.
+Since prompt tuning requires a pretrained and frozen transformer, we need to `--resume` from a previous checkpoint. A TabPFN checkpoint is included in the repository: `tunetables/models_diff/prior_diff_real_checkpoint_n_0_epoch_42.cpkt`.
 
 Also required is the `--base_path` where the datasets you wish to evaluate are stored.
 
