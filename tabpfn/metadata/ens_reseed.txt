@@ -1,2 +1,0 @@
-pt2000-5ens-randinit-avg-top1-reseed-lowlr-longep-noes
-pt2000-10ens-randinit-avg-top2-reseed-lowlr-longep-noes

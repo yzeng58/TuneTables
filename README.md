@@ -108,9 +108,11 @@ TuneTables jobs are organized into `tasks`, which are then executed in batches o
 ft #fine tune TabPFN end-to-end
 pt10 #learn a prompt with an embedding of dimensions (10, ndim)
 pt1000-10ens-randinit-avg-top2-reseed #learn an ensemble of 10 prompts, each randomly initialized, with reseeded data
+tunetables-long #the algorithm collection used for the results in our paper (note -- this will be slow on large datasets!)
+tunetables-short #an abbreviated version of TuneTables which runs much faster on large datasets, at the cost of some accuracy
 ```
 
-The complete list of tuning tasks can be found in `tabpfn/batch/all_tasks.py`.
+The complete list of prompt-tuning and fine-tuning tuning tasks can be found in `tabpfn/batch/all_tasks.py`.
 
 ### Zero-Shot Tasks
 
@@ -124,7 +126,7 @@ zs-mutual_information-8 #ensemble size 8, feature selection via mutual informati
 
 ### Jobs
 
-As mentioned earlier, TuneTables `jobs` are organized into `tasks`, which are then executed in batches over a list of `datasets`. Jobs are invoked via `batch\run_tabpfn_job.py`.
+As mentioned earlier, TuneTables `jobs` are organized into `tasks`, which are then executed in batches over a list of `datasets`. A task accepts as input a dataset in a valid format, and returns a suite of performance metrics for that dataset-task pair. Jobs are invoked via `batch\run_tt_job.py`.
 
 Since prompt tuning requires a pretrained and frozen transformer, we need to `--resume` from a previous checkpoint. A TabPFN checkpoint is included in the repository: `tabpfn/models_diff/prior_diff_real_checkpoint_n_0_epoch_42.cpkt`.
 
@@ -133,12 +135,12 @@ Also required is the `--base_path` where the datasets you wish to evaluate are s
 Here is an example of how you might run a job in TuneTables:
 
 ```bash
-python3 batch/run_tabpfn_job.py --resume PATH/TO/CHECKPOINT --base_path PATH/TO/DATASETS --datasets metadata/test_datasets.txt --tasks metadata/test_tasks.txt
+python3 batch/run_tt_job.py --resume PATH/TO/CHECKPOINT --base_path PATH/TO/DATASETS --datasets metadata/test_datasets.txt --tasks metadata/test_tasks.txt
 ```
 
 ### Special Flags
 
-The `run_tabpfn_job` script accepts several special flags. We describe their function here.
+The `run_tt_job` script accepts several special flags. We describe their function here.
 
 `--splits`: A space-separated list of splits to evaluate for each dataset, `0` by default. Our results are usually reported on an average: `--splits 0 1 2`.
 
@@ -146,3 +148,6 @@ The `run_tabpfn_job` script accepts several special flags. We describe their fun
 
 `--bptt`: Controls the length of the sequence passed to the model during training. When the task type is uniform, `bptt` is processed as a constant. When the task type is non-uniform, `bptt` is processed as the argmax of a random variable.
 
+`--verbose`: If you pass this argument, TuneTables will log a lot more information about your runs to the console. This is useful for debugging or digging into the code.
+
+`--print_stdout`: If you pass this argument, TuneTables will print stdout and stderr to the console after each task completes.

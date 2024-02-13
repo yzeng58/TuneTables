@@ -8,7 +8,7 @@
 driver_installer.run
 
 # datasets
-tabpfn/data/*
+tunetables/data/*
 
 # results and outfiles
 *.out
@@ -17,8 +17,8 @@ tabpfn/data/*
 */_multiclass_*/
 */catboost_info/
 */AutogluonModels/
-tabpfn/runlog*
-tabpfn/run_commands.sh
+tunetables/runlog*
+tunetables/run_commands.sh
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

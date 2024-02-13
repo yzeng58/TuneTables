@@ -1,3 +1,0 @@
-ft-npad
-pt10-npad
-pt100-npad

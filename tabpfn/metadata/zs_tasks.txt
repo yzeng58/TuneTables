@@ -1,6 +1,0 @@
-zs-pca_white-32
-zs-sparse_random_projection-32
-zs-mutual_information-32
-zs-isomap-32
-zs-ica-32
-zs-random-32
