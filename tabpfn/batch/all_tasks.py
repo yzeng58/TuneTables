@@ -114,9 +114,11 @@ pt10_sumafter_mutinf_dict['summerize_after_prep'] = ''
 pt10_sumafter_mutinf_unif_dict = copy.deepcopy(pt10_sumafter_mutinf_dict)
 pt10_sumafter_mutinf_unif_dict['uniform_bptt'] = ''
 
-#Prompt tuning with 100 prompts
+#debug
 debug_dict = copy.deepcopy(pt10_dict)
 debug_dict['epochs'] = 10
+
+#Prompt tuning with 100 prompts
 pt100_dict = copy.deepcopy(pt10_dict)
 pt100_dict['tuned_prompt_size'] = 100
 pt100_short_dict = copy.deepcopy(pt100_dict)
@@ -161,6 +163,10 @@ pt100_sumafter_mutinf_dict = copy.deepcopy(pt100_mut_dict)
 pt100_sumafter_mutinf_dict['summerize_after_prep'] = ''
 pt100_sumafter_mutinf_unif_dict = copy.deepcopy(pt100_sumafter_mutinf_dict)
 pt100_sumafter_mutinf_unif_dict['uniform_bptt'] = ''
+
+#Prompt tuning with 500 prompts
+pt500_dict = copy.deepcopy(pt10_dict)
+pt500_dict['tuned_prompt_size'] = 500
 
 #Prompt tuning with 1000 prompts
 pt1000_dict = copy.deepcopy(pt10_dict)
@@ -388,6 +394,7 @@ all_tasks = {
     'pt100-sumafter-mutual_information' : pt100_sumafter_mutinf_dict,
     'pt100-short' : pt100_short_dict,
     'pt100-shorter' : pt100_shorter_dict,
+    'pt500': pt500_dict,
     'pt1000': pt1000_dict,
     'pt1000-prop' : pt1000_prop_dict,
     'pt1000-pca' : pt1000_pca_dict,

@@ -46,7 +46,9 @@ def train(args, dataset, criterion, encoder_generator, emsize=200, nhid=200, nla
           initializer=None, initialize_with_model=None, train_mixed_precision=False, efficient_eval_masking=True, 
           boosting=False, boosting_lr=1e-3, boosting_n_iters=10, rand_init_ensemble=False, do_concat="", **model_extra_args
           ):
-        
+    #ulimit error fix
+    torch.multiprocessing.set_sharing_strategy('file_system')
+    #set gpu device
     device = gpu_device if torch.cuda.is_available() else 'cpu:0'
     # print(f'Using {device} device')
     using_dist, rank, device = init_dist(device)
