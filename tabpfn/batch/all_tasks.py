@@ -165,6 +165,10 @@ pt100_sumafter_mutinf_unif_dict['uniform_bptt'] = ''
 #Prompt tuning with 1000 prompts
 pt1000_dict = copy.deepcopy(pt10_dict)
 pt1000_dict['tuned_prompt_size'] = 1000
+pt1000_long_dict = copy.deepcopy(pt1000_dict)
+pt1000_long_dict['epochs'] = 101
+pt1000_long_dict['save_every_k_epochs'] = 102
+pt1000_long_dict['validation_period'] = 5
 pt1000_short_dict = copy.deepcopy(pt1000_dict)
 pt1000_short_dict['epochs'] = 7
 pt1000_short_dict['save_every_k_epochs'] = 12
@@ -211,6 +215,10 @@ pt1000_sumafter_mutinf_dict = copy.deepcopy(pt1000_mut_dict)
 pt1000_sumafter_mutinf_dict['summerize_after_prep'] = ''
 pt1000_sumafter_mutinf_unif_dict = copy.deepcopy(pt1000_sumafter_mutinf_dict)
 pt1000_sumafter_mutinf_unif_dict['uniform_bptt'] = ''
+
+# Prompt Tuning with 2000 prompts
+pt2000_dict = copy.deepcopy(pt10_dict)
+pt2000_dict['tuned_prompt_size'] = 2000
 
 """
 Ensemble Presets
@@ -397,6 +405,7 @@ all_tasks = {
     'pt1000-sumafter-mutual_information' : pt1000_sumafter_mutinf_dict,
     'pt1000-short' : pt1000_short_dict,
     'pt1000-shorter' : pt1000_shorter_dict,
+    'pt1000-long' : pt1000_long_dict,
     'pt1000-10ens-bagged-avg' : ens_bagged_avg_dict,
     'pt1000-10ens-randinit-avg' : ens_randinit_avg_dict,
     'pt1000-10ens-bagged-avg-top2' : ens_bagged_avg_top2_dict,
@@ -432,6 +441,7 @@ all_tasks = {
     'pt1000-10ens-randinit-avg-top1-unif-reseed-mutual_information-highlr-short-powerall' : ens_randinit_avg_top1_unif_reseed_highlr_short_powerall_mutinf_dict,
     'pt1000-10ens-randinit-avg-top2-unif-reseed-25cl-long' : ens_randinit_avg_top2_unif_reseed_25cl_long_dict,
     'pt1000-10ens-randinit-avg-top4-unif-reseed-ss10000' : ens_randinit_avg_top4_unif_reseed_ss10000_dict,
+    'pt2000' : pt2000_dict,
     'pt2000-5ens-randinit-avg-top1-reseed-highlr-longep' : ens_randinit_avg_top1_reseed_large_highlr_longep_dict,
     'pt2000-5ens-randinit-avg-top1-reseed-lowlr-longep-noes' : ens_randinit_avg_top1_reseed_large_lowlr_longep_dict_noes,
     'pt2000-10ens-randinit-avg-top2-reseed-lowlr-longep-noes' : ens_randinit_avg_top2_reseed_large_lowlr_longep_dict_noes,
