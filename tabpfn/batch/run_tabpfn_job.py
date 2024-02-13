@@ -32,8 +32,7 @@ def main_f(args):
 
     def run_tunetables(dataset_path, task, split, log_dir, args, base_cmd, gcp_txt):
         #TODO: Full impl
-        if args.gcp_run:
-            raise NotImplementedError("GCP run not yet supported for tunetables task, please run each task individually and aggregate results.")
+        raise NotImplementedError("Tunetables task not yet finished, please run each task individually and aggregate results.")
         args.real_data_qty = MAX_SAMPLES
         metadata = json.load(open(os.path.join(dataset_path, 'metadata.json')))
         n_classes = metadata['num_classes']
@@ -71,117 +70,116 @@ def main_f(args):
             res = run_single_job(dataset_path, task, split, log_dir, args, base_cmd, gcp_txt)
             all_res_d[task] = res
             all_res[task] = max(res.get("Val_Accuracy", 0.0), res.get("Val_nc_Accuracy", 0.0), res.get("Ens_Val_Accuracy", 0.0), res.get("Ens_Val_Accuracy_NC", 0.0))
+        
 
     def run_single_job(dataset_path, task, split, log_dir, args, base_cmd, gcp_txt):
-            # Get task name
-            task = task.strip()
-            task_str = task
+        # Get task name
+        task = task.strip()
+        task_str = task
+        if args.run_optuna:
+            task_str += '_optuna'
+        if args.bptt > -1:
+            task_str += '_bptt_' + str(args.bptt)
+        if args.shuffle_every_epoch:
+            task_str += '_shuffleep_'
+        task_str += '_rdq_' + str(args.real_data_qty)
+        task_str += '_split_' + str(split)
+        if task.startswith('zs'):
+            ensemble_size = int(task.split('-')[-1])
+            subset_ft_method = task.split('-')[-2]
+            command = ['python', base_cmd, 
+                    '--data_path', dataset_path,
+                    '--subset_features_method', subset_ft_method,
+                    '--split', str(split),
+                    '--real_data_qty', str(args.real_data_qty),
+                    '--zs-eval-ensemble', str(ensemble_size)]
+            if args.wandb_log:
+                command = command + [
+                    '--wandb_log',
+                    '--wandb_group', "\"" + dataset.strip() + "_" + task_str + "_" + subset_ft_method + "\"", 
+                ]
+        else:
+            # Get task args
+            npp = False
+            npad = False
+            if '-npad' in task:
+                npad = True
+                task = task.replace('-npad', '')
+            if '-nopreproc' in task:
+                npp = True
+                task = task.replace('-nopreproc', '')
+            next_task = all_tasks[task]
+            if not args.wandb_log:
+                next_task.pop('wandb_log')
+            if args.wandb_project != '':
+                next_task['wandb_project'] = args.wandb_project
+            if args.resume != '':
+                next_task['resume'] = args.resume
+            if npp:
+                try:
+                    next_task.pop('do_preprocess')
+                except:
+                    pass
+                task_str += '_nopreproc'
+            if npad:
+                try:
+                    next_task.pop('pad_features')
+                except:
+                    pass
+                task_str += '_npad'
+            addl_args = []
+            for k, v in next_task.items():
+                addl_args.append("--" + k)
+                val = str(v)
+                if val != '':
+                    addl_args.append(val)
+            command = ['python', base_cmd, '--data_path', dataset_path, '--split', str(split), '--real_data_qty', str(args.real_data_qty), '--wandb_group', "\"" + dataset.strip() + "_" + task_str + "\""] + addl_args
             if args.run_optuna:
-                task_str += '_optuna'
-            if args.bptt > -1:
-                task_str += '_bptt_' + str(args.bptt)
-            if args.shuffle_every_epoch:
-                task_str += '_shuffleep_'
-            task_str += '_rdq_' + str(args.real_data_qty)
-            task_str += '_split_' + str(split)
-            if task.startswith('zs'):
-                ensemble_size = int(task.split('-')[-1])
-                subset_ft_method = task.split('-')[-2]
-                command = ['python', base_cmd, 
-                        '--data_path', dataset_path,
-                        '--subset_features_method', subset_ft_method,
-                        '--split', str(split),
-                        '--real_data_qty', str(args.real_data_qty),
-                        '--zs-eval-ensemble', str(ensemble_size)]
-                if args.wandb_log:
-                    command = command + [
-                        '--wandb_log',
-                        '--wandb_group', "\"" + dataset.strip() + "_" + task_str + "_" + subset_ft_method + "\"", 
-                    ]
-            else:
-                # Get task args
-                npp = False
-                npad = False
-                if '-npad' in task:
-                    npad = True
-                    task = task.replace('-npad', '')
-                if '-nopreproc' in task:
-                    npp = True
-                    task = task.replace('-nopreproc', '')
-                next_task = all_tasks[task]
-                if not args.wandb_log:
-                    next_task.pop('wandb_log')
-                if args.wandb_project != '':
-                    next_task['wandb_project'] = args.wandb_project
-                if args.resume != '':
-                    next_task['resume'] = args.resume
-                if npp:
-                    try:
-                        next_task.pop('do_preprocess')
-                    except:
-                        pass
-                    task_str += '_nopreproc'
-                if npad:
-                    try:
-                        next_task.pop('pad_features')
-                    except:
-                        pass
-                    task_str += '_npad'
-                addl_args = []
-                for k, v in next_task.items():
-                    addl_args.append("--" + k)
-                    val = str(v)
-                    if val != '':
-                        addl_args.append(val)
-                if args.gcp_run:
-                    command = ['python', base_cmd, '--data_path \"' + dataset_path + "\"", '--split', str(split), '--real_data_qty', str(args.real_data_qty), '--wandb_group', "\"" + dataset.strip() + "_" + task_str + "\""] + addl_args
+                if args.wandb_project == '':
+                    command = command + ["--wandb_project", args.wandb_project]
                 else:
-                    command = ['python', base_cmd, '--data_path', dataset_path, '--split', str(split), '--real_data_qty', str(args.real_data_qty), '--wandb_group', "\"" + dataset.strip() + "_" + task_str +  "\""] + addl_args
-                if args.run_optuna:
-                    if args.wandb_project == '':
-                        command = command + ["--wandb_project", args.wandb_project]
-                    else:
-                        command = command + ["--wandb_project", "tabpfn-pt-optuna"]
-            if args.bptt > -1:
-                command.append("--bptt")
-                command.append(str(args.bptt))     
-            if args.shuffle_every_epoch:
-                command.append("--shuffle_every_epoch")           
-            print("Running command:", ' '.join(command))
-            if args.gcp_run:
-                gcp_txt += "\'" + ' '.join(command) + '\'\n'
-            else:
-                returncode, stdout, stderr = asyncio.run(run_command(' '.join(command)))
-                stdout = stdout.decode()
-                print("Stderr:", stderr.decode())
-                if args.print_stdout:
-                    print("Stdout:", stdout)
-                # Initialize an empty dictionary to hold the parsed output
-                output_dict = {}
-                # Define the marker indicating the start of the JSON output
-                json_start_marker = "^RESULTS\n"
-                # Check if the marker is in the stdout
-                if json_start_marker in stdout:
-                    # Extract the JSON string part. Assume the JSON starts immediately after the marker
-                    json_str = stdout.split(json_start_marker, 1)[1]
-                    
-                    # Attempt to parse the JSON string into a Python dictionary
-                    try:
-                        output_dict = json.loads(json_str)
-                    except json.JSONDecodeError as e:
-                        print(f"Error decoding JSON: {e}")
-                        output_dict = {}
-                # Parse and relocate logs
-                new_outputs = Path('logs').glob('_multiclass*')
-                updated_outputs = []
-                for output in new_outputs:
-                    new_name = output.name.replace('_multiclass', task_str)
-                    new_path = os.path.join(output.parent, new_name)
-                    os.rename(output, new_path)
-                    updated_outputs.append(new_path)
-                for output in updated_outputs:
-                    shutil.move(output, log_dir)
-                return output_dict
+                    command = command + ["--wandb_project", "tabpfn-pt-optuna"]
+        if args.bptt > -1:
+            command.append("--bptt")
+            command.append(str(args.bptt))     
+        if args.shuffle_every_epoch:
+            command.append("--shuffle_every_epoch")           
+        # print("Running command:", ' '.join(command))
+        job_str = "\'" + ' '.join(command) + '\'\n'
+        if args.gcp_run:
+            return {}, job_str
+        else:
+            returncode, stdout, stderr = asyncio.run(run_command(' '.join(command)))
+            stdout = stdout.decode()
+            print("Stderr:", stderr.decode())
+            if args.print_stdout:
+                print("Stdout:", stdout)
+            # Initialize an empty dictionary to hold the parsed output
+            output_dict = {}
+            # Define the marker indicating the start of the JSON output
+            json_start_marker = "^RESULTS\n"
+            # Check if the marker is in the stdout
+            if json_start_marker in stdout:
+                # Extract the JSON string part. Assume the JSON starts immediately after the marker
+                json_str = stdout.split(json_start_marker, 1)[1]
+                
+                # Attempt to parse the JSON string into a Python dictionary
+                try:
+                    output_dict = json.loads(json_str)
+                except json.JSONDecodeError as e:
+                    print(f"Error decoding JSON: {e}")
+                    output_dict = {}
+            # Parse and relocate logs
+            new_outputs = Path('logs').glob('_multiclass*')
+            updated_outputs = []
+            for output in new_outputs:
+                new_name = output.name.replace('_multiclass', task_str)
+                new_path = os.path.join(output.parent, new_name)
+                os.rename(output, new_path)
+                updated_outputs.append(new_path)
+            for output in updated_outputs:
+                shutil.move(output, log_dir)
+            return output_dict, job_str
 
     with open(args.datasets) as f:
         datasets = f.readlines()
@@ -210,17 +208,20 @@ def main_f(args):
         for split in args.splits:
             for task in tasks:
                 if task == 'tunetables':
-                    res = run_tunetables(dataset_path, task, split, log_dir, args, base_cmd, gcp_txt)
+                    res, task_str = run_tunetables(dataset_path, task, split, log_dir, args, base_cmd, gcp_txt)
                 else:
-                    res = run_single_job(dataset_path, task, split, log_dir, args, base_cmd, gcp_txt)
-                print("Results:", res)
+                    res, task_str = run_single_job(dataset_path, task, split, log_dir, args, base_cmd, gcp_txt)
+                if args.gcp_run:
+                    gcp_txt += task_str + "\n"
+                if res:
+                    print("Results for", dataset.strip(), "split", split, "task", task.strip(), ":", res)
     if args.gcp_run:
         task_str = "tunetables_gcp_" + dataset.strip() + "_" + datetime.datetime.now().strftime("%Y%m%d%H%M%S")
         gcp_txt += ")"
         with open("run_commands.sh", "w") as f:
             f.write(gcp_txt)
         start_time = time.time()
-        print("Starting GCP run.")
+        print("Starting GCP run with gcp text:", gcp_txt)
         returncode, stdout, stderr = asyncio.run(run_command('bash batch/run_gcp_expt.sh'))
         print("GCP run finished in", time.time() - start_time, "seconds.")
         if args.print_stdout:
