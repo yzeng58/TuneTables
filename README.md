@@ -98,11 +98,11 @@ openml__airlines__189354
 openml__albert__189356
 ```
 
-Examples of task and dataset lists can be found in the `tunetables/metadata` directory.
+Examples of task and dataset lists can be found in the `metadata` directory.
 
 ### Tasks
 
-TuneTables jobs are organized into `tasks`, which are then executed in batches over a list of `datasets`. Examples of task and dataset lists can be found in the `tunetables/metadata` directory. Here are some example tasks which can be included in a TuneTables batch.
+TuneTables jobs are organized into `tasks`, which are then executed in batches over a list of `datasets`. Examples of task and dataset lists can be found in the `metadata` directory. Here are some example tasks which can be included in a TuneTables batch.
 
 ```bash
 ft #fine tune TabPFN end-to-end
@@ -128,14 +128,14 @@ zs-mutual_information-8 #ensemble size 8, feature selection via mutual informati
 
 As mentioned earlier, TuneTables `jobs` are organized into `tasks`, which are then executed in batches over a list of `datasets`. A task accepts as input a dataset in a valid format, and returns a suite of performance metrics for that dataset-task pair. Jobs are invoked via `batch\run_tt_job.py`.
 
-Since prompt tuning requires a pretrained and frozen transformer, we need to `--resume` from a previous checkpoint. A TabPFN checkpoint is included in the repository: `tunetables/models_diff/prior_diff_real_checkpoint_n_0_epoch_42.cpkt`.
+Since prompt tuning requires a pretrained and frozen transformer, we need to `--resume` from a previous checkpoint. A TabPFN checkpoint is included in the repository: `models/prior_diff_real_checkpoint_n_0_epoch_42.cpkt`.
 
 Also required is the `--base_path` where the datasets you wish to evaluate are stored.
 
 Here is an example of how you might run a job in TuneTables:
 
 ```bash
-python3 batch/run_tt_job.py --resume PATH/TO/CHECKPOINT --base_path PATH/TO/DATASETS --datasets metadata/test_datasets.txt --tasks metadata/test_tasks.txt
+python3 batch/run_tt_job.py --resume PATH/TO/CHECKPOINT --base_path PATH/TO/DATASETS --datasets PATH/TO/DATASET_TEXT --tasks PATH/TO/TASK_TEXT
 ```
 
 ### Special Flags
