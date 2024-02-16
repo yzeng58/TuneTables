@@ -2,12 +2,15 @@ import torch
 import random
 import pathlib
 
+import sys
+sys.path.append("../")
+
 from torch.utils.checkpoint import checkpoint
-
+from tunetables.train_loop import reload_config, train_function
 from tunetables.utils import normalize_data, to_ranking_low_mem, remove_outliers
-from tunetables.utils import NOP, normalize_by_used_features_f
+from tunetables.utils import NOP, normalize_by_used_features_f, make_serializable
 from tunetables.scripts.model_builder import load_model, load_model_only_inference
-
+from tunetables.train import real_data_eval_out
 from sklearn.preprocessing import PowerTransformer, QuantileTransformer, RobustScaler
 
 import numpy as np
@@ -571,10 +574,105 @@ def get_params_from_config(c):
         , 'normalize_with_sqrt': c.get("normalize_with_sqrt", False)
             }
 
+
+
+
+
 class TuneTablesClassifier(BaseEstimator, ClassifierMixin):
     #@NIV: Implement the TuneTables classifier here
     # Should accept as inputs two valid numpy arrays, X and y, with ndim=2 and ndim=1, respectively
     # Should implement fit, predict and predict_proba methods (you may need to add a few new returns to train() to make this work)
     # For now, 'fit' can just run a 'pt1000' task
 
-    pass
+    def __init__(self):
+        class Args:
+            pass
+
+        args = Args()
+
+        # Hardcoded parameters
+        args.resume = '/home/nc3468/fixed_prepublic/TabPFN-pt/models/prior_diff_real_checkpoint_n_0_epoch_42.cpkt'
+        args.save_path = './logs'
+        args.prior_type = 'real'
+        args.data_path = '/home/benfeuer/TabPFN-pt/tabpfn/data/openml__colic__27'
+        args.prompt_tuning = True
+        args.tuned_prompt_size = 10
+        args.tuned_prompt_label_balance = 'equal'
+        args.lr = 0.1
+        args.batch_size = 4
+        args.bptt = 1152
+        args.uniform_bptt = False
+        args.seed = 135798642
+        args.early_stopping = 5
+        args.epochs = 31
+        args.num_eval_fitting_samples = 1000
+        args.split = 0
+        args.boosting = False
+        args.bagging = False
+        args.subsampling = 0
+        args.rand_init_ensemble = False
+        args.ensemble_lr = 0.5
+        args.ensemble_size = 5
+        args.reseed_data = False
+        args.aggregate_k_gradients = 1
+        args.average_ensemble = False
+        args.permute_feature_position_in_ensemble = False
+        args.concat_method = ''
+        args.save_every_k_epochs = 32
+        args.validation_period = 3
+        args.wandb_name = 'tabpfn_pt_airlines'
+        args.wandb_log = False
+        args.wandb_group = 'openml__colic__27_pt10_rdq_0_split_0'
+        args.wandb_project = 'tabpfn-pt'
+        args.wandb_entity = 'nyu-dice-lab'
+        args.subset_features_method = 'pca'
+        args.pad_features = True
+        args.do_preprocess = True
+        args.zs_eval_ensemble = 0
+        args.min_batches_per_epoch = 1
+        args.keep_topk_ensemble = 0
+        args.topk_key = 'Val_Accuracy'
+        args.max_time = 36000
+        args.preprocess_type = 'none'
+        args.optuna_objective = 'Val_Accuracy'
+        args.verbose = True
+        args.shuffle_every_epoch = False
+        args.max_num_classes = 10
+        args.real_data_qty = 0
+        args.summerize_after_prep = False
+        args.kl_loss = False
+
+        self.config, self.model_string = reload_config(longer=1, args=args)
+        self.config['wandb_log'] = False
+
+        import ConfigSpace
+
+        for k, v in self.config.items():
+            if isinstance(v, ConfigSpace.hyperparameters.CategoricalHyperparameter):
+                self.config[k] = v.default_value
+
+
+    def fit(self,x,y, cat_idx = []):
+        
+        self.model, self.data_for_fitting, _ = train_function(self.config.copy(), 0, self.model_string, is_wrapper = True, x_wrapper = x, y_wrapper = y, cat_idx = cat_idx)
+
+    def predict(self,x, cat_idx = []):
+        
+        self.config['epochs'] = 0 # only process data
+        _, _, test_loader = train_function(self.config, 0, self.model_string, is_wrapper = True, x_wrapper = x, y_wrapper = np.zeros(len(X)), cat_idx = cat_idx)
+        out = real_data_eval_out(r_model=self.model, cl=0, train_data=self.data_for_fitting, val_dl=test_loader)
+        prob = out[1]
+        classes = np.argmax(prob, axis=1)
+        return classes
+
+"""
+from sklearn.datasets import load_breast_cancer
+X, y = load_breast_cancer(return_X_y=True)
+
+clf = TuneTablesClassifier()    
+clf.fit(X,y)
+classes = clf.predict(X)
+
+accuracy = np.mean(classes == y)
+print("Accuracy:", accuracy)
+"""
