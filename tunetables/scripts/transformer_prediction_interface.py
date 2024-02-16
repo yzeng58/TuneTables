@@ -594,7 +594,7 @@ class TuneTablesClassifier(BaseEstimator, ClassifierMixin):
         args.resume = '/home/nc3468/fixed_prepublic/TabPFN-pt/models/prior_diff_real_checkpoint_n_0_epoch_42.cpkt'
         args.save_path = './logs'
         args.prior_type = 'real'
-        args.data_path = '/home/benfeuer/TabPFN-pt/tabpfn/data/openml__colic__27'
+        args.data_path = "" #'/home/benfeuer/TabPFN-pt/tabpfn/data/openml__colic__27'
         args.prompt_tuning = True
         args.tuned_prompt_size = 10
         args.tuned_prompt_label_balance = 'equal'
@@ -602,7 +602,7 @@ class TuneTablesClassifier(BaseEstimator, ClassifierMixin):
         args.batch_size = 4
         args.bptt = 1152
         args.uniform_bptt = False
-        args.seed = 135798642
+        args.seed = 0
         args.early_stopping = 5
         args.epochs = 31
         args.num_eval_fitting_samples = 1000
@@ -660,19 +660,18 @@ class TuneTablesClassifier(BaseEstimator, ClassifierMixin):
         
         self.config['epochs'] = 0 # only process data
         _, _, test_loader = train_function(self.config, 0, self.model_string, is_wrapper = True, x_wrapper = x, y_wrapper = np.zeros(len(X)), cat_idx = cat_idx)
-        out = real_data_eval_out(r_model=self.model, cl=0, train_data=self.data_for_fitting, val_dl=test_loader)
+        out = real_data_eval_out(r_model=self.model, cl=self.config["num_eval_fitting_samples"], train_data=self.data_for_fitting, val_dl=test_loader)
         prob = out[1]
         classes = np.argmax(prob, axis=1)
         return classes
 
-"""
-from sklearn.datasets import load_breast_cancer
-X, y = load_breast_cancer(return_X_y=True)
 
-clf = TuneTablesClassifier()    
-clf.fit(X,y)
-classes = clf.predict(X)
+#from sklearn.datasets import load_breast_cancer
+#X, y = load_breast_cancer(return_X_y=True)
 
-accuracy = np.mean(classes == y)
-print("Accuracy:", accuracy)
-"""
+#clf = TuneTablesClassifier()    
+#clf.fit(X,y)
+#classes = clf.predict(X)
+
+#accuracy = np.mean(classes == y)
+#print("Accuracy:", accuracy)
