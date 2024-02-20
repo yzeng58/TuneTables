@@ -74,6 +74,8 @@ AAAAB3NzaC1yc2EAAAADAQABAAABAQDfhoLPr6ZoSSL9epL7N0YQuJ9nD\+JB5CmK/f3NTX0vmOAHT51
       cd ${instance_repo_dir}; \
       source /home/bf996/.bashrc; \
       git config --global --add safe.directory /home/benfeuer/TabPFN-pt; \
+      git pull; \
+      pip install .; \
       cd ${instance_repo_dir}/tunetables; \
       ${run_command}; \
       "
