@@ -248,7 +248,7 @@ def main_f(args):
         # print("Dataset path:", dataset_path)
         log_dir = './logs/' + dataset.strip()
         if not os.path.exists(log_dir):
-            os.mkdir(log_dir)
+            os.makedirs(log_dir)
         for split in args.splits:
             for task in tasks:
                 if 'tunetables' in task:
