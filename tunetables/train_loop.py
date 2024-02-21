@@ -130,6 +130,7 @@ def reload_config(config_type='causal', task_type='multiclass', longer=0, args=N
     config['emsize'] = 512
     config['nhead'] = config['emsize'] // 128
     config['max_eval_pos'] = config['bptt'] = args.bptt
+    config['bptt_search'] = args.bptt_search
     config['aggregate_k_gradients'] = args.aggregate_k_gradients
     config['epochs'] = args.epochs
     config['warmup_epochs'] = args.epochs // 10
@@ -144,9 +145,11 @@ def reload_config(config_type='causal', task_type='multiclass', longer=0, args=N
     config['pad_features'] = args.pad_features
     config['reseed_data'] = args.reseed_data
     config['normalize_to_ranking'] = False # This should be kept to false, it has learning from the future issues
-
+    config['workers'] = args.workers
+    
     #meta-parameters
     config['validation_period'] = args.validation_period
+    config['val_subset_size'] = args.val_subset_size
     config['verbose'] = args.verbose
     config['save_every_k_epochs'] = args.save_every_k_epochs
     config['max_time'] = args.max_time
@@ -188,6 +191,7 @@ def reload_config(config_type='causal', task_type='multiclass', longer=0, args=N
     config['bagging'] = args.bagging
 
     #BPTT and batch size
+    #TODO: Add bptt-extra-samples to args
     config['uniform_bptt'] = args.uniform_bptt
     if config['uniform_bptt']:
         config['bptt_extra_samples'] = 128
@@ -249,7 +253,8 @@ def parse_args():
     parser.add_argument('--lr', type=float, default=0.0001, help='Learning rate.')
     parser.add_argument('--batch_size', type=int, default=4, help='Batch size.')
     parser.add_argument('--bptt', type=int, default=1152, help='Batch per train time.')
-    parser.add_argument('--uniform_bptt', action='store_true', help='Whether to use uniform bptt. Note that uniform bptt adds 128 extra samples per batch (for evaluation), so bptt should be >= 128.')
+    parser.add_argument('--bptt_search', action='store_true', help='Search for the near-maximum bptt that will fit in memory in range (32, 65536).')
+    parser.add_argument('--uniform_bptt', action='store_true', help='Whether to use uniform bptt. Note that uniform bptt adds 128 extra samples per batch (for evaluation), so bptt should be > 128 when using uniform_bptt.')
     parser.add_argument('--seed', type=int, default=135798642, help='Random seed.')
     parser.add_argument('--early_stopping', type=int, default=2, help='Patience (for early stopping).')
     parser.add_argument('--epochs', type=int, default=100, help='Number of epochs to train for.')
@@ -267,7 +272,8 @@ def parse_args():
     parser.add_argument('--permute_feature_position_in_ensemble', action='store_true', help='Whether to ensemble over feature position permutations.')
     parser.add_argument('--concat_method', type=str, default="", help='concatenation method (duplicate, empty = none)')
     parser.add_argument('--save_every_k_epochs', type=int, default=10, help='How often to save new checkpoints.')
-    parser.add_argument('--validation_period', type=int, default=4, help='How often to validate.')
+    parser.add_argument('--validation_period', type=int, default=4, help='How often to validate on the entire val set.')
+    parser.add_argument('--val_subset_size', type=int, default=100, help='How many samples to use for fast validation.')
     parser.add_argument('--wandb_name', type=str, default='tabpfn_pt_airlines', help='Name for wandb logging.')
     parser.add_argument('--wandb_log', action='store_true', help='Whether to log to wandb.')
     parser.add_argument('--wandb_group', type=str, default='temp', help='Group for wandb logging.')
@@ -289,6 +295,7 @@ def parse_args():
     parser.add_argument('--real_data_qty', type=int, default=0, help='Number of real data samples to use for fitting.')
     parser.add_argument('--summerize_after_prep', action='store_true', help='train_feature_extractor.')
     parser.add_argument('--kl_loss', action='store_true', help='Whether to use KL loss.')
+    parser.add_argument('--workers', type=int, default=8, help='Number of workers for data loading.')
     args = parser.parse_args()
     return args
 

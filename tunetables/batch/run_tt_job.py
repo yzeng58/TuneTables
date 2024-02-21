@@ -11,6 +11,9 @@ from pathlib import Path
 from tqdm.auto import tqdm
 
 from all_tasks import get_all_tasks
+from tunetables.utils import wandb_init
+
+import wandb
 
 MAX_CLASSES = 10
 MAX_FEATURES = 100
@@ -51,9 +54,12 @@ def main_f(args):
             #NOTE: Other options: zs-pca_white-32, zs-isomap-32, zs-ica-32, zs-random-32, zs-sparse_random_projection-32
             tt_tasks = ['zs-pca-16', 'zs-mutual_information-16']
             for task in tt_tasks:
-                res, _ = run_single_job(dataset_path, task, split, log_dir, args, base_cmd, gcp_txt)
-                all_res[task] = res["Val_Accuracy"]
-                all_res_d[task] = res
+                try:
+                    res, _ = run_single_job(dataset_path, task, split, log_dir, args, base_cmd, gcp_txt)
+                    all_res[task] = res["Val_Accuracy"]
+                    all_res_d[task] = res
+                except:
+                    pass
             best_task = max(all_res, key=all_res.get)
             feat_sel_method = best_task.split('-')[1]
         else:
@@ -75,10 +81,10 @@ def main_f(args):
                 tt_tasks = [f'pt10-short-lowlr-prop-{feat_sel_method}', f'pt10-uniform-kl-nopp-{feat_sel_method}', f'pt10-uniform-kl-nopp-prop-{feat_sel_method}']
         elif n_samples > UPPER_CUTOFF:
             if feat_sel_method != '':
-                tt_tasks = [f'pt1000-{feat_sel_method}', f'pt1000-sumafter-{feat_sel_method}']
+                tt_tasks = [f'pt100-{feat_sel_method}', f'pt100-sumafter-{feat_sel_method}', f'pt100-uniform-{feat_sel_method}', f'pt100-uniform-sumafter-{feat_sel_method}']
             else:
                 tt_tasks = [
-                    'pt1000',
+                    'pt100', 'pt100-uniform',
                 ]
         else:
             if feat_sel_method != '':
@@ -95,7 +101,22 @@ def main_f(args):
         if args.verbose:
             print("For dataset", dataset_path, "split", split, "with", n_classes, "classes, and", n_features, "features, and", n_samples, "samples, running tasks:", tt_tasks)
         args.bptt_backup = args.bptt
-        for task in tt_tasks:
+        start_time = time.time()
+        for i, task in enumerate(tt_tasks):
+            if args.wandb_log:
+                wandb_group = "\"" + dataset.strip() + "_" + task_str + "\""
+                config = dict()
+                config['wandb_group'] = wandb_group
+                config['wandb_project'] = args.wandb_project
+                config['wandb_entity'] = args.wandb_entity
+                config['tt_tasks'] = tt_tasks
+                config['dataset'] = dataset.strip()
+                config['split'] = split
+                config['n_classes'] = n_classes
+                config['n_features'] = n_features
+                config['n_samples'] = n_samples
+                model_string = "tunetables_" + datetime.datetime.now().strftime("%Y%m%d%H%M%S")
+                wandb_init(config, model_string)
             if all_res_d.get(task, None) is not None:
                 continue
             args.bptt = args.bptt_backup
@@ -103,11 +124,15 @@ def main_f(args):
                 args.bptt_backup = args.bptt
                 args.bptt = 128
             res, _ = run_single_job(dataset_path, task, split, log_dir, args, base_cmd, gcp_txt)
+            wandb.log(res, step=i, commit=True)
             if args.verbose:
                 print("Best epoch results for", dataset.strip(), "split", split, "task", task.strip(), ":", res)
             all_res_d[task] = res
             all_res[task] = max(res.get("Val_Accuracy", 0.0), res.get("Val_nc_Accuracy", 0.0), res.get("Ens_Val_Accuracy", 0.0), res.get("Ens_Val_Accuracy_NC", 0.0))
         best_task = max(all_res, key=all_res.get)
+        time_taken = time.time() - start_time
+        wandb.log({"tunetables_runtime": time_taken})
+        wandb.finish()
         return all_res_d[best_task], best_task
         
 
@@ -123,7 +148,10 @@ def main_f(args):
             task_str += '_shuffleep_'
         task_str += '_rdq_' + str(args.real_data_qty)
         task_str += '_split_' + str(split)
+        if args.epochs > 0:
+            task_str += '_epochs_' + str(args.epochs)
         if task.startswith('zs'):
+            #zero-shot logic
             ensemble_size = int(task.split('-')[-1])
             subset_ft_method = task.split('-')[-2]
             command = ['python', base_cmd, 
@@ -131,7 +159,8 @@ def main_f(args):
                     '--subset_features_method', subset_ft_method,
                     '--split', str(split),
                     '--real_data_qty', str(args.real_data_qty),
-                    '--zs-eval-ensemble', str(ensemble_size)]
+                    '--zs-eval-ensemble', str(ensemble_size),
+                    '--workers', "1"]
             if args.wandb_log:
                 command = command + [
                     '--wandb_log',
@@ -157,6 +186,10 @@ def main_f(args):
                 next_task['wandb_project'] = args.wandb_project
             if args.resume != '':
                 next_task['resume'] = args.resume
+            if args.epochs > 0:
+                next_task['epochs'] = args.epochs
+            if args.validation_period > 0:
+                next_task['validation_period'] = args.validation_period
             if npp:
                 try:
                     next_task.pop('do_preprocess')
@@ -187,8 +220,8 @@ def main_f(args):
         if args.shuffle_every_epoch:
             command.append("--shuffle_every_epoch")
         if args.verbose:
-            command.append("--verbose")         
-        # print("Running command:", ' '.join(command))
+            command.append("--verbose")
+            print("Running command:", ' '.join(command))
         job_str = "\'" + ' '.join(command) + '\'\n'
         if args.gcp_run:
             return {}, job_str
@@ -294,7 +327,10 @@ if __name__ == '__main__':
     parser.add_argument('--gcp_run', action='store_true', help='Whether to launch the job on a GCP instance.')
     parser.add_argument('--wandb_log', action='store_true', help='Whether to log to wandb.')
     parser.add_argument('--wandb_project', type=str, default='', help='Project name for wandb logging')
+    parser.add_argument('--wandb_entity', type=str, default='nyu-dice-lab', help='Entity for wandb logging.')
     parser.add_argument('--print_stdout', action='store_true', help='Whether to print stdout from each run.')
     parser.add_argument('--verbose', action='store_true', help='Whether to print verbose output.')
+    parser.add_argument('--epochs', type=int, default=0, help='Number of epochs to run.')
+    parser.add_argument('--validation_period', type=int, default=0, help='Number of epochs between validation runs.')
     args = parser.parse_args()
     main_f(args)

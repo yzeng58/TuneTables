@@ -334,7 +334,7 @@ def get_model(config, device, should_train=True, verbose=False, state_dict=None,
                         , 'split': config['split']
                         , 'hyperparameters': prior_hyperparameters
                         , 'num_eval_fitting_samples': config.get('num_eval_fitting_samples', 1000)
-                        #, 'dynamic_batch_size': 1 if ('num_global_att_tokens' in config and config['num_global_att_tokens']) else 2
+                        , 'val_subset_size' : config.get('val_subset_size', 10)
                         , 'batch_size_per_gp_sample': config.get('batch_size_per_gp_sample', None)
                         , 'prompt_tuning': config.get('prompt_tuning', False)
                         , 'tuned_prompt_size': config.get('tuned_prompt_size', 0)
@@ -362,6 +362,8 @@ def get_model(config, device, should_train=True, verbose=False, state_dict=None,
                         , 'max_time': config.get('max_time', 0)
                         , 'kl_loss': config.get('kl_loss', False)
                         , 'subset_rows_bagging': config.get('subset_rows_bagging', 0)
+                        , 'bptt_search' : config.get('bptt_search', False)
+                        , 'workers' : config.get('workers', 1)
                         , **extra_kwargs
     }
 

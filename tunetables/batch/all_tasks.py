@@ -1,4 +1,3 @@
-from collections import defaultdict
 import copy
 
 base_dict = {
@@ -6,17 +5,18 @@ base_dict = {
     'pad_features' : '',
     'resume' : '/home/benfeuer/TabPFN-pt/tunetables/models_diff/prior_diff_real_checkpoint_n_0_epoch_42.cpkt',
     'epochs' : 31,
-    'validation_period' : 3,
+    'validation_period' : 2,
     'save_every_k_epochs' : 15,
     'aggregate_k_gradients' : 1,
-    'early_stopping' : 2,
+    'early_stopping' : 4,
     'lr' : 1e-3,
     'subset_features_method' : 'pca',
     'wandb_log' : '',
     'do_preprocess' : '',
     'verbose' : '',
     'max_time' : 36000,
-    'early_stopping' : 5,
+    'bptt' : 2048,
+    'workers' : 4,
 }
 
 pt10_dict = {
@@ -152,6 +152,8 @@ pt100_shorter_unif_dict['uniform_bptt'] = ''
 pt100_unif_dict = copy.deepcopy(pt100_dict)
 pt100_unif_dict['uniform_bptt'] = ''
 pt100_unif_dict['topk_key'] = 'Val_nc_Accuracy'
+pt100_unif_search_dict = copy.deepcopy(pt100_unif_dict)
+pt100_unif_search_dict['bptt_search'] = ''
 pt100_unif_kl_dict = copy.deepcopy(pt100_unif_dict)
 pt100_unif_kl_dict['kl_loss'] = ''
 pt100_unif_kl_dict['early_stopping'] = 2
@@ -206,6 +208,8 @@ pt1000_shorter_unif_dict['uniform_bptt'] = ''
 pt1000_unif_dict = copy.deepcopy(pt1000_dict)
 pt1000_unif_dict['uniform_bptt'] = ''
 pt1000_unif_dict['topk_key'] = 'Val_nc_Accuracy'
+pt1000_unif_search_dict = copy.deepcopy(pt1000_unif_dict)
+pt1000_unif_search_dict['bptt_search'] = ''
 pt1000_unif_kl_dict = copy.deepcopy(pt1000_unif_dict)
 pt1000_unif_kl_dict['kl_loss'] = ''
 pt1000_unif_kl_dict['early_stopping'] = 2
@@ -400,6 +404,7 @@ all_tasks = {
     'pt100-mut' : pt100_mut_dict,
     'pt100-rand' : pt100_rand_dict,
     'pt100-uniform' : pt100_unif_dict,
+    'pt100-uniform-search' : pt100_unif_search_dict,
     'pt100-uniform-kl' : pt100_unif_kl_dict,
     'pt100-uniform-kl-nopp' : pt100_unif_kl_nopp_dict,
     'pt100-uniform-sumafter-pca' : pt100_sumafter_pca_unif_dict,
@@ -419,6 +424,7 @@ all_tasks = {
     'pt1000-mut' : pt1000_mut_dict,
     'pt1000-rand' : pt1000_rand_dict,
     'pt1000-uniform' : pt1000_unif_dict,
+    'pt1000-uniform-search' : pt1000_unif_search_dict,
     'pt1000-uniform-kl' : pt1000_unif_kl_dict,
     'pt1000-uniform-sumafter-pca' : pt1000_sumafter_pca_unif_dict,
     'pt1000-uniform-sumafter-mutual_information' : pt1000_sumafter_mutinf_unif_dict,
