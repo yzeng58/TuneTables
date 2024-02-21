@@ -28,7 +28,7 @@ import tunetables.utils as utils
 from tunetables.transformer import TransformerModel
 from tunetables.utils import get_cosine_schedule_with_warmup, get_openai_lr, StoreDictKeyPair, get_weighted_single_eval_pos_sampler, get_uniform_single_eval_pos_sampler
 import tunetables.priors as priors
-from priors.real import SummarizeAfter, process_data, loop_translate, TabDS, preprocess_input, get_train_dataloader
+from tunetables.priors.real import SummarizeAfter, process_data, loop_translate, TabDS, preprocess_input, get_train_dataloader
 from tunetables.losses import kl_divergence
 import tunetables.encoders as encoders
 import tunetables.positional_encodings as positional_encodings
