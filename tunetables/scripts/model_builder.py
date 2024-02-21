@@ -6,7 +6,7 @@ from functools import partial
 import tunetables.encoders as encoders
 
 from tunetables.transformer import TransformerModel
-from utils import get_uniform_single_eval_pos_sampler, get_fixed_batch_sampler
+from tunetables.utils import get_uniform_single_eval_pos_sampler, get_fixed_batch_sampler
 import priors
 from train import train
 from losses import Losses
