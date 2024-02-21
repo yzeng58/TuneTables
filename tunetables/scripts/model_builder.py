@@ -1,18 +1,16 @@
 from pathlib import Path
 import argparse
 from datetime import datetime
-
 from functools import partial
-import tunetables.encoders as encoders
-
-from tunetables.transformer import TransformerModel
-from tunetables.utils import get_uniform_single_eval_pos_sampler, get_fixed_batch_sampler
-import priors
-from train import train
-from losses import Losses
-
 import torch
 import math
+
+import tunetables.encoders as encoders
+from tunetables.transformer import TransformerModel
+from tunetables.utils import get_uniform_single_eval_pos_sampler, get_fixed_batch_sampler
+import tunetables.priors as priors
+from tunetables.train import train
+from tunetables.losses import Losses
 
 def save_model(model, path, filename, config_sample):
     config_sample = {**config_sample}
