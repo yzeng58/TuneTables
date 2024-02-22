@@ -301,7 +301,7 @@ def parse_args():
     parser.add_argument('--concat_method', type=str, default="", help='concatenation method (duplicate, empty = none)')
     parser.add_argument('--save_every_k_epochs', type=int, default=10, help='How often to save new checkpoints.')
     parser.add_argument('--validation_period', type=int, default=4, help='How often to validate on the entire val set.')
-    parser.add_argument('--val_subset_size', type=int, default=500, help='How many samples to use for fast validation.')
+    parser.add_argument('--val_subset_size', type=int, default=2000, help='How many samples to use for fast validation.')
     parser.add_argument('--wandb_name', type=str, default='tabpfn_pt_airlines', help='Name for wandb logging.')
     parser.add_argument('--wandb_log', action='store_true', help='Whether to log to wandb.')
     parser.add_argument('--wandb_group', type=str, default='temp', help='Group for wandb logging.')

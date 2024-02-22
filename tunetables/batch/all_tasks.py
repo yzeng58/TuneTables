@@ -15,7 +15,6 @@ base_dict = {
     'do_preprocess' : '',
     'verbose' : '',
     'max_time' : 36000,
-    'bptt' : 2048,
     'workers' : 4,
 }
 

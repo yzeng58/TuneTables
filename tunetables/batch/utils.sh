@@ -86,11 +86,14 @@ AAAAB3NzaC1yc2EAAAADAQABAAABAQDfhoLPr6ZoSSL9epL7N0YQuJ9nD\+JB5CmK/f3NTX0vmOAHT51
 
       echo "running tunetables experiment with task: ${task_str}, dataset: ${dataset_str}, args: ${args_str}"
 
+        # NOTE: OLD COMMANDS
         # sudo git config --global --add safe.directory /home/benfeuer/TabPFN-pt; \
         # sudo git config pull.rebase false; \
         # sudo git checkout main; \
         # sudo git pull; \
         # sudo pip install .; \
+        # find -type f -exec chmod 777 {} \;
+        # find -type d -exec chmod 777 {} \;
         
       gcloud compute ssh --ssh-flag="-A" ${instance_name} --zone=${zone} --project=${project} \
         --command="\

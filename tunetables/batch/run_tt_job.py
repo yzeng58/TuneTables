@@ -131,10 +131,16 @@ def main_f(args):
                 tt_tasks = [f'pt10-short-lowlr-prop-{feat_sel_method}', f'pt10-uniform-kl-nopp-{feat_sel_method}', f'pt10-uniform-kl-nopp-prop-{feat_sel_method}']
         elif n_samples > UPPER_CUTOFF:
             if feat_sel_method != '':
-                tt_tasks = [f'pt100-{feat_sel_method}', f'pt100-sumafter-{feat_sel_method}', f'pt100-uniform-{feat_sel_method}', f'pt100-uniform-sumafter-{feat_sel_method}']
+                tt_tasks = [
+                    f'pt100-{feat_sel_method}', 
+                    f'pt100-sumafter-{feat_sel_method}', 
+                    f'pt100-uniform-{feat_sel_method}', 
+                    f'pt100-uniform-sumafter-{feat_sel_method}'
+                ]
             else:
                 tt_tasks = [
-                    'pt100', 'pt100-uniform',
+                    'pt100', 
+                    'pt100-uniform',
                 ]
         else:
             if feat_sel_method != '':
