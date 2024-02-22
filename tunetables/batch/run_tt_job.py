@@ -322,7 +322,7 @@ def main_f(args):
                 else:
                     res, task_str = run_single_job(dataset_path, task, split, log_dir, args, base_cmd, gcp_txt)
                 if args.gcp_run:
-                    gcp_txt += task_str + "\n"
+                    gcp_txt += "\"" + task_str + "\"" "\n"
                     if res:
                         print("Results for", dataset.strip(), "split", split, "task", task.strip(), ":", res)
     if args.gcp_run:

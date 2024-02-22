@@ -79,17 +79,18 @@ AAAAB3NzaC1yc2EAAAADAQABAAABAQDfhoLPr6ZoSSL9epL7N0YQuJ9nD\+JB5CmK/f3NTX0vmOAHT51
       dataset_str="${parts[1]}"
 
       delimiter="_args_"
-      replacement_delimiter=$'\x1D'
+      replacement_delimiter=$'\x0F'
 
       # Replace the delimiter with the replacement delimiter and then split
       modified_string="${run_command//$delimiter/$replacement_delimiter}"
+
       IFS="$replacement_delimiter" read -ra parts <<< "$modified_string"
+
       args_str="${parts[1]}"
       run_cmd="python3 batch/run_tt_job.py ${args_str} --datasets './metadata/dataset.txt' --tasks './metadata/task.txt'"
 
-      echo "running tunetables experiment with task: ${task_str} and dataset: ${dataset_str}"
+      echo "running tunetables experiment with command: ${run_cmd}"
 
-      #TODO: fix hard-coded bptt and wandb_project
       gcloud compute ssh --ssh-flag="-A" ${instance_name} --zone=${zone} --project=${project} \
         --command="\
         sudo /opt/deeplearning/install-driver.sh; \
