@@ -90,7 +90,7 @@ def set_compatibility_params(config, args):
     config["mix_activations"] = False # False heisst eig True
     config['multiclass_type'] = config['multiclass_type'] if 'multiclass_type' in config else 'rank'
     config['balanced'] = False
-
+    config['eval_positions'] = [int(config['bptt'] * 0.95)] if config['bptt_extra_samples'] is None else [int(config['bptt'])]
     # ?
     config['canonical_y_encoder'] = False
 
@@ -191,16 +191,15 @@ def reload_config(config_type='causal', task_type='multiclass', longer=0, args=N
     config['bagging'] = args.bagging
 
     #BPTT and batch size
-    #TODO: Add bptt-extra-samples to args
     config['uniform_bptt'] = args.uniform_bptt
     if config['uniform_bptt']:
-        config['bptt_extra_samples'] = 128
-        if config['bptt'] < 128:
-            print("Warning: bptt should be >= 128 when using uniform bptt, as currently 128 samples per batch are reserved for evaluation. Setting bptt to 128.")
-            config['bptt'] = 128
+        config['bptt_extra_samples'] = config['bptt']
+        # config['bptt_extra_samples'] = 128
+        # if config['bptt'] < 128:
+        #     print("Warning: bptt should be >= 128 when using uniform bptt, as currently 128 samples per batch are reserved for evaluation. Setting bptt to 128.")
+        #     config['bptt'] = 128
     else:
         config['bptt_extra_samples'] = None
-    config['eval_positions'] = [int(config['bptt'] * 0.95)] if config['bptt_extra_samples'] is None else [int(config['bptt'])]
 
     #Feature subset selection
     config['subset_features'] = 100

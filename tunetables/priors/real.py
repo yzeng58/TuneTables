@@ -554,7 +554,6 @@ class SubsetMaker(object):
         # print('setting numpy seed to', seed)
         # np.random.seed(seed)
 
-        print("self.subset_features_method",self.subset_features_method)
         if self.give_full_features:
                 pass
         else:

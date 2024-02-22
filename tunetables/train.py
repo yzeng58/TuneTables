@@ -501,9 +501,9 @@ def train(args, dataset, criterion, encoder_generator, emsize=200, nhid=200, nla
         step_time = 0
         before_get_batch = time.time()
         batches_seen = 0
-        
         shuffle_every_epoch = extra_prior_kwargs_dict.get('shuffle_every_epoch', False)
         permute_feature_pos = extra_prior_kwargs_dict.get('permute_feature_position_in_ensemble', False)
+
         for batch, (data, targets, single_eval_pos) in enumerate(dl):
             if isinstance(data, list):
                 data = tuple(data)
@@ -530,6 +530,9 @@ def train(args, dataset, criterion, encoder_generator, emsize=200, nhid=200, nla
                 else:
                     single_eval_pos = targets.shape[0] - bptt_extra_samples
                 with autocast(enabled=scaler is not None):
+                    if verbose and batch == 0:
+                        print("Start training epoch")
+                        print("Data shape: ", data[0].shape, "Targets shape: ", targets.shape, "Single eval pos: ", single_eval_pos)
                     # If style is set to None, it should not be transferred to device
                     output = e_model(tuple(e.to(torch.float32).to(device) if torch.is_tensor(e) else e for e in data) if isinstance(data, tuple) else data.to(device)
                                    , single_eval_pos=single_eval_pos)

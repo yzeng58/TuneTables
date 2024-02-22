@@ -6,6 +6,7 @@ import datetime
 import argparse
 import json
 import shutil
+import copy
 from pathlib import Path
 
 from tqdm.auto import tqdm
@@ -33,7 +34,7 @@ async def run_command(cmd):
 
 def main_f(args):
 
-    def run_tunetables(dataset_path, task, split, log_dir, args, base_cmd, gcp_txt):
+    def run_tunetables(dataset_path, task, split, log_dir, args, base_cmd, gcp_txt, do_wandb):
         if task == "tunetables":
             UPPER_CUTOFF = 100000
         elif task == "tunetables-long":
@@ -101,22 +102,28 @@ def main_f(args):
         if args.verbose:
             print("For dataset", dataset_path, "split", split, "with", n_classes, "classes, and", n_features, "features, and", n_samples, "samples, running tasks:", tt_tasks)
         args.bptt_backup = args.bptt
+        #wandb logging for tunetables meta-optimization
+        if do_wandb:
+            task_str = "tunetables" + '_bptt_' + str(args.bptt)
+            wandb_group = dataset.strip() + "_" + task_str
+            config = dict()
+            config['wandb_group'] = wandb_group
+            config['wandb_project'] = args.wandb_project
+            config['wandb_entity'] = args.wandb_entity
+            config['tt_tasks'] = tt_tasks
+            config['dataset'] = dataset.strip()
+            config['split'] = split
+            config['n_classes'] = n_classes
+            config['n_features'] = n_features
+            config['n_samples'] = n_samples
+            config['upper_cutoff'] = UPPER_CUTOFF
+            config['state_dict'] = None
+            model_string = "tunetables_" + datetime.datetime.now().strftime("%Y%m%d%H%M%S")
+            wandb_init(config, model_string)
+            
         start_time = time.time()
         for i, task in enumerate(tt_tasks):
-            if args.wandb_log:
-                wandb_group = "\"" + dataset.strip() + "_" + task_str + "\""
-                config = dict()
-                config['wandb_group'] = wandb_group
-                config['wandb_project'] = args.wandb_project
-                config['wandb_entity'] = args.wandb_entity
-                config['tt_tasks'] = tt_tasks
-                config['dataset'] = dataset.strip()
-                config['split'] = split
-                config['n_classes'] = n_classes
-                config['n_features'] = n_features
-                config['n_samples'] = n_samples
-                model_string = "tunetables_" + datetime.datetime.now().strftime("%Y%m%d%H%M%S")
-                wandb_init(config, model_string)
+            
             if all_res_d.get(task, None) is not None:
                 continue
             args.bptt = args.bptt_backup
@@ -124,15 +131,17 @@ def main_f(args):
                 args.bptt_backup = args.bptt
                 args.bptt = 128
             res, _ = run_single_job(dataset_path, task, split, log_dir, args, base_cmd, gcp_txt)
-            wandb.log(res, step=i, commit=True)
+            if do_wandb:
+                wandb.log(res, step=i, commit=True)
             if args.verbose:
                 print("Best epoch results for", dataset.strip(), "split", split, "task", task.strip(), ":", res)
             all_res_d[task] = res
             all_res[task] = max(res.get("Val_Accuracy", 0.0), res.get("Val_nc_Accuracy", 0.0), res.get("Ens_Val_Accuracy", 0.0), res.get("Ens_Val_Accuracy_NC", 0.0))
         best_task = max(all_res, key=all_res.get)
         time_taken = time.time() - start_time
-        wandb.log({"tunetables_runtime": time_taken})
-        wandb.finish()
+        if do_wandb:
+            wandb.log({"tunetables_runtime": time_taken})
+            wandb.finish()
         return all_res_d[best_task], best_task
         
 
@@ -285,7 +294,10 @@ def main_f(args):
         for split in args.splits:
             for task in tasks:
                 if 'tunetables' in task:
-                    res, task_str = run_tunetables(dataset_path, task, split, log_dir, args, base_cmd, gcp_txt)
+                    do_wandb = args.wandb_log
+                    tt_args = copy.deepcopy(args)
+                    tt_args.wandb_log = False
+                    res, task_str = run_tunetables(dataset_path, task, split, log_dir, tt_args, base_cmd, gcp_txt, do_wandb)
                 else:
                     res, task_str = run_single_job(dataset_path, task, split, log_dir, args, base_cmd, gcp_txt)
                 if args.gcp_run:
