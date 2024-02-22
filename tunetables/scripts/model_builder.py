@@ -1,18 +1,16 @@
 from pathlib import Path
 import argparse
 from datetime import datetime
-
 from functools import partial
-import tunetables.encoders as encoders
-
-from tunetables.transformer import TransformerModel
-from utils import get_uniform_single_eval_pos_sampler, get_fixed_batch_sampler
-import priors
-from train import train
-from losses import Losses
-
 import torch
 import math
+
+import tunetables.encoders as encoders
+from tunetables.transformer import TransformerModel
+from tunetables.utils import get_uniform_single_eval_pos_sampler, get_fixed_batch_sampler
+import tunetables.priors as priors
+from tunetables.train import train
+from tunetables.losses import Losses
 
 def save_model(model, path, filename, config_sample):
     config_sample = {**config_sample}
@@ -223,8 +221,8 @@ def get_model(config, device, should_train=True, verbose=False, state_dict=None,
     if 'aggregate_k_gradients' not in config or config['aggregate_k_gradients'] is None:
         config['aggregate_k_gradients'] = 1
 
-    config['num_steps'] = math.ceil(config['num_steps'] * config['aggregate_k_gradients'])
-    config['batch_size'] = math.ceil(config['batch_size'] / config['aggregate_k_gradients'])
+    # config['num_steps'] = math.ceil(config['num_steps'] * config['aggregate_k_gradients'])
+    # config['batch_size'] = math.ceil(config['batch_size'] / config['aggregate_k_gradients'])
 
     def make_get_batch(model_proto, **extra_kwargs):
         def new_get_batch(batch_size, seq_len, num_features, hyperparameters
@@ -334,7 +332,7 @@ def get_model(config, device, should_train=True, verbose=False, state_dict=None,
                         , 'split': config['split']
                         , 'hyperparameters': prior_hyperparameters
                         , 'num_eval_fitting_samples': config.get('num_eval_fitting_samples', 1000)
-                        #, 'dynamic_batch_size': 1 if ('num_global_att_tokens' in config and config['num_global_att_tokens']) else 2
+                        , 'val_subset_size' : config.get('val_subset_size', 10)
                         , 'batch_size_per_gp_sample': config.get('batch_size_per_gp_sample', None)
                         , 'prompt_tuning': config.get('prompt_tuning', False)
                         , 'tuned_prompt_size': config.get('tuned_prompt_size', 0)
@@ -362,6 +360,8 @@ def get_model(config, device, should_train=True, verbose=False, state_dict=None,
                         , 'max_time': config.get('max_time', 0)
                         , 'kl_loss': config.get('kl_loss', False)
                         , 'subset_rows_bagging': config.get('subset_rows_bagging', 0)
+                        , 'bptt_search' : config.get('bptt_search', False)
+                        , 'workers' : config.get('workers', 1)
                         , **extra_kwargs
     }
 

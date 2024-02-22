@@ -28,7 +28,7 @@ import tunetables.utils as utils
 from tunetables.transformer import TransformerModel
 from tunetables.utils import get_cosine_schedule_with_warmup, get_openai_lr, StoreDictKeyPair, get_weighted_single_eval_pos_sampler, get_uniform_single_eval_pos_sampler
 import tunetables.priors as priors
-from priors.real import SummarizeAfter, process_data, loop_translate, TabDS, preprocess_input, get_train_dataloader
+from tunetables.priors.real import SummarizeAfter, process_data, loop_translate, TabDS, preprocess_input, get_train_dataloader
 from tunetables.losses import kl_divergence
 import tunetables.encoders as encoders
 import tunetables.positional_encodings as positional_encodings
@@ -55,7 +55,8 @@ def train(args, dataset, criterion, encoder_generator, emsize=200, nhid=200, nla
     start_time = time.time()
     max_time = extra_prior_kwargs_dict.get('max_time', 0)
     do_kl_loss = extra_prior_kwargs_dict.get('kl_loss', False)
-    
+    n_workers = extra_prior_kwargs_dict.get('num_workers', 1)
+
     if extra_prior_kwargs_dict.get('pad_features', None):
         num_features = 100
     else:
@@ -189,17 +190,17 @@ def train(args, dataset, criterion, encoder_generator, emsize=200, nhid=200, nla
         dl, bptt = get_train_dataloader(train_ds, 
                                   bptt=bptt, 
                                   shuffle=False, 
-                                  num_workers=1, 
+                                  num_workers=n_workers, 
                                   drop_last=True, 
                                   agg_k_grads=aggregate_k_gradients,
                                   not_zs=not_zs)
 
         val_dl = DataLoader(
-            val_ds, batch_size=min(128, y_val.shape[0] // 2), shuffle=False, num_workers=1,
+            val_ds, batch_size=min(128, y_val.shape[0] // 2), shuffle=False, num_workers=n_workers,
         )
 
         test_dl = DataLoader(
-            test_ds, batch_size=min(128, y_val.shape[0] // 2), shuffle=False, num_workers=1,
+            test_ds, batch_size=min(128, y_val.shape[0] // 2), shuffle=False, num_workers=n_workers,
         )
         # Fix the prior data TabPFN will use for fitting when including real data points
         X_data_for_fitting = []
@@ -475,7 +476,7 @@ def train(args, dataset, criterion, encoder_generator, emsize=200, nhid=200, nla
 
         return results, outputs, targets
     
-    def train_epoch(e_model, e_optimizer, boost_this_epoch=False, eval_model=None):
+    def train_epoch(e_model, e_optimizer, boost_this_epoch=False, eval_model=None, bptt_search=False):
         if max_time > 0 and time.time() - start_time > max_time:
             print("Max time reached. Exiting")
             exit(0)
@@ -500,9 +501,9 @@ def train(args, dataset, criterion, encoder_generator, emsize=200, nhid=200, nla
         step_time = 0
         before_get_batch = time.time()
         batches_seen = 0
-
         shuffle_every_epoch = extra_prior_kwargs_dict.get('shuffle_every_epoch', False)
         permute_feature_pos = extra_prior_kwargs_dict.get('permute_feature_position_in_ensemble', False)
+
         for batch, (data, targets, single_eval_pos) in enumerate(dl):
             if isinstance(data, list):
                 data = tuple(data)
@@ -529,10 +530,22 @@ def train(args, dataset, criterion, encoder_generator, emsize=200, nhid=200, nla
                 else:
                     single_eval_pos = targets.shape[0] - bptt_extra_samples
                 with autocast(enabled=scaler is not None):
+                    # TODO: TabPFN transformer doesn't support batched inputs
+                    # if batch_size > 1:
+                    #     data = (data[0].reshape(data[0].shape[0] // batch_size, X.shape[1], batch_size), data[1].reshape(data[1].shape[0] // batch_size, batch_size))
+                    if verbose and batch == 0:
+                        print("Start training epoch")
+                        print("Data shape: ", data[0].shape, "Targets shape: ", data[1].shape, "Single eval pos: ", single_eval_pos)
+
                     # If style is set to None, it should not be transferred to device
                     output = e_model(tuple(e.to(torch.float32).to(device) if torch.is_tensor(e) else e for e in data) if isinstance(data, tuple) else data.to(device)
                                    , single_eval_pos=single_eval_pos)
-                    assert output.requires_grad, "Output does not require gradients"
+                    
+                    # if batch_size > 1:
+                    #     output = output.flatten()
+
+                    if not bptt_search:
+                        assert output.requires_grad, "Output does not require gradients"
                     forward_time = time.time() - before_forward
 
                     if single_eval_pos is not None:
@@ -599,6 +612,8 @@ def train(args, dataset, criterion, encoder_generator, emsize=200, nhid=200, nla
 
                     output.backward(output_grad)
                     # gradient_dict[batch] = torch.cat(cur_grads, dim=0)
+                elif bptt_search:
+                    pass
                 else:
                     loss.backward()             
                 if batch % aggregate_k_gradients == aggregate_k_gradients - 1:
@@ -851,29 +866,35 @@ def train(args, dataset, criterion, encoder_generator, emsize=200, nhid=200, nla
             epoch_start_time = time.time()
             master_epoch_count.append(1)
             total_loss, total_positional_losses, time_to_get_batch, forward_time, step_time, nan_share, ignore_share =\
-                train_epoch(t_model, t_optim, boost_this_epoch, eval_model=eval_model)
+                train_epoch(t_model, t_optim, boost_this_epoch, eval_model=eval_model, bptt_search=False)
             val_score = val_score_nc = val_score_concat = val_score_nc_concat = test_score = test_score_nc = test_ece = test_tace = val_ece = val_tace = val_ece_nc = val_tace_nc = test_ece_nc = test_tace_nc = None
             res_dict = dict()
             res_dict['epoch_train_time'] = np.round(time.time() - epoch_start_time, 3).item()
             res_dict['master_epoch_count'] = len(master_epoch_count)
-            if real_prior \
-                and (epoch - 1) % validation_period == 0:
-                val_results, val_outputs, val_targets = real_data_eval(r_model=t_model, cl=real_data_qty, train_data=data_for_fitting, val_dl=val_dl)
+            LONG_VAL_EP = ((epoch - 1) % validation_period == 0)
+            if real_prior:
+                if LONG_VAL_EP:
+                    val_dl_small = None
+                    vrun_dl = val_dl
+                else:
+                    SMALL_VAL_SIZE = min(extra_prior_kwargs_dict.get('val_subset_size', 10), len(val_dl.dataset))
+                    val_dl_small = copy.deepcopy(val_dl)
+                    val_dl_small_ds = Subset(val_dl.dataset, list(range(SMALL_VAL_SIZE)))
+                    val_dl_small_dl = DataLoader(val_dl_small_ds, batch_size=val_dl.batch_size, shuffle=False, num_workers=val_dl.num_workers)
+                    vrun_dl = val_dl_small_dl
+                val_results, val_outputs, val_targets = real_data_eval(r_model=t_model, cl=real_data_qty, train_data=data_for_fitting, val_dl=vrun_dl)
                 res_dict = dict(res_dict, **{"Val_" + k : v for k, v in val_results.items()})
                 val_score = res_dict["Val_Accuracy"]
-
-                test_results, test_outputs, test_targets = real_data_eval(r_model=t_model, cl=real_data_qty, train_data=data_for_fitting, val_dl=test_dl)
-                res_dict = dict(res_dict, **{"Test_" + k : v for k, v in test_results.items()})
-                return_outputs = [val_outputs, test_outputs]
-                return_targets = [val_targets, test_targets]
+                return_outputs = [val_outputs]
+                return_targets = [val_targets]
                 if do_prompt_tuning:
                     #TODO: will this work with context length 0? Should this be a hyperparameter?
                     if do_concat != "":
                         ec = EmbeddingConcatenator(t_model, do_concat, prefix_weights_l)
                         t_model = concat_embedding(ec, t_model, do_concat)
-                        val_score_concat, _, _ = real_data_eval(r_model=ec.get_model(), cl=real_data_qty, train_data=data_for_fitting, val_dl=val_dl)
+                        val_score_concat, _, _ = real_data_eval(r_model=ec.get_model(), cl=real_data_qty, train_data=data_for_fitting, val_dl=vrun_dl)
                         res_dict = dict(res_dict, **{"Val_concat_" + k : v for k, v in val_score_concat.items()})
-                        val_score_nc_concat, _, _ = real_data_eval(r_model=ec.get_model(), cl=0, train_data=data_for_fitting, val_dl=val_dl)
+                        val_score_nc_concat, _, _ = real_data_eval(r_model=ec.get_model(), cl=0, train_data=data_for_fitting, val_dl=vrun_dl)
                         res_dict = dict(res_dict, **{"Val_concat_nc_" + k : v for k, v in val_score_nc_concat.items()})
                         t_model = restore_embedding(ec, t_model)
                         # Update optimizer parameters to include new embedding
@@ -882,39 +903,46 @@ def train(args, dataset, criterion, encoder_generator, emsize=200, nhid=200, nla
                     else:
                         val_score_nc_concat = ""
                         val_score_concat = ""
-                    val_score_nc, val_outputs, val_targets = real_data_eval(r_model=t_model, cl=0, train_data=data_for_fitting, val_dl=val_dl)
+                    val_score_nc, val_outputs, val_targets = real_data_eval(r_model=t_model, cl=0, train_data=data_for_fitting, val_dl=vrun_dl)
                     return_outputs.append(val_outputs)
                     return_targets.append(val_targets)
                     res_dict = dict(res_dict, **{"Val_nc_" + k : v for k, v in val_score_nc.items()})
-                    test_score_nc, test_outputs, test_targets = real_data_eval(r_model=t_model, cl=0, train_data=data_for_fitting, val_dl=test_dl)
-                    return_outputs.append(test_outputs)
-                    return_targets.append(test_targets)
-                    res_dict = dict(res_dict, **{"Test_nc_" + k : v for k, v in test_score_nc.items()})
-                if not extra_prior_kwargs_dict.get('uniform_bptt', False) \
+                #Early stopping logic
+                if (not extra_prior_kwargs_dict.get('uniform_bptt', False)) \
                     and val_score and val_score > best_val_score:
-                    #print("Train data:", data_for_fitting)
+                    if verbose:
+                        print("New best val score: ", val_score)
                     patience = 0
                     best_val_score = val_score
                     is_best = True
                     if do_prompt_tuning:
                         best_val_embed = t_model.prefix_embedding.weight.detach().cpu()
-                elif extra_prior_kwargs_dict.get('uniform_bptt', False) and bptt <= 128 \
-                    and do_prompt_tuning and \
+                elif extra_prior_kwargs_dict.get('uniform_bptt', False) and do_prompt_tuning and \
                     res_dict.get("Val_nc_Accuracy", 0) > best_val_score_nc:
+                    if verbose:
+                        print("New best val score nc: ", res_dict.get("Val_nc_Accuracy", 0))
                     patience = 0
                     best_val_score_nc = res_dict.get("Val_nc_Accuracy", 0)
                     is_best = True
                     best_val_embed = t_model.prefix_embedding.weight.detach().cpu()
                 else:
+                    print(extra_prior_kwargs_dict.get('uniform_bptt', False), bptt <= 128, res_dict.get("Val_nc_Accuracy", 0), best_val_score_nc)
                     patience += 1
             elif hasattr(dl, 'validate') and epoch % validation_period == 0:
                 with torch.no_grad():
                     val_score = dl.validate(model)
 
-            if patience > extra_prior_kwargs_dict.get('early_stopping_patience', 2):
-                if verbose:
-                    print("Early stopping after {} epochs".format(epoch))
-                break
+            NO_PATIENCE = (patience > extra_prior_kwargs_dict.get('early_stopping_patience', 2))
+            if is_best or (NO_PATIENCE and "Test_Accuracy" not in res_dict):
+                test_results, test_outputs, test_targets = real_data_eval(r_model=t_model, cl=real_data_qty, train_data=data_for_fitting, val_dl=test_dl)
+                res_dict = dict(res_dict, **{"Test_" + k : v for k, v in test_results.items()})
+                return_outputs = return_outputs[:1] + [test_outputs] + return_outputs[1:]
+                return_targets = return_targets[:1] + [test_targets] + return_targets[1:]
+                if do_prompt_tuning:
+                    test_score_nc, test_outputs, test_targets = real_data_eval(r_model=t_model, cl=0, train_data=data_for_fitting, val_dl=test_dl)
+                    res_dict = dict(res_dict, **{"Test_nc_" + k : v for k, v in test_score_nc.items()})
+                    return_outputs.append(test_outputs)
+                    return_targets.append(test_targets)
 
             if verbose:
                 get_time = (time.time() - epoch_start_time)
@@ -949,6 +977,9 @@ def train(args, dataset, criterion, encoder_generator, emsize=200, nhid=200, nla
                     with open(log_path, 'w') as f:
                         json.dump(res_dict, f, indent=4)
 
+                if NO_PATIENCE:
+                    break
+
             # stepping with wallclock time based scheduler
             t_sched.step()
 
@@ -963,6 +994,38 @@ def train(args, dataset, criterion, encoder_generator, emsize=200, nhid=200, nla
                 print("WARNING: Best embedding score {} does not match best score {}!".format(v_scr, best_res_dict['Val_Accuracy']))
 
         return best_outputs, best_targets, best_res_dict
+
+    # Search for max bptt
+    if extra_prior_kwargs_dict.get('bptt_search', False):
+        backup_epochs = epochs
+        epochs = 1
+        backup_unif_bptt = extra_prior_kwargs_dict.get('uniform_bptt', False)
+        extra_prior_kwargs_dict['uniform_bptt'] = True
+        bptt_intervals = ([128, 256, 512, 1024, 2048, 4096, 8192, 16384, 32768, 65536])
+        STOP = False
+        for bptt_idx, bptt in enumerate(bptt_intervals):
+            if verbose:
+                print("Trying bptt: ", bptt)
+            try:
+                dl, bptt = get_train_dataloader(dl.dataset, bptt=bptt, shuffle=True, num_workers=n_workers, drop_last=True, agg_k_grads=aggregate_k_gradients)
+                with torch.no_grad():
+                    total_loss, total_positional_losses, time_to_get_batch, forward_time, step_time, nan_share, ignore_share = train_epoch(model, optimizer, False, eval_model=eval_model, bptt_search=True)
+            except RuntimeError as e:
+                if 'out of memory' in str(e):
+                    if verbose:
+                        print(f"OOM with batch size {bptt}")
+                    STOP = True
+                    search_idx = max(bptt_idx, 2)
+                    bptt = bptt_intervals[search_idx-2]
+                    print("Setting bptt to ", bptt)
+                    dl, bptt = get_train_dataloader(dl.dataset, bptt=bptt, shuffle=True, num_workers=n_workers, drop_last=True, agg_k_grads=aggregate_k_gradients)
+                else:
+                    raise e
+            if STOP:
+                break
+        epochs = backup_epochs
+        extra_prior_kwargs_dict['uniform_bptt'] = backup_unif_bptt
+    
 
     # main training loop
     bagging = extra_prior_kwargs_dict.get("bagging", False)
@@ -1011,7 +1074,7 @@ def train(args, dataset, criterion, encoder_generator, emsize=200, nhid=200, nla
             dl, bptt = get_train_dataloader(subset_dataset, 
                                             bptt=bptt, 
                                             shuffle=True, 
-                                            num_workers=1, 
+                                            num_workers=n_workers, 
                                             drop_last=True, 
                                             agg_k_grads=aggregate_k_gradients)
         prior_grad_dict = None
@@ -1074,7 +1137,7 @@ def train(args, dataset, criterion, encoder_generator, emsize=200, nhid=200, nla
             if bagging:
                 subset_dataset = Subset(dl_backup.dataset, split_indices[i])
                 dl = DataLoader(
-                    subset_dataset, batch_size=bptt, shuffle=False, num_workers=1, drop_last=True,
+                    subset_dataset, batch_size=bptt, shuffle=False, num_workers=n_workers, drop_last=True,
                 )
             cur_boost_iter = i
             print("Ensembling iteration: ", i+1, " of ", boosting_n_iters, "\n \n")
@@ -1168,9 +1231,9 @@ def train(args, dataset, criterion, encoder_generator, emsize=200, nhid=200, nla
             dl = None
         # todo: model_builder.py expects two outputs: model, results_dict
         #return total_loss, total_positional_losses, model.to('cpu'), dl
-        return model, best_results
+        return model.to('cpu'), best_results
 
-    return model, best_results
+    return model.to('cpu'), best_results
 
 def _parse_args(config_parser, parser):
     # Do we have a config file to parse?

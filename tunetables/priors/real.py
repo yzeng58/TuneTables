@@ -554,7 +554,6 @@ class SubsetMaker(object):
         # print('setting numpy seed to', seed)
         # np.random.seed(seed)
 
-        print("self.subset_features_method",self.subset_features_method)
         if self.give_full_features:
                 pass
         else:
@@ -870,7 +869,6 @@ def preprocess_input(eval_xs, preprocess_transform, summerize_after_prep):
     return eval_xs
 
 def get_train_dataloader(ds, bptt=1000, shuffle=True, num_workers=1, drop_last=True, agg_k_grads=1, not_zs=True):
-        # old_bptt = bptt
         dl = DataLoader(
             ds, batch_size=bptt, shuffle=shuffle, num_workers=num_workers, drop_last=drop_last,
         )
@@ -881,7 +879,6 @@ def get_train_dataloader(ds, bptt=1000, shuffle=True, num_workers=1, drop_last=T
             else:
                 n_batches = 1
             bptt = int(ds_len // n_batches)
-            # bptt = int(bptt // 2)
             dl = DataLoader(
                 ds, batch_size=bptt, shuffle=shuffle, num_workers=num_workers, drop_last=drop_last,
             )
@@ -891,6 +888,4 @@ def get_train_dataloader(ds, bptt=1000, shuffle=True, num_workers=1, drop_last=T
                 ds, batch_size=bptt, shuffle=shuffle, num_workers=num_workers, drop_last=drop_last,
             )
             # raise ValueError(f'Number of batches {len(dl)} not divisible by {agg_k_grads}, please modify aggregation factor.')
-        # if old_bptt != bptt:
-        #     print(f'Batch size changed from {old_bptt} to {bptt} to be divisible by {agg_k_grads} (with last batch dropped).')
         return dl, bptt

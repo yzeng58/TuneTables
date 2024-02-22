@@ -6,11 +6,15 @@ import datetime
 import argparse
 import json
 import shutil
+import copy
 from pathlib import Path
 
 from tqdm.auto import tqdm
 
 from all_tasks import get_all_tasks
+from tunetables.utils import wandb_init
+
+import wandb
 
 MAX_CLASSES = 10
 MAX_FEATURES = 100
@@ -30,13 +34,14 @@ async def run_command(cmd):
 
 def main_f(args):
 
-    def run_tunetables(dataset_path, task, split, log_dir, args, base_cmd, gcp_txt):
-        if task == "tunetables":
-            UPPER_CUTOFF = 100000
-        elif task == "tunetables-long":
+    def run_tunetables(dataset_path, task, split, log_dir, args, base_cmd, gcp_txt, do_wandb):
+        if task == "tunetables-long":
             UPPER_CUTOFF = 1e10
         elif task == "tunetables-short":
             UPPER_CUTOFF = 10000
+        elif "tunetables" in task:
+            UPPER_CUTOFF = 100000
+            print(f"Using default upper cutoff of 100000 for task {task}")
         args.real_data_qty = MAX_SAMPLES
         metadata_path = Path(dataset_path[1:-1]) / 'metadata.json'
         with open(metadata_path) as f:
@@ -51,9 +56,12 @@ def main_f(args):
             #NOTE: Other options: zs-pca_white-32, zs-isomap-32, zs-ica-32, zs-random-32, zs-sparse_random_projection-32
             tt_tasks = ['zs-pca-16', 'zs-mutual_information-16']
             for task in tt_tasks:
-                res, _ = run_single_job(dataset_path, task, split, log_dir, args, base_cmd, gcp_txt)
-                all_res[task] = res["Val_Accuracy"]
-                all_res_d[task] = res
+                try:
+                    res, _ = run_single_job(dataset_path, task, split, log_dir, args, base_cmd, gcp_txt)
+                    all_res[task] = res["Val_Accuracy"]
+                    all_res_d[task] = res
+                except:
+                    pass
             best_task = max(all_res, key=all_res.get)
             feat_sel_method = best_task.split('-')[1]
         else:
@@ -82,32 +90,62 @@ def main_f(args):
                 ]
         else:
             if feat_sel_method != '':
-                tt_tasks = [f'pt1000-10ens-randinit-avg-top2-unif-reseed-{feat_sel_method}', 
-                            f'pt1000-10ens-randinit-avg-top2-unif-reseed-sumafter-{feat_sel_method}',
-                            f'pt1000-10ens-randinit-avg-top2-reseed-{feat_sel_method}',
-                            f'pt1000-10ens-randinit-avg-top2-reseed-sumafter-{feat_sel_method}',]
+                tt_tasks = [f'pt100-10ens-randinit-avg-top2-unif-reseed-{feat_sel_method}', 
+                            f'pt100-10ens-randinit-avg-top2-unif-reseed-sumafter-{feat_sel_method}',
+                            #f'pt100-10ens-randinit-avg-top2-reseed-{feat_sel_method}',
+                            #f'pt100-10ens-randinit-avg-top2-reseed-sumafter-{feat_sel_method}',
+                            ]
             else:
                 tt_tasks = ['zs-random-16',
                             'zs-random-32',
-                            'pt1000-10ens-randinit-avg-top2-unif-reseed',
-                            'pt1000-10ens-randinit-avg-top2-reseed',
+                            'pt100-10ens-randinit-avg-top2-unif-reseed',
+                            # 'pt1000-10ens-randinit-avg-top2-reseed',
                             ]
         if args.verbose:
             print("For dataset", dataset_path, "split", split, "with", n_classes, "classes, and", n_features, "features, and", n_samples, "samples, running tasks:", tt_tasks)
-        args.bptt_backup = args.bptt
-        for task in tt_tasks:
+        
+        
+        # args.bptt_backup = args.bptt
+        
+        #wandb logging for tunetables meta-optimization
+        if do_wandb:
+            model_string = task_str = "tunetables" + '_split_' + str(split) + "_" + datetime.datetime.now().strftime("%Y%m%d%H%M%S")
+            wandb_group = dataset.strip() + "_" + task_str
+            config = dict()
+            config['wandb_group'] = wandb_group
+            config['wandb_project'] = args.wandb_project
+            config['wandb_entity'] = args.wandb_entity
+            config['tt_tasks'] = tt_tasks
+            config['dataset'] = dataset.strip()
+            config['split'] = split
+            config['n_classes'] = n_classes
+            config['n_features'] = n_features
+            config['n_samples'] = n_samples
+            config['upper_cutoff'] = UPPER_CUTOFF
+            config['state_dict'] = None
+            wandb_init(config, model_string)
+            
+        start_time = time.time()
+        for i, task in enumerate(tt_tasks):
+            
             if all_res_d.get(task, None) is not None:
                 continue
-            args.bptt = args.bptt_backup
-            if 'unif' in task:
-                args.bptt_backup = args.bptt
-                args.bptt = 128
+            # args.bptt = args.bptt_backup
+            # if 'unif' in task:
+            #     args.bptt_backup = args.bptt
+            #     args.bptt = 128
             res, _ = run_single_job(dataset_path, task, split, log_dir, args, base_cmd, gcp_txt)
+            if do_wandb:
+                wandb.log(res, step=i, commit=True)
             if args.verbose:
                 print("Best epoch results for", dataset.strip(), "split", split, "task", task.strip(), ":", res)
             all_res_d[task] = res
             all_res[task] = max(res.get("Val_Accuracy", 0.0), res.get("Val_nc_Accuracy", 0.0), res.get("Ens_Val_Accuracy", 0.0), res.get("Ens_Val_Accuracy_NC", 0.0))
         best_task = max(all_res, key=all_res.get)
+        time_taken = time.time() - start_time
+        if do_wandb:
+            wandb.log({"tunetables_runtime": time_taken})
+            wandb.finish()
         return all_res_d[best_task], best_task
         
 
@@ -123,7 +161,10 @@ def main_f(args):
             task_str += '_shuffleep_'
         task_str += '_rdq_' + str(args.real_data_qty)
         task_str += '_split_' + str(split)
+        if args.epochs > 0:
+            task_str += '_epochs_' + str(args.epochs)
         if task.startswith('zs'):
+            #zero-shot logic
             ensemble_size = int(task.split('-')[-1])
             subset_ft_method = task.split('-')[-2]
             command = ['python', base_cmd, 
@@ -131,7 +172,8 @@ def main_f(args):
                     '--subset_features_method', subset_ft_method,
                     '--split', str(split),
                     '--real_data_qty', str(args.real_data_qty),
-                    '--zs-eval-ensemble', str(ensemble_size)]
+                    '--zs-eval-ensemble', str(ensemble_size),
+                    '--workers', "1"]
             if args.wandb_log:
                 command = command + [
                     '--wandb_log',
@@ -157,6 +199,10 @@ def main_f(args):
                 next_task['wandb_project'] = args.wandb_project
             if args.resume != '':
                 next_task['resume'] = args.resume
+            if args.epochs > 0:
+                next_task['epochs'] = args.epochs
+            if args.validation_period > 0:
+                next_task['validation_period'] = args.validation_period
             if npp:
                 try:
                     next_task.pop('do_preprocess')
@@ -187,8 +233,8 @@ def main_f(args):
         if args.shuffle_every_epoch:
             command.append("--shuffle_every_epoch")
         if args.verbose:
-            command.append("--verbose")         
-        # print("Running command:", ' '.join(command))
+            command.append("--verbose")
+            print("Running command:", ' '.join(command))
         job_str = "\'" + ' '.join(command) + '\'\n'
         if args.gcp_run:
             return {}, job_str
@@ -225,6 +271,8 @@ def main_f(args):
                 shutil.move(output, log_dir)
             return output_dict, job_str
 
+    #START OF MAIN_F
+
     with open(args.datasets) as f:
         datasets = f.readlines()
 
@@ -241,7 +289,6 @@ def main_f(args):
     gcp_txt = "run_commands=(\n"
 
     for dataset in tqdm(datasets):
-        print("Starting dataset: ", dataset.strip())
         dataset_path = "\"" + os.path.join(args.base_path, dataset.strip()) + '\"'
         #sanitize name
         # dataset_path = dataset_path.replace(r'(', r'\(').replace(r')', r'\)')
@@ -251,16 +298,35 @@ def main_f(args):
             os.makedirs(log_dir)
         for split in args.splits:
             for task in tasks:
-                if 'tunetables' in task:
-                    res, task_str = run_tunetables(dataset_path, task, split, log_dir, args, base_cmd, gcp_txt)
+                if 'tunetables' in task and args.gcp_run:
+                    task_args = [
+                        "--splits", str(split),
+                        "--print_stdout",
+                        "--verbose",
+                    ]
+                    if args.bptt > -1:
+                        task_args = task_args + ["--bptt", str(args.bptt)]
+                    if args.wandb_log:
+                        task_args = task_args + [
+                            "--wandb_log",
+                            "--wandb_project", args.wandb_project,
+                            "--wandb_entity", args.wandb_entity,
+                        ]
+                    task_str = task + "_dataset_" + dataset.strip() + "_args_" + " ".join(task_args)
+                    res = None
+                elif 'tunetables' in task:
+                    do_wandb = args.wandb_log
+                    tt_args = copy.deepcopy(args)
+                    tt_args.wandb_log = False
+                    res, task_str = run_tunetables(dataset_path, task, split, log_dir, tt_args, base_cmd, gcp_txt, do_wandb)
                 else:
                     res, task_str = run_single_job(dataset_path, task, split, log_dir, args, base_cmd, gcp_txt)
                 if args.gcp_run:
-                    gcp_txt += task_str + "\n"
-                if res:
-                    print("Results for", dataset.strip(), "split", split, "task", task.strip(), ":", res)
+                    gcp_txt += "\"" + task_str + "\"" "\n"
+                    if res:
+                        print("Results for", dataset.strip(), "split", split, "task", task.strip(), ":", res)
     if args.gcp_run:
-        task_str = "tunetables_gcp_" + dataset.strip() + "_" + datetime.datetime.now().strftime("%Y%m%d%H%M%S")
+        task_str = dataset.strip() + "_" + datetime.datetime.now().strftime("%Y%m%d%H%M%S")
         gcp_txt += ")"
         with open("run_commands.sh", "w") as f:
             f.write(gcp_txt)
@@ -294,7 +360,10 @@ if __name__ == '__main__':
     parser.add_argument('--gcp_run', action='store_true', help='Whether to launch the job on a GCP instance.')
     parser.add_argument('--wandb_log', action='store_true', help='Whether to log to wandb.')
     parser.add_argument('--wandb_project', type=str, default='', help='Project name for wandb logging')
+    parser.add_argument('--wandb_entity', type=str, default='nyu-dice-lab', help='Entity for wandb logging.')
     parser.add_argument('--print_stdout', action='store_true', help='Whether to print stdout from each run.')
     parser.add_argument('--verbose', action='store_true', help='Whether to print verbose output.')
+    parser.add_argument('--epochs', type=int, default=0, help='Number of epochs to run.')
+    parser.add_argument('--validation_period', type=int, default=0, help='Number of epochs between validation runs.')
     args = parser.parse_args()
     main_f(args)

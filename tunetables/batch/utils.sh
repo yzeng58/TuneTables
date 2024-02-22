@@ -2,9 +2,6 @@ run_experiment_gpu() {
 
   source ./config/gcp_vars.sh
 
-  # identical to run_experiment(), but attaches a teslsa T4 GPU to the instance and uses a 200GB disk rather than default 100GB
-
-  # $1 = run command
   run_command="$1"
   instance_name="$2"
 
@@ -67,18 +64,62 @@ AAAAB3NzaC1yc2EAAAADAQABAAABAQDfhoLPr6ZoSSL9epL7N0YQuJ9nD\+JB5CmK/f3NTX0vmOAHT51
   MAX_TRIES_SSH=2
   while [ $COUNT -le $MAX_TRIES_SSH ]; do
 
-    # attempt to run experiment
-    gcloud compute ssh --ssh-flag="-A" ${instance_name} --zone=${zone} --project=${project} \
-      --command="\
-      sudo /opt/deeplearning/install-driver.sh; \
-      cd ${instance_repo_dir}; \
-      source /home/bf996/.bashrc; \
-      git config --global --add safe.directory /home/benfeuer/TabPFN-pt; \
-      git pull; \
-      pip install .; \
-      cd ${instance_repo_dir}/tunetables; \
-      ${run_command}; \
-      "
+    # attempt to run tunetables experiment
+    if [[ $run_command == *"tunetables"* ]]; then
+      # get substrings
+
+      delimiter="_dataset_"
+      replacement_delimiter=$'\x1F' # Use a character unlikely to be in the string
+
+      # Replace the delimiter with the replacement delimiter and then split
+      modified_string="${run_command//$delimiter/$replacement_delimiter}"
+      IFS="$replacement_delimiter" read -ra parts <<< "$modified_string"
+
+      task_str="${parts[0]}"
+      dataset_str="${parts[1]}"
+
+      delimiter="_args_"
+      replacement_delimiter=$'\x0F'
+
+      # Replace the delimiter with the replacement delimiter and then split
+      modified_string="${run_command//$delimiter/$replacement_delimiter}"
+
+      IFS="$replacement_delimiter" read -ra parts <<< "$modified_string"
+
+      args_str="${parts[1]}"
+      run_cmd="python3 batch/run_tt_job.py ${args_str} --datasets './metadata/dataset.txt' --tasks './metadata/task.txt'"
+
+      echo "running tunetables experiment with command: ${run_cmd}"
+
+      gcloud compute ssh --ssh-flag="-A" ${instance_name} --zone=${zone} --project=${project} \
+        --command="\
+        sudo /opt/deeplearning/install-driver.sh; \
+        cd ${instance_repo_dir}; \
+        source /home/bf996/.bashrc; \
+        git config --global --add safe.directory /home/benfeuer/TabPFN-pt; \
+        git checkout exp-feb; \
+        sudo git pull; \
+        sudo pip install .; \
+        cd ${instance_repo_dir}/tunetables; \
+        sudo echo ${task_str} >> metadata/task.txt; \
+        sudo echo ${dataset_str} >> metadata/dataset.txt; \
+        ${run_cmd}; \
+        "
+    else
+      # attempt to run standard experiment
+      gcloud compute ssh --ssh-flag="-A" ${instance_name} --zone=${zone} --project=${project} \
+        --command="\
+        sudo /opt/deeplearning/install-driver.sh; \
+        cd ${instance_repo_dir}; \
+        source /home/bf996/.bashrc; \
+        git config --global --add safe.directory /home/benfeuer/TabPFN-pt; \
+        git checkout main; \
+        sudo git pull; \
+        sudo pip install .; \
+        cd ${instance_repo_dir}/tunetables; \
+        ${run_command}; \
+        "
+    fi
 
     #${run_command}
     SSH_RETURN_CODE=$?

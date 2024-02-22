@@ -71,11 +71,21 @@ def set_compatibility_params(config, args):
         #TODO: check this
         config['prior_type'], config['differentiable'], config['flexible'] = args.prior_type, True, False
     config['output_multiclass_ordered_p'] = 0.
-    del config['differentiable_hyperparameters']['output_multiclass_ordered_p']
+    try:
+        del config['differentiable_hyperparameters']['output_multiclass_ordered_p']
+    except:
+        pass
+    try:
+        del config['differentiable_hyperparameters']['multiclass_type']
+    except:
+        pass
+    try:
+            del config['differentiable_hyperparameters']['sampling']
+    except:
+        pass
     config['multiclass_type'] = 'rank'
-    del config['differentiable_hyperparameters']['multiclass_type']
+    
     config['sampling'] = 'normal' # vielleicht schlecht?
-    del config['differentiable_hyperparameters']['sampling']
     config['pre_sample_causes'] = True
     config['multiclass_loss_type'] = 'nono' # 'compatible'
     config['categorical_feature_p'] = .2 # diff: .0
@@ -90,7 +100,7 @@ def set_compatibility_params(config, args):
     config["mix_activations"] = False # False heisst eig True
     config['multiclass_type'] = config['multiclass_type'] if 'multiclass_type' in config else 'rank'
     config['balanced'] = False
-
+    config['eval_positions'] = [int(config['bptt'] * 0.95)] if config['bptt_extra_samples'] is None else [int(config['bptt'])]
     # ?
     config['canonical_y_encoder'] = False
 
@@ -103,7 +113,23 @@ def set_compatibility_params(config, args):
     return config
 
 def reload_config(config_type='causal', task_type='multiclass', longer=0, args=None):
-    config = get_prior_config(config_type=config_type)
+    if config_type == 'real':
+        config = {
+        "dropout": 0.0,
+        "emsize": 512,
+        "nlayers": 12,
+        "num_features": 100,
+        "nhead": 4,
+        "nhid_factor": 2,
+        "eval_positions": None,
+        "seq_len_used": args.bptt,
+        "sampling": 'normal',
+        "mix_activations": False,
+        "pre_sample_causes": True,
+        "multiclass_type": 'rank'
+    }
+    else:
+        config = get_prior_config(config_type=config_type)
         
     #hard-coded limits of original TabPFN model
     config['max_num_classes'] = args.max_num_classes
@@ -130,6 +156,8 @@ def reload_config(config_type='causal', task_type='multiclass', longer=0, args=N
     config['emsize'] = 512
     config['nhead'] = config['emsize'] // 128
     config['max_eval_pos'] = config['bptt'] = args.bptt
+    config['batch_size'] = args.batch_size
+    config['bptt_search'] = args.bptt_search
     config['aggregate_k_gradients'] = args.aggregate_k_gradients
     config['epochs'] = args.epochs
     config['warmup_epochs'] = args.epochs // 10
@@ -144,9 +172,11 @@ def reload_config(config_type='causal', task_type='multiclass', longer=0, args=N
     config['pad_features'] = args.pad_features
     config['reseed_data'] = args.reseed_data
     config['normalize_to_ranking'] = False # This should be kept to false, it has learning from the future issues
-
+    config['workers'] = args.workers
+    
     #meta-parameters
     config['validation_period'] = args.validation_period
+    config['val_subset_size'] = args.val_subset_size
     config['verbose'] = args.verbose
     config['save_every_k_epochs'] = args.save_every_k_epochs
     config['max_time'] = args.max_time
@@ -190,13 +220,18 @@ def reload_config(config_type='causal', task_type='multiclass', longer=0, args=N
     #BPTT and batch size
     config['uniform_bptt'] = args.uniform_bptt
     if config['uniform_bptt']:
-        config['bptt_extra_samples'] = 128
-        if config['bptt'] < 128:
-            print("Warning: bptt should be >= 128 when using uniform bptt, as currently 128 samples per batch are reserved for evaluation. Setting bptt to 128.")
-            config['bptt'] = 128
+        assert config['bptt'] % config['batch_size'] == 0, "bptt should be divisible by batch size when using uniform bptt"
+        config['bptt_extra_samples'] = config['bptt']
+
+        #NOTE: old logic
+        # config['bptt_extra_samples'] = 128
+        # if config['bptt'] < 128:
+        #     print("Warning: bptt should be >= 128 when using uniform bptt, as currently 128 samples per batch are reserved for evaluation. Setting bptt to 128.")
+        #     config['bptt'] = 128
+
+
     else:
         config['bptt_extra_samples'] = None
-    config['eval_positions'] = [int(config['bptt'] * 0.95)] if config['bptt_extra_samples'] is None else [int(config['bptt'])]
 
     #Feature subset selection
     config['subset_features'] = 100
@@ -225,9 +260,6 @@ def reload_config(config_type='causal', task_type='multiclass', longer=0, args=N
     config['wandb_entity'] = args.wandb_entity
     config['wandb_log_test_interval'] = args.validation_period
 
-    #batch size parameter doesn't have any effect when using real data prior
-    config['batch_size'] = args.batch_size
-
     config = set_compatibility_params(config, args)
     
     model_string = '_multiclass' + '_'+datetime.now().strftime("%m_%d_%Y_%H_%M_%S")
@@ -247,9 +279,10 @@ def parse_args():
     parser.add_argument('--tuned_prompt_size', type=int, default=0, help='Size of the tuned prompt.')
     parser.add_argument('--tuned_prompt_label_balance', type=str, default='equal', help='Label balance for the tuned prompt (equal, proportional).')
     parser.add_argument('--lr', type=float, default=0.0001, help='Learning rate.')
-    parser.add_argument('--batch_size', type=int, default=4, help='Batch size.')
+    parser.add_argument('--batch_size', type=int, default=1, help='Batch size.')
     parser.add_argument('--bptt', type=int, default=1152, help='Batch per train time.')
-    parser.add_argument('--uniform_bptt', action='store_true', help='Whether to use uniform bptt. Note that uniform bptt adds 128 extra samples per batch (for evaluation), so bptt should be >= 128.')
+    parser.add_argument('--bptt_search', action='store_true', help='Search for the near-maximum bptt that will fit in memory in range (32, 65536).')
+    parser.add_argument('--uniform_bptt', action='store_true', help='Whether to use uniform bptt. Note that uniform bptt adds 128 extra samples per batch (for evaluation), so bptt should be > 128 when using uniform_bptt.')
     parser.add_argument('--seed', type=int, default=135798642, help='Random seed.')
     parser.add_argument('--early_stopping', type=int, default=2, help='Patience (for early stopping).')
     parser.add_argument('--epochs', type=int, default=100, help='Number of epochs to train for.')
@@ -267,7 +300,8 @@ def parse_args():
     parser.add_argument('--permute_feature_position_in_ensemble', action='store_true', help='Whether to ensemble over feature position permutations.')
     parser.add_argument('--concat_method', type=str, default="", help='concatenation method (duplicate, empty = none)')
     parser.add_argument('--save_every_k_epochs', type=int, default=10, help='How often to save new checkpoints.')
-    parser.add_argument('--validation_period', type=int, default=4, help='How often to validate.')
+    parser.add_argument('--validation_period', type=int, default=4, help='How often to validate on the entire val set.')
+    parser.add_argument('--val_subset_size', type=int, default=500, help='How many samples to use for fast validation.')
     parser.add_argument('--wandb_name', type=str, default='tabpfn_pt_airlines', help='Name for wandb logging.')
     parser.add_argument('--wandb_log', action='store_true', help='Whether to log to wandb.')
     parser.add_argument('--wandb_group', type=str, default='temp', help='Group for wandb logging.')
@@ -289,13 +323,14 @@ def parse_args():
     parser.add_argument('--real_data_qty', type=int, default=0, help='Number of real data samples to use for fitting.')
     parser.add_argument('--summerize_after_prep', action='store_true', help='train_feature_extractor.')
     parser.add_argument('--kl_loss', action='store_true', help='Whether to use KL loss.')
+    parser.add_argument('--workers', type=int, default=8, help='Number of workers for data loading.')
     args = parser.parse_args()
     return args
 
 def train_loop():
     args = parse_args()
 
-    config, model_string = reload_config(longer=1, args=args)
+    config, model_string = reload_config(config_type="real", longer=1, args=args)
 
     #TODO: check whether config_sample should be iterated within train_function
     # config_sample = evaluate_hypers(config, args)
