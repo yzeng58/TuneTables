@@ -296,7 +296,9 @@ def main_f(args):
             os.makedirs(log_dir)
         for split in args.splits:
             for task in tasks:
-                if 'tunetables' in task:
+                if 'tunetables' in task and args.gcp_run:
+                    task_str = task + "_dataset_" + dataset.strip()
+                elif 'tunetables' in task:
                     do_wandb = args.wandb_log
                     tt_args = copy.deepcopy(args)
                     tt_args.wandb_log = False
@@ -308,7 +310,7 @@ def main_f(args):
                 if res:
                     print("Results for", dataset.strip(), "split", split, "task", task.strip(), ":", res)
     if args.gcp_run:
-        task_str = "tunetables_gcp_" + dataset.strip() + "_" + datetime.datetime.now().strftime("%Y%m%d%H%M%S")
+        task_str = dataset.strip() + "_" + datetime.datetime.now().strftime("%Y%m%d%H%M%S")
         gcp_txt += ")"
         with open("run_commands.sh", "w") as f:
             f.write(gcp_txt)

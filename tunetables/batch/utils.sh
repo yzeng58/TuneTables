@@ -2,9 +2,6 @@ run_experiment_gpu() {
 
   source ./config/gcp_vars.sh
 
-  # identical to run_experiment(), but attaches a teslsa T4 GPU to the instance and uses a 200GB disk rather than default 100GB
-
-  # $1 = run command
   run_command="$1"
   instance_name="$2"
 
@@ -67,16 +64,50 @@ AAAAB3NzaC1yc2EAAAADAQABAAABAQDfhoLPr6ZoSSL9epL7N0YQuJ9nD\+JB5CmK/f3NTX0vmOAHT51
   MAX_TRIES_SSH=2
   while [ $COUNT -le $MAX_TRIES_SSH ]; do
 
-    # attempt to run experiment
-    gcloud compute ssh --ssh-flag="-A" ${instance_name} --zone=${zone} --project=${project} \
-      --command="\
-      sudo /opt/deeplearning/install-driver.sh; \
-      cd ${instance_repo_dir}; \
-      source /home/bf996/.bashrc; \
-      git config --global --add safe.directory /home/benfeuer/TabPFN-pt; \
-      cd ${instance_repo_dir}/tabpfn; \
-      ${run_command}; \
-      "
+    # attempt to run tunetables experiment
+    if [[ $run_command == *"tunetables"* ]]; then
+      # get substrings
+
+      delimiter="_dataset_"
+      replacement_delimiter=$'\x1F' # Use a character unlikely to be in the string
+
+      # Replace the delimiter with the replacement delimiter and then split
+      modified_string="${run_command//$delimiter/$replacement_delimiter}"
+      IFS="$replacement_delimiter" read -ra parts <<< "$modified_string"
+
+      task_str = "${parts[0]}"
+      dataset_str = "${parts[1]}"
+
+      #TODO: fix hard-coded bptt and wandb_project
+      gcloud compute ssh --ssh-flag="-A" ${instance_name} --zone=${zone} --project=${project} \
+        --command="\
+        sudo /opt/deeplearning/install-driver.sh; \
+        cd ${instance_repo_dir}; \
+        source /home/bf996/.bashrc; \
+        git config --global --add safe.directory /home/benfeuer/TabPFN-pt; \
+        git checkout exp-feb; \
+        sudo git pull; \
+        sudo pip install .; \
+        cd ${instance_repo_dir}/tunetables; \
+        sudo echo ${task_str} >> metadata/task.txt; \
+        sudo echo ${dataset_str} >> metadata/dataset.txt; \
+        'python3 batch/run_tt_job.py --wandb_log --wandb_project tabpfn-pt-1ep-feb22 --print_stdout --verbose --splits 0 1 2 --datasets "./metadata/dataset.txt" --tasks ".metadata/task.txt" --bptt 2048' \
+        "
+    else
+      # attempt to run standard experiment
+      gcloud compute ssh --ssh-flag="-A" ${instance_name} --zone=${zone} --project=${project} \
+        --command="\
+        sudo /opt/deeplearning/install-driver.sh; \
+        cd ${instance_repo_dir}; \
+        source /home/bf996/.bashrc; \
+        git config --global --add safe.directory /home/benfeuer/TabPFN-pt; \
+        git checkout main; \
+        sudo git pull; \
+        sudo pip install .; \
+        cd ${instance_repo_dir}/tunetables; \
+        ${run_command}; \
+        "
+    fi
 
     #${run_command}
     SSH_RETURN_CODE=$?
