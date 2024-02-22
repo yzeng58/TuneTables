@@ -70,26 +70,22 @@ AAAAB3NzaC1yc2EAAAADAQABAAABAQDfhoLPr6ZoSSL9epL7N0YQuJ9nD\+JB5CmK/f3NTX0vmOAHT51
 
       delimiter="_dataset_"
       replacement_delimiter=$'\x1F' # Use a character unlikely to be in the string
+      delimiter2="_args_"
+      replacement_delimiter2=$'\x0F'
 
       # Replace the delimiter with the replacement delimiter and then split
       modified_string="${run_command//$delimiter/$replacement_delimiter}"
+      modified_string="${run_command//$delimiter2/$replacement_delimiter2}"
       IFS="$replacement_delimiter" read -ra parts <<< "$modified_string"
 
       task_str="${parts[0]}"
-      dataset_str="${parts[1]}"
-
-      delimiter="_args_"
-      replacement_delimiter=$'\x0F'
-
-      # Replace the delimiter with the replacement delimiter and then split
-      modified_string="${run_command//$delimiter/$replacement_delimiter}"
-
-      IFS="$replacement_delimiter" read -ra parts <<< "$modified_string"
-
+      rem_str="${parts[1]}"
+      IFS="$replacement_delimiter2" read -ra parts <<< "$rem_str"
+      dataset_str="${parts[0]}"
       args_str="${parts[1]}"
       run_cmd="python3 batch/run_tt_job.py ${args_str} --datasets './metadata/dataset.txt' --tasks './metadata/task.txt'"
 
-      echo "running tunetables experiment with command: ${run_cmd}"
+      echo "running tunetables experiment with task: ${task_str}, dataset: ${dataset_str}, args: ${args_str}"
 
       gcloud compute ssh --ssh-flag="-A" ${instance_name} --zone=${zone} --project=${project} \
         --command="\
