@@ -354,6 +354,10 @@ def main_f(args):
                     ]
                     if args.bptt > -1:
                         task_args = task_args + ["--bptt", str(args.bptt)]
+                    if args.epochs > 0:
+                        task_args = task_args + ["--epochs", str(args.epochs)]
+                    if args.validation_period > 0:
+                        task_args = task_args + ["--validation_period", str(args.validation_period)]
                     if args.wandb_log:
                         task_args = task_args + [
                             "--wandb_log",

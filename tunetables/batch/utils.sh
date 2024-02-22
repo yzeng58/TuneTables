@@ -75,28 +75,28 @@ AAAAB3NzaC1yc2EAAAADAQABAAABAQDfhoLPr6ZoSSL9epL7N0YQuJ9nD\+JB5CmK/f3NTX0vmOAHT51
 
       # Replace the delimiter with the replacement delimiter and then split
       modified_string="${run_command//$delimiter/$replacement_delimiter}"
-      modified_string="${run_command//$delimiter2/$replacement_delimiter2}"
       IFS="$replacement_delimiter" read -ra parts <<< "$modified_string"
-
       task_str="${parts[0]}"
       rem_str="${parts[1]}"
-      IFS="$replacement_delimiter2" read -ra parts <<< "$rem_str"
+      modified_string2="${rem_str//$delimiter2/$replacement_delimiter2}"
+      IFS="$replacement_delimiter2" read -ra parts <<< "$modified_string2"
       dataset_str="${parts[0]}"
       args_str="${parts[1]}"
       run_cmd="python3 batch/run_tt_job.py ${args_str} --datasets './metadata/dataset.txt' --tasks './metadata/task.txt'"
 
       echo "running tunetables experiment with task: ${task_str}, dataset: ${dataset_str}, args: ${args_str}"
 
+        # sudo git config --global --add safe.directory /home/benfeuer/TabPFN-pt; \
+        # sudo git config pull.rebase false; \
+        # sudo git checkout main; \
+        # sudo git pull; \
+        # sudo pip install .; \
+        
       gcloud compute ssh --ssh-flag="-A" ${instance_name} --zone=${zone} --project=${project} \
         --command="\
         sudo /opt/deeplearning/install-driver.sh; \
         cd ${instance_repo_dir}; \
         source /home/bf996/.bashrc; \
-        sudo git config --global --add safe.directory /home/benfeuer/TabPFN-pt; \
-        sudo git config pull.rebase false; \
-        sudo git checkout main; \
-        sudo git pull; \
-        sudo pip install .; \
         cd ${instance_repo_dir}/tunetables; \
         sudo echo ${task_str} >> metadata/task.txt; \
         sudo echo ${dataset_str} >> metadata/dataset.txt; \
@@ -109,11 +109,6 @@ AAAAB3NzaC1yc2EAAAADAQABAAABAQDfhoLPr6ZoSSL9epL7N0YQuJ9nD\+JB5CmK/f3NTX0vmOAHT51
         sudo /opt/deeplearning/install-driver.sh; \
         cd ${instance_repo_dir}; \
         source /home/bf996/.bashrc; \
-        git config --global --add safe.directory /home/benfeuer/TabPFN-pt; \
-        sudo git config pull.rebase false; \
-        git checkout main; \
-        sudo git pull; \
-        sudo pip install .; \
         cd ${instance_repo_dir}/tunetables; \
         ${run_command}; \
         "
