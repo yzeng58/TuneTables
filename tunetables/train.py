@@ -530,12 +530,20 @@ def train(args, dataset, criterion, encoder_generator, emsize=200, nhid=200, nla
                 else:
                     single_eval_pos = targets.shape[0] - bptt_extra_samples
                 with autocast(enabled=scaler is not None):
+                    # TODO: TabPFN transformer doesn't support batched inputs
+                    # if batch_size > 1:
+                    #     data = (data[0].reshape(data[0].shape[0] // batch_size, X.shape[1], batch_size), data[1].reshape(data[1].shape[0] // batch_size, batch_size))
                     if verbose and batch == 0:
                         print("Start training epoch")
-                        print("Data shape: ", data[0].shape, "Targets shape: ", targets.shape, "Single eval pos: ", single_eval_pos)
+                        print("Data shape: ", data[0].shape, "Targets shape: ", data[1].shape, "Single eval pos: ", single_eval_pos)
+
                     # If style is set to None, it should not be transferred to device
                     output = e_model(tuple(e.to(torch.float32).to(device) if torch.is_tensor(e) else e for e in data) if isinstance(data, tuple) else data.to(device)
                                    , single_eval_pos=single_eval_pos)
+                    
+                    # if batch_size > 1:
+                    #     output = output.flatten()
+
                     if not bptt_search:
                         assert output.requires_grad, "Output does not require gradients"
                     forward_time = time.time() - before_forward
@@ -869,7 +877,7 @@ def train(args, dataset, criterion, encoder_generator, emsize=200, nhid=200, nla
                     val_dl_small = None
                     vrun_dl = val_dl
                 else:
-                    SMALL_VAL_SIZE = extra_prior_kwargs_dict.get('val_subset_size', 10)
+                    SMALL_VAL_SIZE = min(extra_prior_kwargs_dict.get('val_subset_size', 10), len(val_dl.dataset))
                     val_dl_small = copy.deepcopy(val_dl)
                     val_dl_small_ds = Subset(val_dl.dataset, list(range(SMALL_VAL_SIZE)))
                     val_dl_small_dl = DataLoader(val_dl_small_ds, batch_size=val_dl.batch_size, shuffle=False, num_workers=val_dl.num_workers)

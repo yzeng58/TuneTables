@@ -221,8 +221,8 @@ def get_model(config, device, should_train=True, verbose=False, state_dict=None,
     if 'aggregate_k_gradients' not in config or config['aggregate_k_gradients'] is None:
         config['aggregate_k_gradients'] = 1
 
-    config['num_steps'] = math.ceil(config['num_steps'] * config['aggregate_k_gradients'])
-    config['batch_size'] = math.ceil(config['batch_size'] / config['aggregate_k_gradients'])
+    # config['num_steps'] = math.ceil(config['num_steps'] * config['aggregate_k_gradients'])
+    # config['batch_size'] = math.ceil(config['batch_size'] / config['aggregate_k_gradients'])
 
     def make_get_batch(model_proto, **extra_kwargs):
         def new_get_batch(batch_size, seq_len, num_features, hyperparameters

@@ -89,22 +89,26 @@ def main_f(args):
                 ]
         else:
             if feat_sel_method != '':
-                tt_tasks = [f'pt1000-10ens-randinit-avg-top2-unif-reseed-{feat_sel_method}', 
-                            f'pt1000-10ens-randinit-avg-top2-unif-reseed-sumafter-{feat_sel_method}',
-                            f'pt1000-10ens-randinit-avg-top2-reseed-{feat_sel_method}',
-                            f'pt1000-10ens-randinit-avg-top2-reseed-sumafter-{feat_sel_method}',]
+                tt_tasks = [f'pt100-10ens-randinit-avg-top2-unif-reseed-{feat_sel_method}', 
+                            f'pt100-10ens-randinit-avg-top2-unif-reseed-sumafter-{feat_sel_method}',
+                            #f'pt100-10ens-randinit-avg-top2-reseed-{feat_sel_method}',
+                            #f'pt100-10ens-randinit-avg-top2-reseed-sumafter-{feat_sel_method}',
+                            ]
             else:
                 tt_tasks = ['zs-random-16',
                             'zs-random-32',
-                            'pt1000-10ens-randinit-avg-top2-unif-reseed',
-                            'pt1000-10ens-randinit-avg-top2-reseed',
+                            'pt100-10ens-randinit-avg-top2-unif-reseed',
+                            # 'pt1000-10ens-randinit-avg-top2-reseed',
                             ]
         if args.verbose:
             print("For dataset", dataset_path, "split", split, "with", n_classes, "classes, and", n_features, "features, and", n_samples, "samples, running tasks:", tt_tasks)
-        args.bptt_backup = args.bptt
+        
+        
+        # args.bptt_backup = args.bptt
+        
         #wandb logging for tunetables meta-optimization
         if do_wandb:
-            task_str = "tunetables" + '_bptt_' + str(args.bptt)
+            model_string = task_str = "tunetables" + '_split_' + str(split) + "_" + datetime.datetime.now().strftime("%Y%m%d%H%M%S")
             wandb_group = dataset.strip() + "_" + task_str
             config = dict()
             config['wandb_group'] = wandb_group
@@ -118,7 +122,6 @@ def main_f(args):
             config['n_samples'] = n_samples
             config['upper_cutoff'] = UPPER_CUTOFF
             config['state_dict'] = None
-            model_string = "tunetables_" + datetime.datetime.now().strftime("%Y%m%d%H%M%S")
             wandb_init(config, model_string)
             
         start_time = time.time()
@@ -126,10 +129,10 @@ def main_f(args):
             
             if all_res_d.get(task, None) is not None:
                 continue
-            args.bptt = args.bptt_backup
-            if 'unif' in task:
-                args.bptt_backup = args.bptt
-                args.bptt = 128
+            # args.bptt = args.bptt_backup
+            # if 'unif' in task:
+            #     args.bptt_backup = args.bptt
+            #     args.bptt = 128
             res, _ = run_single_job(dataset_path, task, split, log_dir, args, base_cmd, gcp_txt)
             if do_wandb:
                 wandb.log(res, step=i, commit=True)
