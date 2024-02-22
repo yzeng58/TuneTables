@@ -96,8 +96,9 @@ AAAAB3NzaC1yc2EAAAADAQABAAABAQDfhoLPr6ZoSSL9epL7N0YQuJ9nD\+JB5CmK/f3NTX0vmOAHT51
         sudo /opt/deeplearning/install-driver.sh; \
         cd ${instance_repo_dir}; \
         source /home/bf996/.bashrc; \
-        git config --global --add safe.directory /home/benfeuer/TabPFN-pt; \
-        git checkout exp-feb; \
+        sudo git config --global --add safe.directory /home/benfeuer/TabPFN-pt; \
+        sudo git config pull.rebase false; \
+        sudo git checkout main; \
         sudo git pull; \
         sudo pip install .; \
         cd ${instance_repo_dir}/tunetables; \
@@ -113,6 +114,7 @@ AAAAB3NzaC1yc2EAAAADAQABAAABAQDfhoLPr6ZoSSL9epL7N0YQuJ9nD\+JB5CmK/f3NTX0vmOAHT51
         cd ${instance_repo_dir}; \
         source /home/bf996/.bashrc; \
         git config --global --add safe.directory /home/benfeuer/TabPFN-pt; \
+        sudo git config pull.rebase false; \
         git checkout main; \
         sudo git pull; \
         sudo pip install .; \

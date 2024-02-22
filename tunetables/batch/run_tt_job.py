@@ -12,7 +12,10 @@ from pathlib import Path
 from tqdm.auto import tqdm
 
 from all_tasks import get_all_tasks
-from tunetables.utils import wandb_init
+try:
+    from tunetables.utils import wandb_init
+except:
+    from utils import wandb_init
 
 import wandb
 
