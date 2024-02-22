@@ -528,7 +528,7 @@ def train(args, dataset, criterion, encoder_generator, emsize=200, nhid=200, nla
                 elif bptt_extra_samples is None:
                     single_eval_pos = single_eval_pos_gen() if callable(single_eval_pos_gen) else single_eval_pos_gen
                 else:
-                    single_eval_pos = targets.shape[0] - bptt_extra_samples
+                    single_eval_pos = max(targets.shape[0] - bptt_extra_samples, 0)
                 with autocast(enabled=scaler is not None):
                     # TODO: TabPFN transformer doesn't support batched inputs
                     # if batch_size > 1:
