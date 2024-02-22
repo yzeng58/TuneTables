@@ -75,8 +75,19 @@ AAAAB3NzaC1yc2EAAAADAQABAAABAQDfhoLPr6ZoSSL9epL7N0YQuJ9nD\+JB5CmK/f3NTX0vmOAHT51
       modified_string="${run_command//$delimiter/$replacement_delimiter}"
       IFS="$replacement_delimiter" read -ra parts <<< "$modified_string"
 
-      task_str = "${parts[0]}"
-      dataset_str = "${parts[1]}"
+      task_str="${parts[0]}"
+      dataset_str="${parts[1]}"
+
+      delimiter="_args_"
+      replacement_delimiter=$'\x1D'
+
+      # Replace the delimiter with the replacement delimiter and then split
+      modified_string="${run_command//$delimiter/$replacement_delimiter}"
+      IFS="$replacement_delimiter" read -ra parts <<< "$modified_string"
+      args_str="${parts[1]}"
+      run_cmd="python3 batch/run_tt_job.py ${args_str} --datasets './metadata/dataset.txt' --tasks './metadata/task.txt'"
+
+      echo "running tunetables experiment with task: ${task_str} and dataset: ${dataset_str}"
 
       #TODO: fix hard-coded bptt and wandb_project
       gcloud compute ssh --ssh-flag="-A" ${instance_name} --zone=${zone} --project=${project} \
@@ -91,7 +102,7 @@ AAAAB3NzaC1yc2EAAAADAQABAAABAQDfhoLPr6ZoSSL9epL7N0YQuJ9nD\+JB5CmK/f3NTX0vmOAHT51
         cd ${instance_repo_dir}/tunetables; \
         sudo echo ${task_str} >> metadata/task.txt; \
         sudo echo ${dataset_str} >> metadata/dataset.txt; \
-        'python3 batch/run_tt_job.py --wandb_log --wandb_project tabpfn-pt-1ep-feb22 --print_stdout --verbose --splits 0 1 2 --datasets "./metadata/dataset.txt" --tasks ".metadata/task.txt" --bptt 2048' \
+        ${run_cmd}; \
         "
     else
       # attempt to run standard experiment

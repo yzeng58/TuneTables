@@ -35,12 +35,13 @@ async def run_command(cmd):
 def main_f(args):
 
     def run_tunetables(dataset_path, task, split, log_dir, args, base_cmd, gcp_txt, do_wandb):
-        if task == "tunetables":
-            UPPER_CUTOFF = 100000
-        elif task == "tunetables-long":
+        if task == "tunetables-long":
             UPPER_CUTOFF = 1e10
         elif task == "tunetables-short":
             UPPER_CUTOFF = 10000
+        elif "tunetables" in task:
+            UPPER_CUTOFF = 100000
+            print(f"Using default upper cutoff of 100000 for task {task}")
         args.real_data_qty = MAX_SAMPLES
         metadata_path = Path(dataset_path[1:-1]) / 'metadata.json'
         with open(metadata_path) as f:
@@ -270,6 +271,8 @@ def main_f(args):
                 shutil.move(output, log_dir)
             return output_dict, job_str
 
+    #START OF MAIN_F
+
     with open(args.datasets) as f:
         datasets = f.readlines()
 
@@ -286,7 +289,6 @@ def main_f(args):
     gcp_txt = "run_commands=(\n"
 
     for dataset in tqdm(datasets):
-        print("Starting dataset: ", dataset.strip())
         dataset_path = "\"" + os.path.join(args.base_path, dataset.strip()) + '\"'
         #sanitize name
         # dataset_path = dataset_path.replace(r'(', r'\(').replace(r')', r'\)')
@@ -297,7 +299,21 @@ def main_f(args):
         for split in args.splits:
             for task in tasks:
                 if 'tunetables' in task and args.gcp_run:
-                    task_str = task + "_dataset_" + dataset.strip()
+                    task_args = [
+                        "--splits", str(split),
+                        "--print_stdout",
+                        "--verbose",
+                    ]
+                    if args.bptt > -1:
+                        task_args = task_args + ["--bptt", str(args.bptt)]
+                    if args.wandb_log:
+                        task_args = task_args + [
+                            "--wandb_log",
+                            "--wandb_project", args.wandb_project,
+                            "--wandb_entity", args.wandb_entity,
+                        ]
+                    task_str = task + "_dataset_" + dataset.strip() + "_args_" + " ".join(task_args)
+                    res = None
                 elif 'tunetables' in task:
                     do_wandb = args.wandb_log
                     tt_args = copy.deepcopy(args)
@@ -307,8 +323,8 @@ def main_f(args):
                     res, task_str = run_single_job(dataset_path, task, split, log_dir, args, base_cmd, gcp_txt)
                 if args.gcp_run:
                     gcp_txt += task_str + "\n"
-                if res:
-                    print("Results for", dataset.strip(), "split", split, "task", task.strip(), ":", res)
+                    if res:
+                        print("Results for", dataset.strip(), "split", split, "task", task.strip(), ":", res)
     if args.gcp_run:
         task_str = dataset.strip() + "_" + datetime.datetime.now().strftime("%Y%m%d%H%M%S")
         gcp_txt += ")"
