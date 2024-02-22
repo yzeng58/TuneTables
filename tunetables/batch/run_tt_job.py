@@ -13,13 +13,60 @@ from tqdm.auto import tqdm
 
 from all_tasks import get_all_tasks
 
-from tunetables.utils import wandb_init
-
 import wandb
+import torch
 
 MAX_CLASSES = 10
 MAX_FEATURES = 100
 MAX_SAMPLES = 3000
+
+def is_json_serializable(obj):
+    """
+    Test if an object is JSON serializable.
+
+    Args:
+    obj (any): The object to test for JSON serialization.
+
+    Returns:
+    bool: True if the object is JSON serializable, False otherwise.
+    """
+    try:
+        json.dumps(obj)
+        return True
+    except (TypeError, OverflowError):
+        return False
+
+def make_serializable(config_sample):
+    if isinstance(config_sample, torch.Tensor):
+        config_sample = "tensor"
+    if isinstance(config_sample, dict):
+        config_sample = {k: make_serializable(config_sample[k]) for k in config_sample}
+    if isinstance(config_sample, list):
+        config_sample = [make_serializable(v) for v in config_sample]
+    if callable(config_sample):
+        config_sample = str(config_sample)
+    if not is_json_serializable(config_sample):
+        config_sample = str(config_sample)
+    return config_sample
+
+
+def get_wandb_api_key(api_key_file="./config/wandb_api_key.txt"):
+    # todo: if we make a config folder, put wandb_api_key.txt into the config folder
+    try:
+        return os.environ["WANDB_API_KEY"]
+    except KeyError:
+        with open(api_key_file, "r") as f:
+            key = f.read()
+        return key.strip()
+    
+def wandb_init(config, model_string):
+    mkey = get_wandb_api_key()
+    wandb.login(key=mkey)
+    simple_config = make_serializable(config)
+    if simple_config['state_dict'] is not None:
+        simple_config['state_dict'] = 'omitted'
+    wandb.init(config=simple_config, name=model_string, group=config['wandb_group'],
+            project=config['wandb_project'], entity=config['wandb_entity'])
 
 async def run_command(cmd):
     # Start the subprocess
