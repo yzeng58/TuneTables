@@ -160,7 +160,8 @@ def train(args, dataset, criterion, encoder_generator, emsize=200, nhid=200, nla
         if extra_prior_kwargs_dict.get("do_preprocess", False):
             preprocess_type=extra_prior_kwargs_dict.get("preprocess_type", "none")
             summerize_after_prep=extra_prior_kwargs_dict.get("summerize_after_prep", "False")
-
+            if verbose:
+                print("Summarize after preprocess: ", summerize_after_prep)
             X = preprocess_input(torch.from_numpy(X.copy().astype(np.float32)), preprocess_type, summerize_after_prep)    
             X_val = preprocess_input(torch.from_numpy(X_val.copy().astype(np.float32)), preprocess_type, summerize_after_prep)  
             X_test = preprocess_input(torch.from_numpy(X_test.copy().astype(np.float32)), preprocess_type, summerize_after_prep)
@@ -1122,6 +1123,9 @@ def train(args, dataset, criterion, encoder_generator, emsize=200, nhid=200, nla
             seed_all(next_seed)
             extra_prior_kwargs_dict['rand_seed'] = next_seed
             if extra_prior_kwargs_dict.get('reseed_data', True):
+                #reset subset maker
+                if getattr(dataset, "ssm", None) is not None:
+                    delattr(dataset, "ssm")
                 #load data
                 extra_prior_kwargs_dict['preprocess_type'] = np.random.choice(['none', 'power_all', 'robust_all', 'quantile_all'])
                 X, y, X_val, y_val, X_test, y_test, invert_perm_map, steps_per_epoch, num_classes, label_weights, train_ds, val_ds, test_ds = make_datasets(extra_prior_kwargs_dict, do_permute=not_zs, bptt=bptt, steps_per_epoch=steps_per_epoch)

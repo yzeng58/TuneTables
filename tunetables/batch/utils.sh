@@ -91,7 +91,7 @@ AAAAB3NzaC1yc2EAAAADAQABAAABAQDfhoLPr6ZoSSL9epL7N0YQuJ9nD\+JB5CmK/f3NTX0vmOAHT51
         # sudo git config pull.rebase false; \
         # sudo git checkout main; \
         # sudo git pull; \
-        # sudo pip install .; \
+        # pip install . --user; \
         # find -type f -exec chmod 777 {} \;
         # find -type d -exec chmod 777 {} \;
         
