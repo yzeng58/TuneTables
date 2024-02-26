@@ -734,8 +734,9 @@ def process_data(
             args.subset_features < args.num_features or args.subset_rows < len(X_train)
         )
     ):
-            
         if getattr(dataset, "ssm", None) is None:
+            if verbose:
+                print("args.summerize_after_prep: ", args.summerize_after_prep)
             subset_maker = real.SubsetMaker(
                 args.subset_features,
                 args.subset_rows,

@@ -56,6 +56,9 @@ def train(args, dataset, criterion, encoder_generator, emsize=200, nhid=200, nla
     max_time = extra_prior_kwargs_dict.get('max_time', 0)
     do_kl_loss = extra_prior_kwargs_dict.get('kl_loss', False)
     n_workers = extra_prior_kwargs_dict.get('num_workers', 1)
+    preprocess_type=extra_prior_kwargs_dict.get("preprocess_type", "none")
+    summerize_after_prep=extra_prior_kwargs_dict.get("summerize_after_prep", "False")
+
 
     if extra_prior_kwargs_dict.get('pad_features', None):
         num_features = 100
@@ -80,6 +83,9 @@ def train(args, dataset, criterion, encoder_generator, emsize=200, nhid=200, nla
         real_data_qty = bptt
 
     def make_datasets(extra_prior_kwargs_dict, do_permute=True, bptt = 0, steps_per_epoch=None):
+
+        args.summerize_after_prep = summerize_after_prep
+        args.preprocess_type = preprocess_type
 
         for i, split_dictionary in enumerate(dataset.split_indeces):
             # TODO: make stopping index a hyperparameter
@@ -158,14 +164,10 @@ def train(args, dataset, criterion, encoder_generator, emsize=200, nhid=200, nla
             label_weights = None
 
         if extra_prior_kwargs_dict.get("do_preprocess", False):
-            preprocess_type=extra_prior_kwargs_dict.get("preprocess_type", "none")
-            summerize_after_prep=extra_prior_kwargs_dict.get("summerize_after_prep", "False")
-            if verbose:
-                print("Summarize after preprocess: ", summerize_after_prep)
             X = preprocess_input(torch.from_numpy(X.copy().astype(np.float32)), preprocess_type, summerize_after_prep)    
             X_val = preprocess_input(torch.from_numpy(X_val.copy().astype(np.float32)), preprocess_type, summerize_after_prep)  
             X_test = preprocess_input(torch.from_numpy(X_test.copy().astype(np.float32)), preprocess_type, summerize_after_prep)
-            if args.summerize_after_prep:
+            if summerize_after_prep:
                 X, X_val, X_test = SummarizeAfter(X, X_val, X_test, y, y_val, y_test, num_features, args)            
         else:
             X = torch.from_numpy(X.copy().astype(np.float32))
