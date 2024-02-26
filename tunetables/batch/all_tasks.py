@@ -278,24 +278,31 @@ ens_randinit_avg_dict['rand_init_ensemble'] = ''
 ens_randinit_avg_top2_dict = copy.deepcopy(ens_randinit_avg_dict)
 ens_randinit_avg_top2_dict['keep_topk_ensemble'] = 2
 
-#Randinit Top2 Reseed
 ens_randinit_avg_dict = dict(pt1000_dict, **ens_randinit_avg_dict)
 ens_randinit_avg_top2_reseed_dict = copy.deepcopy(ens_randinit_avg_top2_dict)
 ens_randinit_avg_top2_reseed_dict['reseed_data'] = ''
 ens_randinit_avg_top2_reseed_pca_dict = copy.deepcopy(ens_randinit_avg_top2_reseed_dict)
 ens_randinit_avg_top2_reseed_pca_dict['subset_features_method'] = 'pca'
+ens_randinit_avg_top1_reseed_pca_dict = copy.deepcopy(ens_randinit_avg_top2_reseed_pca_dict)
+ens_randinit_avg_top1_reseed_pca_dict['keep_topk_ensemble'] = 1
 ens_randinit_avg_top2_pt100_reseed_pca_dict = copy.deepcopy(ens_randinit_avg_top2_reseed_pca_dict)
 ens_randinit_avg_top2_pt100_reseed_pca_dict['tuned_prompt_size'] = 100
 ens_randinit_avg_top2_reseed_sumafter_pca_dict = copy.deepcopy(ens_randinit_avg_top2_reseed_pca_dict)
 ens_randinit_avg_top2_reseed_sumafter_pca_dict['summerize_after_prep'] = ''
+ens_randinit_avg_top1_reseed_sumafter_pca_dict = copy.deepcopy(ens_randinit_avg_top1_reseed_pca_dict)
+ens_randinit_avg_top1_reseed_sumafter_pca_dict['summerize_after_prep'] = ''
 ens_randinit_avg_top2_pt100_reseed_sumafter_pca_dict = copy.deepcopy(ens_randinit_avg_top2_reseed_sumafter_pca_dict)
 ens_randinit_avg_top2_pt100_reseed_sumafter_pca_dict['tuned_prompt_size'] = 100
 ens_randinit_avg_top2_reseed_mutinf_dict = copy.deepcopy(ens_randinit_avg_top2_reseed_dict)
 ens_randinit_avg_top2_reseed_mutinf_dict['subset_features_method'] = 'mutual_information'
+ens_randinit_avg_top1_reseed_mutinf_dict = copy.deepcopy(ens_randinit_avg_top2_reseed_mutinf_dict)
+ens_randinit_avg_top1_reseed_mutinf_dict['keep_topk_ensemble'] = 1
 ens_randinit_avg_top2_pt100_reseed_mutinf_dict = copy.deepcopy(ens_randinit_avg_top2_reseed_mutinf_dict)
 ens_randinit_avg_top2_pt100_reseed_mutinf_dict['tuned_prompt_size'] = 100
 ens_randinit_avg_top2_reseed_sumafter_mutinf_dict = copy.deepcopy(ens_randinit_avg_top2_reseed_mutinf_dict)
 ens_randinit_avg_top2_reseed_sumafter_mutinf_dict['summerize_after_prep'] = ''
+ens_randinit_avg_top1_reseed_sumafter_mutinf_dict = copy.deepcopy(ens_randinit_avg_top1_reseed_mutinf_dict)
+ens_randinit_avg_top1_reseed_sumafter_mutinf_dict['summerize_after_prep'] = ''
 ens_randinit_avg_top2_pt100_reseed_sumafter_mutinf_dict = copy.deepcopy(ens_randinit_avg_top2_reseed_sumafter_mutinf_dict)
 ens_randinit_avg_top2_pt100_reseed_sumafter_mutinf_dict['tuned_prompt_size'] = 100
 ens_randinit_avg_top2_reseed_25cl_long_dict = copy.deepcopy(ens_randinit_avg_top2_reseed_dict)
@@ -478,12 +485,16 @@ all_tasks = {
     'pt1000-10ens-randinit-avg-top2-reseed' : ens_randinit_avg_top2_reseed_dict,
     'pt100-10ens-randinit-avg-top2-reseed-sumafter-pca' : ens_randinit_avg_top2_pt100_reseed_sumafter_pca_dict,
     'pt1000-10ens-randinit-avg-top2-reseed-sumafter-pca' : ens_randinit_avg_top2_reseed_sumafter_pca_dict,
+    'pt1000-10ens-randinit-avg-top1-reseed-sumafter-pca' : ens_randinit_avg_top1_reseed_sumafter_pca_dict,
     'pt100-10ens-randinit-avg-top2-reseed-pca' : ens_randinit_avg_top2_pt100_reseed_pca_dict,
     'pt1000-10ens-randinit-avg-top2-reseed-pca' : ens_randinit_avg_top2_reseed_pca_dict,
+    'pt1000-10ens-randinit-avg-top1-reseed-pca' : ens_randinit_avg_top1_reseed_pca_dict,
     'pt100-10ens-randinit-avg-top2-reseed-sumafter-mutual_information' : ens_randinit_avg_top2_pt100_reseed_sumafter_mutinf_dict,
     'pt1000-10ens-randinit-avg-top2-reseed-sumafter-mutual_information' : ens_randinit_avg_top2_reseed_sumafter_mutinf_dict,
+    'pt1000-10ens-randinit-avg-top1-reseed-sumafter-mutual_information' : ens_randinit_avg_top1_reseed_sumafter_mutinf_dict,
     'pt100-10ens-randinit-avg-top2-reseed-mutual_information' : ens_randinit_avg_top2_pt100_reseed_mutinf_dict,
     'pt1000-10ens-randinit-avg-top2-reseed-mutual_information' : ens_randinit_avg_top2_reseed_mutinf_dict,
+    'pt1000-10ens-randinit-avg-top1-reseed-mutual_information' : ens_randinit_avg_top1_reseed_mutinf_dict,
     'pt1000-10ens-randinit-avg-top2-reseed-lowlr-short' : ens_randinit_avg_top2_reseed_lowlr_short_dict,
     'pt1000-10ens-randinit-avg-top2-reseed-25cl-long' : ens_randinit_avg_top2_reseed_25cl_long_dict,
     'pt1000-10ens-randinit-avg-top2-unif-reseed' : ens_randinit_avg_top2_unif_reseed_dict,

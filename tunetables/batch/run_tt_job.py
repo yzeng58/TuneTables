@@ -184,21 +184,34 @@ def main_f(args):
             wandb_init(config, model_string)
             
         start_time = time.time()
-        for i, task in enumerate(tt_tasks):
-            
+
+        base_seed = args.seed
+        i = 0
+        for task in tt_tasks:
+            #Reseed ZS tasks to vary features and data
+            args.seed = base_seed
             if all_res_d.get(task, None) is not None:
                 continue
-            # args.bptt = args.bptt_backup
-            # if 'unif' in task:
-            #     args.bptt_backup = args.bptt
-            #     args.bptt = 128
-            res, _ = run_single_job(dataset_path, task, split, log_dir, args, base_cmd, gcp_txt)
-            if do_wandb:
-                wandb.log(res, step=i, commit=True)
-            if args.verbose:
-                print("Best epoch results for", dataset.strip(), "split", split, "task", task.strip(), ":", res)
-            all_res_d[task] = res
-            all_res[task] = max(res.get("Val_Accuracy", 0.0), res.get("Val_nc_Accuracy", 0.0), res.get("Ens_Val_Accuracy", 0.0), res.get("Ens_Val_Accuracy_NC", 0.0))
+            if 'zs' in task:
+                for j in range(10):
+                    args.seed = args.seed + j
+                    res, _ = run_single_job(dataset_path, task, split, log_dir, args, base_cmd, gcp_txt)
+                    i += 1
+                    if do_wandb:
+                        wandb.log(res, step=i, commit=True)
+                    if args.verbose:
+                        print("Best epoch results for", dataset.strip(), "split", split, "task", task.strip(), ":", res)
+                    all_res_d[task] = res
+                    all_res[task] = max(res.get("Val_Accuracy", 0.0), res.get("Val_nc_Accuracy", 0.0), res.get("Ens_Val_Accuracy", 0.0), res.get("Ens_Val_Accuracy_NC", 0.0))
+            else:
+                res, _ = run_single_job(dataset_path, task, split, log_dir, args, base_cmd, gcp_txt)
+                i += 1
+                if do_wandb:
+                    wandb.log(res, step=i, commit=True)
+                if args.verbose:
+                    print("Best epoch results for", dataset.strip(), "split", split, "task", task.strip(), ":", res)
+                all_res_d[task] = res
+                all_res[task] = max(res.get("Val_Accuracy", 0.0), res.get("Val_nc_Accuracy", 0.0), res.get("Ens_Val_Accuracy", 0.0), res.get("Ens_Val_Accuracy_NC", 0.0))
         best_task = max(all_res, key=all_res.get)
         time_taken = time.time() - start_time
         if do_wandb:
