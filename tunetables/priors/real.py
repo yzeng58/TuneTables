@@ -343,7 +343,6 @@ class SubsetMaker(object):
             return X, y
         else:
             X = self.feature_selector.transform(X)
-            print("Returning shape of X from mut inf fs: ", X.shape)
             return X, y
 
     def pca_subset(self, X, y, action='features', split='train'):

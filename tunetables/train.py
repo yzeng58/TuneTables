@@ -171,14 +171,18 @@ def train(args, dataset, criterion, encoder_generator, emsize=200, nhid=200, nla
             X = torch.from_numpy(X.copy().astype(np.float32))
             X_val = torch.from_numpy(X_val.copy().astype(np.float32))
             X_test = torch.from_numpy(X_test.copy().astype(np.float32))
-        if X.shape[1] < num_features and extra_prior_kwargs_dict.get("pad_features", True):
-            
+        
+        #feature padding
+        do_pf = extra_prior_kwargs_dict.get("pad_features", True)
+        if do_pf:
             def pad_data(data):
                 return torch.cat([data, torch.zeros(data.shape[0], num_features - data.shape[1])], dim=1)
-            
-            X = pad_data(X)
-            X_val = pad_data(X_val)
-            X_test = pad_data(X_test)
+            if (X.shape[1] < num_features):
+                X = pad_data(X)
+            if (X_val.shape[1] < num_features):
+                X_val = pad_data(X_val)
+            if (X_test.shape[1] < num_features):
+                X_test = pad_data(X_test)
 
         train_ds = TabDS(X, y)
         val_ds = TabDS(X_val, y_val)
