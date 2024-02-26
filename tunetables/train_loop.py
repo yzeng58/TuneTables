@@ -234,7 +234,7 @@ def reload_config(config_type='causal', task_type='multiclass', longer=0, args=N
         config['bptt_extra_samples'] = None
 
     #Feature subset selection
-    config['subset_features'] = 100
+    config['subset_features'] = args.subset_features
     if args.bagging:
         config['subset_rows'] = 0
         config['subset_rows_bagging'] = args.subsampling
@@ -308,6 +308,7 @@ def parse_args():
     parser.add_argument('--wandb_project', type=str, default='tabpfn-pt', help='Project for wandb logging.')
     parser.add_argument('--wandb_entity', type=str, default='nyu-dice-lab', help='Entity for wandb logging.')
     parser.add_argument('--subset_features_method', type=str, default='mutual_information', help='Method for feature subset selection ("mutual_information, random, first, pca").')
+    parser.add_argument('--subset_features', type=int, default=100, help='Number of features to use for feature subset selection.')
     parser.add_argument('--pad_features', action='store_true', help='Whether to pad features to the maximum number of features.')
     parser.add_argument('--do_preprocess', action='store_true', help='Whether to add tabpfn-style preprocessing to the data.')
     parser.add_argument('--zs-eval-ensemble', type=int, default=0, help='Whether to do ensembled zero-shot evaluation.')

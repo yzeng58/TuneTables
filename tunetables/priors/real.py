@@ -741,6 +741,7 @@ def process_data(
                 args.subset_rows,
                 args.subset_features_method,
                 args.subset_rows_method,
+                seed=args.rand_seed,
                 give_full_features = args.summerize_after_prep, #if we summerize after prep, we don't want to summerize here
             )
         X_train, y_train = subset_maker.make_subset(
@@ -768,31 +769,35 @@ def process_data(
         "data_test": (X_test, y_test),
     }
 
-def SummarizeAfter(X, X_val, X_test, y, y_val, y_test, num_features, subset_features_method, subset_rows=0, subset_rows_method="random"):
+def SummarizeAfter(X, X_val, X_test, y, y_val, y_test, num_features, args):
 
         SM = real.SubsetMaker(
-                num_features,
-                subset_rows, #subset_rows = 10^8 ablate this part here
-                subset_features_method,
-                subset_rows_method, #args.subset_rows_method is not used anyhow
+                args.subset_features,
+                args.subset_rows, #subset_rows = 10^8 ablate this part here
+                args.subset_features_method,
+                args.subset_rows_method, #args.subset_rows_method is not used anyhow
+                seed=args.rand_seed,
             )
 
         X, y = SM.make_subset(
             X,
             y,
             split="train",
+            seed=args.rand_seed,
         )
 
         X_val, y = SM.make_subset(
             X_val, 
             y,
             split="val",
+            seed=args.rand_seed,
         )
             
         X_test, y = SM.make_subset(
             X_test, 
             y,
             split="test",
+            seed=args.rand_seed,
         )
         if isinstance(X, torch.Tensor):
             return X.to(torch.float32), X_val.to(torch.float32), X_test.to(torch.float32)

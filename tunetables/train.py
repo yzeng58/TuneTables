@@ -165,7 +165,7 @@ def train(args, dataset, criterion, encoder_generator, emsize=200, nhid=200, nla
             X_val = preprocess_input(torch.from_numpy(X_val.copy().astype(np.float32)), preprocess_type, summerize_after_prep)  
             X_test = preprocess_input(torch.from_numpy(X_test.copy().astype(np.float32)), preprocess_type, summerize_after_prep)
             if args.summerize_after_prep:
-                X, X_val, X_test = SummarizeAfter(X, X_val, X_test, y, y_val, y_test, num_features, args.subset_features_method, args.subset_rows)            
+                X, X_val, X_test = SummarizeAfter(X, X_val, X_test, y, y_val, y_test, num_features, args)            
         else:
             X = torch.from_numpy(X.copy().astype(np.float32))
             X_val = torch.from_numpy(X_val.copy().astype(np.float32))
@@ -1118,7 +1118,9 @@ def train(args, dataset, criterion, encoder_generator, emsize=200, nhid=200, nla
 
     if is_ensemble:
         for i in range(1, boosting_n_iters):
-            seed_all(extra_prior_kwargs_dict.get('rand_seed') + i)
+            next_seed = extra_prior_kwargs_dict.get('rand_seed') + i
+            seed_all(next_seed)
+            extra_prior_kwargs_dict['rand_seed'] = next_seed
             if extra_prior_kwargs_dict.get('reseed_data', True):
                 #load data
                 extra_prior_kwargs_dict['preprocess_type'] = np.random.choice(['none', 'power_all', 'robust_all', 'quantile_all'])

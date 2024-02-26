@@ -121,8 +121,8 @@ def main_f(args):
         elif n_samples <= MAX_SAMPLES:
             if feat_sel_method == '':
                 tt_tasks = [
-                    'zs-random-16',
                     'zs-random-32',
+                    'zs-preproc-random-32',
                     'pt10-short-lowlr-prop',
                     'pt10-uniform-kl-nopp',
                     'pt10-uniform-kl-nopp-prop',
@@ -144,14 +144,17 @@ def main_f(args):
                 ]
         else:
             if feat_sel_method != '':
-                tt_tasks = [f'pt1000-10ens-randinit-avg-top2-unif-reseed-{feat_sel_method}', 
+                tt_tasks = [f'zs-{feat_sel_method}-32',
+                            f'zs-preproc-{feat_sel_method}-32',
+                            f'pt1000-10ens-randinit-avg-top2-unif-reseed-{feat_sel_method}', 
                             f'pt1000-10ens-randinit-avg-top2-unif-reseed-sumafter-{feat_sel_method}',
                             #f'pt100-10ens-randinit-avg-top2-reseed-{feat_sel_method}',
                             #f'pt100-10ens-randinit-avg-top2-reseed-sumafter-{feat_sel_method}',
                             ]
             else:
-                tt_tasks = ['zs-random-16',
+                tt_tasks = [
                             'zs-random-32',
+                            'zs-preproc-random-32',
                             'pt1000-10ens-randinit-avg-top2-unif-reseed',
                             # 'pt1000-10ens-randinit-avg-top2-reseed',
                             ]
@@ -229,6 +232,8 @@ def main_f(args):
                     '--real_data_qty', str(args.real_data_qty),
                     '--zs-eval-ensemble', str(ensemble_size),
                     '--workers', "1"]
+            if "preproc" in task:
+                command.append("--do_preprocess")
             if args.wandb_log:
                 command = command + [
                     '--wandb_log',
