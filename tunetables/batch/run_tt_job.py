@@ -132,27 +132,27 @@ def main_f(args):
         elif n_samples > UPPER_CUTOFF:
             if feat_sel_method != '':
                 tt_tasks = [
-                    f'pt100-{feat_sel_method}', 
-                    f'pt100-sumafter-{feat_sel_method}', 
-                    f'pt100-uniform-{feat_sel_method}', 
-                    f'pt100-uniform-sumafter-{feat_sel_method}'
+                    f'pt1000-{feat_sel_method}', 
+                    f'pt1000-sumafter-{feat_sel_method}', 
+                    f'pt1000-uniform-{feat_sel_method}', 
+                    f'pt1000-uniform-sumafter-{feat_sel_method}'
                 ]
             else:
                 tt_tasks = [
-                    'pt100', 
-                    'pt100-uniform',
+                    'pt1000', 
+                    'pt1000-uniform',
                 ]
         else:
             if feat_sel_method != '':
-                tt_tasks = [f'pt100-10ens-randinit-avg-top2-unif-reseed-{feat_sel_method}', 
-                            f'pt100-10ens-randinit-avg-top2-unif-reseed-sumafter-{feat_sel_method}',
+                tt_tasks = [f'pt1000-10ens-randinit-avg-top2-unif-reseed-{feat_sel_method}', 
+                            f'pt1000-10ens-randinit-avg-top2-unif-reseed-sumafter-{feat_sel_method}',
                             #f'pt100-10ens-randinit-avg-top2-reseed-{feat_sel_method}',
                             #f'pt100-10ens-randinit-avg-top2-reseed-sumafter-{feat_sel_method}',
                             ]
             else:
                 tt_tasks = ['zs-random-16',
                             'zs-random-32',
-                            'pt100-10ens-randinit-avg-top2-unif-reseed',
+                            'pt1000-10ens-randinit-avg-top2-unif-reseed',
                             # 'pt1000-10ens-randinit-avg-top2-reseed',
                             ]
         if args.verbose:
@@ -163,13 +163,14 @@ def main_f(args):
         
         #wandb logging for tunetables meta-optimization
         if do_wandb:
-            model_string = task_str = "tunetables" + '_split_' + str(split) + "_" + datetime.datetime.now().strftime("%Y%m%d%H%M%S")
+            model_string = task_str = "tunetables" + '_split_' + str(split)
             wandb_group = dataset.strip() + "_" + task_str
             config = dict()
             config['wandb_group'] = wandb_group
             config['wandb_project'] = args.wandb_project
             config['wandb_entity'] = args.wandb_entity
             config['tt_tasks'] = tt_tasks
+            config['dataset_path'] = dataset_path
             config['dataset'] = dataset.strip()
             config['split'] = split
             config['n_classes'] = n_classes
