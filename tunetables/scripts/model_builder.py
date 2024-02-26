@@ -339,6 +339,7 @@ def get_model(config, device, should_train=True, verbose=False, state_dict=None,
                         , 'model_string': config.get('model_string', datetime.now().strftime("%m_%d_%Y_%H_%M_%S"))
                         , 'save_path': config.get('base_path', '.')
                         , 'rand_seed': config.get('rand_seed', 135798642)
+                        , 'summerize_after_prep': config.get('summerize_after_prep', False)
                         , 'average_ensemble': config.get('average_ensemble', False)
                         , 'permute_feature_position_in_ensemble': config.get('permute_feature_position_in_ensemble', False)
                         , 'bagging': config.get('bagging', False)
