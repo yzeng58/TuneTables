@@ -501,6 +501,7 @@ all_tasks = {
     'pt1000-10ens-randinit-avg-top2-unif-reseed-ss10000' : ens_randinit_avg_top2_unif_reseed_ss10000_dict,
     'pt100-10ens-randinit-avg-top2-unif-reseed-pca' : ens_randinit_avg_top2_unif_pt100_reseed_pca_dict,
     'pt1000-10ens-randinit-avg-top2-unif-reseed-pca' : ens_randinit_avg_top2_unif_reseed_pca_dict,
+    # 'pt1000-10ens-randinit-avg-top1-unif-reseed-pca' : ens_randinit_avg_top1_unif_reseed_pca_dict,
     'pt100-10ens-randinit-avg-top2-unif-reseed-sumafter-pca' : ens_randinit_avg_top2_unif_pt100_reseed_sumafter_pca_dict,
     'pt1000-10ens-randinit-avg-top2-unif-reseed-sumafter-pca' : ens_randinit_avg_top2_unif_reseed_sumafter_pca_dict,
     'pt100-10ens-randinit-avg-top2-unif-reseed-mutual_information' : ens_randinit_avg_top2_unif_pt100_reseed_mutinf_dict,

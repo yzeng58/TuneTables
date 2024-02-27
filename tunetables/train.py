@@ -28,7 +28,7 @@ import tunetables.utils as utils
 from tunetables.transformer import TransformerModel
 from tunetables.utils import get_cosine_schedule_with_warmup, get_openai_lr, StoreDictKeyPair, get_weighted_single_eval_pos_sampler, get_uniform_single_eval_pos_sampler
 import tunetables.priors as priors
-from tunetables.priors.real import SummarizeAfter, process_data, loop_translate, TabDS, preprocess_input, get_train_dataloader
+from tunetables.priors.real import SummarizeAfter, process_data, loop_translate, TabDS, preprocess_input, get_train_dataloader, shuffle_data
 from tunetables.losses import kl_divergence
 import tunetables.encoders as encoders
 import tunetables.positional_encodings as positional_encodings
@@ -59,7 +59,6 @@ def train(args, dataset, criterion, encoder_generator, emsize=200, nhid=200, nla
     preprocess_type=extra_prior_kwargs_dict.get("preprocess_type", "none")
     summerize_after_prep=extra_prior_kwargs_dict.get("summerize_after_prep", "False")
 
-
     if extra_prior_kwargs_dict.get('pad_features', None):
         num_features = 100
     else:
@@ -86,6 +85,7 @@ def train(args, dataset, criterion, encoder_generator, emsize=200, nhid=200, nla
 
         args.summerize_after_prep = summerize_after_prep
         args.preprocess_type = preprocess_type
+        args.rand_seed = extra_prior_kwargs_dict.get('rand_seed', 0)
 
         for i, split_dictionary in enumerate(dataset.split_indeces):
             # TODO: make stopping index a hyperparameter
@@ -123,7 +123,7 @@ def train(args, dataset, criterion, encoder_generator, emsize=200, nhid=200, nla
                 
             break
         
-        seed_all(extra_prior_kwargs_dict.get('rand_seed'))
+        seed_all(extra_prior_kwargs_dict.get('rand_seed', 0))
 
         X, y = X_train, y_train
 
@@ -237,6 +237,12 @@ def train(args, dataset, criterion, encoder_generator, emsize=200, nhid=200, nla
             
         data_for_fitting = None
         X, y, X_val, y_val, X_test, y_test, invert_perm_map, steps_per_epoch, num_classes, label_weights, train_ds, val_ds, test_ds = make_datasets(extra_prior_kwargs_dict, do_permute=not_zs, bptt=bptt, steps_per_epoch=steps_per_epoch)
+        
+        #Shuffle data once
+        X, y = shuffle_data(X, y)
+        X_val, y_val = shuffle_data(X_val, y_val)
+        X_test, y_test = shuffle_data(X_test, y_test)
+        
         old_bptt = bptt
         dl, val_dl, test_dl, bptt, data_for_fitting  = make_dataloaders(bptt=bptt, not_zs=not_zs)
 
@@ -1127,7 +1133,9 @@ def train(args, dataset, criterion, encoder_generator, emsize=200, nhid=200, nla
         for i in range(1, boosting_n_iters):
             next_seed = extra_prior_kwargs_dict.get('rand_seed') + i
             seed_all(next_seed)
-            extra_prior_kwargs_dict['rand_seed'] = next_seed
+            
+            # extra_prior_kwargs_dict['rand_seed'] = next_seed
+
             if extra_prior_kwargs_dict.get('reseed_data', True):
                 #reset subset maker
                 if getattr(dataset, "ssm", None) is not None:

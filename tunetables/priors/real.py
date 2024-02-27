@@ -637,6 +637,12 @@ def data_prep(X, y):
     X, y = data_split(X, y, nan_mask)
     return X, y
 
+def shuffle_data(X, y):
+    shuffle_idx = np.random.permutation(X.shape[0])
+    X = X[shuffle_idx]
+    y = y[shuffle_idx]
+    return X, y
+
 def process_data(
     dataset,
     train_index,
@@ -736,7 +742,7 @@ def process_data(
     ):
         if getattr(dataset, "ssm", None) is None:
             if verbose:
-                print("args.summerize_after_prep: ", args.summerize_after_prep)
+                print("args.summerize_after_prep when init subsetmaker: ", args.summerize_after_prep)
             subset_maker = real.SubsetMaker(
                 args.subset_features,
                 args.subset_rows,
