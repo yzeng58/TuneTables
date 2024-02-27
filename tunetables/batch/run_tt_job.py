@@ -127,7 +127,7 @@ def main_f(args):
             if feat_sel_method == '':
                 tt_tasks = [
                     'zs-random-32',
-                    'zs-preproc-random-32',
+                    # 'zs-preproc-random-32',
                     'pt10-short-lowlr-prop',
                     'pt10-uniform-kl-nopp',
                     'pt10-uniform-kl-nopp-prop',
@@ -159,7 +159,7 @@ def main_f(args):
             else:
                 tt_tasks = [
                             'zs-random-32',
-                            'zs-preproc-random-32',
+                            # 'zs-preproc-random-32',
                             'pt1000-10ens-randinit-avg-top2-unif-reseed',
                             # 'pt1000-10ens-randinit-avg-top2-reseed',
                             ]
@@ -197,7 +197,7 @@ def main_f(args):
             args.seed = base_seed
             if all_res_d.get(task, None) is not None:
                 continue
-            if 'zs' in task and feat_sel_method != '':
+            if 'zs' in task and n_features > MAX_FEATURES:
                 for j in range(10):
                     args.seed = args.seed + j
                     res, _ = run_single_job(dataset_path, task, split, log_dir, args, base_cmd, gcp_txt)
