@@ -94,8 +94,6 @@ AAAAB3NzaC1yc2EAAAADAQABAAABAQDfhoLPr6ZoSSL9epL7N0YQuJ9nD\+JB5CmK/f3NTX0vmOAHT51
         # pip install . --user; \
         # find -type f -exec chmod 777 {} \;
         # find -type d -exec chmod 777 {} \;
-      
-      encoded_str=$(printf '%s' "${dataset_str}" | base64)
 
       gcloud compute ssh --ssh-flag="-A" ${instance_name} --zone=${zone} --project=${project} \
         --command="\
@@ -104,7 +102,7 @@ AAAAB3NzaC1yc2EAAAADAQABAAABAQDfhoLPr6ZoSSL9epL7N0YQuJ9nD\+JB5CmK/f3NTX0vmOAHT51
         source /home/bf996/.bashrc; \
         cd ${instance_repo_dir}/tunetables; \
         sudo echo "${task_str}" >> metadata/task.txt; \
-        echo '${encoded_str}' | base64 --decode | printf '%s\n' >> metadata/dataset.txt; \
+        printf '%s\n' \"${dataset_str}\" >> metadata/dataset.txt; \
         ${run_cmd}; \
         "
     else

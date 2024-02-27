@@ -370,7 +370,7 @@ def main_f(args):
     for dataset in tqdm(datasets):
         dataset_path = "\"" + os.path.join(args.base_path, dataset.strip()) + '\"'
         #sanitize name
-        dataset_path = dataset_path.replace(r'(', r'\(').replace(r')', r'\)')
+        # dataset_path = dataset_path.replace(r'(', r'\(').replace(r')', r'\)')
         # print("Dataset path:", dataset_path)
         log_dir = './logs/' + dataset.strip()
         if not os.path.exists(log_dir):
