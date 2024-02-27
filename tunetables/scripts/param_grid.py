@@ -1,3 +1,5 @@
+import math
+
 try:
     from hyperopt import fmin, tpe, hp, STATUS_OK, Trials , space_eval, rand
 except:

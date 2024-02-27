@@ -97,6 +97,11 @@ def main_f(args):
         n_classes = metadata['num_classes']
         n_features = metadata['num_features']
         n_samples = metadata['num_instances']
+        if args.adaptive_bptt:
+            new_bptt = min(max(int(n_samples / 10), 128), 2048)
+            if args.verbose:
+                print(f"Adaptive bptt: setting bptt to {new_bptt}")
+            args.bptt = new_bptt
         all_res = {}
         all_res_d = {}
         if n_features > MAX_FEATURES:
@@ -365,7 +370,7 @@ def main_f(args):
     for dataset in tqdm(datasets):
         dataset_path = "\"" + os.path.join(args.base_path, dataset.strip()) + '\"'
         #sanitize name
-        # dataset_path = dataset_path.replace(r'(', r'\(').replace(r')', r'\)')
+        dataset_path = dataset_path.replace(r'(', r'\(').replace(r')', r'\)')
         # print("Dataset path:", dataset_path)
         log_dir = './logs/' + dataset.strip()
         if not os.path.exists(log_dir):
@@ -431,6 +436,7 @@ if __name__ == '__main__':
     parser.add_argument('--tasks', type=str, default='/home/benfeuer/TabPFN-pt/tunetables/metadata/subset_tasks.txt', help='Tasks to run')
     parser.add_argument('--resume', type=str, default='/home/benfeuer/TabPFN-pt/tunetables/models_diff/prior_diff_real_checkpoint_n_0_epoch_42.cpkt', help='TabPFN checkpoint to resume from')
     parser.add_argument('--bptt', type=int, default=-1, help='bptt batch size')
+    parser.add_argument('--adaptive-bptt', action='store_true', help='Whether to use adaptive bptt')
     parser.add_argument('--splits', nargs='+', type=int, default=[0], help='Splits to run')
     parser.add_argument('--shuffle_every_epoch', action='store_true', help='Whether to shuffle the order of the data every epoch (can help when bptt is large).')
     parser.add_argument('--run_optuna', action='store_true', help='Whether to run optuna hyperparameter search.')

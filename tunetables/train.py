@@ -127,7 +127,7 @@ def train(args, dataset, criterion, encoder_generator, emsize=200, nhid=200, nla
 
         X, y = X_train, y_train
 
-        #shuffle data
+        #Permutation of feature and label order
         if do_permute:
             label_perm = np.random.permutation(num_classes)
         else:
@@ -163,21 +163,25 @@ def train(args, dataset, criterion, encoder_generator, emsize=200, nhid=200, nla
         else:
             label_weights = None
 
+        #Data preprocessing
         if extra_prior_kwargs_dict.get("do_preprocess", False):
             try:
-                X = preprocess_input(torch.from_numpy(X.copy().astype(np.float32)), preprocess_type, summerize_after_prep, drop_empty=True)    
-                X_val = preprocess_input(torch.from_numpy(X_val.copy().astype(np.float32)), preprocess_type, summerize_after_prep, drop_empty=True)  
-                X_test = preprocess_input(torch.from_numpy(X_test.copy().astype(np.float32)), preprocess_type, summerize_after_prep, drop_empty=True)
+                X_new = preprocess_input(torch.from_numpy(X.copy().astype(np.float32)), preprocess_type, summerize_after_prep, drop_empty=True)    
+                X_val_new = preprocess_input(torch.from_numpy(X_val.copy().astype(np.float32)), preprocess_type, summerize_after_prep, drop_empty=True)  
+                X_test_new = preprocess_input(torch.from_numpy(X_test.copy().astype(np.float32)), preprocess_type, summerize_after_prep, drop_empty=True)
                 if summerize_after_prep:
-                    X, X_val, X_test = SummarizeAfter(X, X_val, X_test, y, y_val, y_test, num_features, args)
+                    X_new, X_val_new, X_test_new = SummarizeAfter(X_new, X_val_new, X_test_new, y, y_val, y_test, num_features, args)
             except ValueError:
                 if getattr(dataset, "ssm", None) is not None:
                     delattr(dataset, "ssm")
-                X = preprocess_input(torch.from_numpy(X.copy().astype(np.float32)), preprocess_type, summerize_after_prep, drop_empty=False)    
-                X_val = preprocess_input(torch.from_numpy(X_val.copy().astype(np.float32)), preprocess_type, summerize_after_prep, drop_empty=False)  
-                X_test = preprocess_input(torch.from_numpy(X_test.copy().astype(np.float32)), preprocess_type, summerize_after_prep, drop_empty=False)
+                X_new = preprocess_input(torch.from_numpy(X.copy().astype(np.float32)), preprocess_type, summerize_after_prep, drop_empty=False)    
+                X_val_new = preprocess_input(torch.from_numpy(X_val.copy().astype(np.float32)), preprocess_type, summerize_after_prep, drop_empty=False)  
+                X_test_new = preprocess_input(torch.from_numpy(X_test.copy().astype(np.float32)), preprocess_type, summerize_after_prep, drop_empty=False)
                 if summerize_after_prep:
-                    X, X_val, X_test = SummarizeAfter(X, X_val, X_test, y, y_val, y_test, num_features, args) 
+                    X_new, X_val_new, X_test_new = SummarizeAfter(X_new, X_val_new, X_test_new, y, y_val, y_test, num_features, args)
+            X = X_new
+            X_val = X_val_new
+            X_test = X_test_new
         else:
             X = torch.from_numpy(X.copy().astype(np.float32))
             X_val = torch.from_numpy(X_val.copy().astype(np.float32))

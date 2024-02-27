@@ -101,8 +101,8 @@ AAAAB3NzaC1yc2EAAAADAQABAAABAQDfhoLPr6ZoSSL9epL7N0YQuJ9nD\+JB5CmK/f3NTX0vmOAHT51
         cd ${instance_repo_dir}; \
         source /home/bf996/.bashrc; \
         cd ${instance_repo_dir}/tunetables; \
-        sudo echo ${task_str} >> metadata/task.txt; \
-        sudo echo ${dataset_str} >> metadata/dataset.txt; \
+        sudo echo "${task_str}" >> metadata/task.txt; \
+        sudo echo "${dataset_str}" >> metadata/dataset.txt; \
         ${run_cmd}; \
         "
     else
