@@ -167,6 +167,18 @@ def train(args, dataset, criterion, encoder_generator, emsize=200, nhid=200, nla
             X = preprocess_input(torch.from_numpy(X.copy().astype(np.float32)), preprocess_type, summerize_after_prep)    
             X_val = preprocess_input(torch.from_numpy(X_val.copy().astype(np.float32)), preprocess_type, summerize_after_prep)  
             X_test = preprocess_input(torch.from_numpy(X_test.copy().astype(np.float32)), preprocess_type, summerize_after_prep)
+            if X.shape[1] > X_val.shape[1]:
+                #Add padding to X_val
+                X_val = torch.cat([X_val, torch.zeros(X_val.shape[0], X.shape[1] - X_val.shape[1])], dim=1)
+            elif X.shape[1] < X_val.shape[1]:
+                #Add padding to X
+                X = torch.cat([X, torch.zeros(X.shape[0], X_val.shape[1] - X.shape[1])], dim=1)
+            if X.shape[1] > X_test.shape[1]:
+                #Add padding to X_test
+                X_test = torch.cat([X_test, torch.zeros(X_test.shape[0], X.shape[1] - X_test.shape[1])], dim=1)
+            elif X.shape[1] < X_test.shape[1]:
+                #Add padding to X
+                X = torch.cat([X, torch.zeros(X.shape[0], X_test.shape[1] - X.shape[1])], dim=1)
             if summerize_after_prep:
                 X, X_val, X_test = SummarizeAfter(X, X_val, X_test, y, y_val, y_test, num_features, args)            
         else:

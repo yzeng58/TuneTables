@@ -553,7 +553,7 @@ class SubsetMaker(object):
         """
         # print('setting numpy seed to', seed)
         # np.random.seed(seed)
-
+        print("In subset maker, self.give_full_features is ", self.give_full_features)
         if self.give_full_features:
                 pass
         else:
@@ -654,7 +654,6 @@ def process_data(
     impute=True,
     args=None,
 ):
-    
 
     X_train, y_train = dataset.X[train_index], dataset.y[train_index]
     X_val, y_val = dataset.X[val_index], dataset.y[val_index]
@@ -740,9 +739,10 @@ def process_data(
             args.subset_features < args.num_features or args.subset_rows < len(X_train)
         )
     ):
+        print("Making subset of data...")
         if getattr(dataset, "ssm", None) is None:
-            if verbose:
-                print("args.summerize_after_prep when init subsetmaker: ", args.summerize_after_prep)
+            print("Setting up subset maker...")
+            print("args.summerize_after_prep when init subsetmaker: ", args.summerize_after_prep)
             subset_maker = real.SubsetMaker(
                 args.subset_features,
                 args.subset_rows,
@@ -846,8 +846,8 @@ def preprocess_input(eval_xs, preprocess_transform, summerize_after_prep):
     eval_position = eval_xs.shape[0]
     eval_xs = normalize_data(eval_xs, normalize_positions=eval_position)
     # Removing empty features
-    sel = [len(torch.unique(eval_xs[:1000, col])) > 1 for col in range(eval_xs.shape[1])]
-    eval_xs = eval_xs[:, sel]
+    # sel = [len(torch.unique(eval_xs[:1000, col])) > 1 for col in range(eval_xs.shape[1])]
+    # eval_xs = eval_xs[:, sel]
     warnings.simplefilter('error')
     if preprocess_transform != 'none':
         eval_xs = eval_xs.cpu().numpy()
