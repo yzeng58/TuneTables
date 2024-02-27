@@ -383,6 +383,8 @@ def main_f(args):
                         "--print_stdout",
                         "--verbose",
                     ]
+                    if args.adaptive_bptt:
+                        task_args = task_args + ["--adaptive_bptt"]
                     if args.bptt > -1:
                         task_args = task_args + ["--bptt", str(args.bptt)]
                     if args.epochs > 0:
@@ -436,7 +438,7 @@ if __name__ == '__main__':
     parser.add_argument('--tasks', type=str, default='/home/benfeuer/TabPFN-pt/tunetables/metadata/subset_tasks.txt', help='Tasks to run')
     parser.add_argument('--resume', type=str, default='/home/benfeuer/TabPFN-pt/tunetables/models_diff/prior_diff_real_checkpoint_n_0_epoch_42.cpkt', help='TabPFN checkpoint to resume from')
     parser.add_argument('--bptt', type=int, default=-1, help='bptt batch size')
-    parser.add_argument('--adaptive-bptt', action='store_true', help='Whether to use adaptive bptt')
+    parser.add_argument('--adaptive_bptt', action='store_true', help='Whether to use adaptive bptt')
     parser.add_argument('--splits', nargs='+', type=int, default=[0], help='Splits to run')
     parser.add_argument('--shuffle_every_epoch', action='store_true', help='Whether to shuffle the order of the data every epoch (can help when bptt is large).')
     parser.add_argument('--run_optuna', action='store_true', help='Whether to run optuna hyperparameter search.')
