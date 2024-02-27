@@ -553,7 +553,6 @@ class SubsetMaker(object):
         """
         # print('setting numpy seed to', seed)
         # np.random.seed(seed)
-        print("In subset maker, self.give_full_features is ", self.give_full_features)
         if self.give_full_features:
                 pass
         else:
@@ -739,10 +738,7 @@ def process_data(
             args.subset_features < args.num_features or args.subset_rows < len(X_train)
         )
     ):
-        print("Making subset of data...")
         if getattr(dataset, "ssm", None) is None:
-            print("Setting up subset maker...")
-            print("args.summerize_after_prep when init subsetmaker: ", args.summerize_after_prep)
             subset_maker = real.SubsetMaker(
                 args.subset_features,
                 args.subset_rows,
@@ -834,7 +830,7 @@ def loop_translate(a, my_dict):
         # print("new_a: ", new_a[:5, ...])
     return new_a
 
-def preprocess_input(eval_xs, preprocess_transform, summerize_after_prep):
+def preprocess_input(eval_xs, preprocess_transform, summerize_after_prep, drop_empty=True):
 
     if preprocess_transform != 'none':
         if preprocess_transform == 'power' or preprocess_transform == 'power_all':
@@ -845,9 +841,12 @@ def preprocess_input(eval_xs, preprocess_transform, summerize_after_prep):
             pt = RobustScaler(unit_variance=True)
     eval_position = eval_xs.shape[0]
     eval_xs = normalize_data(eval_xs, normalize_positions=eval_position)
-    # Removing empty features
-    # sel = [len(torch.unique(eval_xs[:1000, col])) > 1 for col in range(eval_xs.shape[1])]
-    # eval_xs = eval_xs[:, sel]
+
+    if drop_empty:
+        # Removing empty features
+        sel = [len(torch.unique(eval_xs[:1000, col])) > 1 for col in range(eval_xs.shape[1])]
+        eval_xs = eval_xs[:, sel]
+
     warnings.simplefilter('error')
     if preprocess_transform != 'none':
         eval_xs = eval_xs.cpu().numpy()
@@ -856,7 +855,6 @@ def preprocess_input(eval_xs, preprocess_transform, summerize_after_prep):
             try:
                 pt.fit(eval_xs[0:eval_position, col:col + 1])
                 trans = pt.transform(eval_xs[:, col:col + 1])
-                # print(scipy.stats.spearmanr(trans[~np.isnan(eval_xs[:, col:col+1])], eval_xs[:, col:col+1][~np.isnan(eval_xs[:, col:col+1])]))
                 eval_xs[:, col:col + 1] = trans
             except:
                 pass

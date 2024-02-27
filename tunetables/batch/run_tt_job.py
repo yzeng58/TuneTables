@@ -244,6 +244,7 @@ def main_f(args):
                     '--split', str(split),
                     '--real_data_qty', str(args.real_data_qty),
                     '--zs-eval-ensemble', str(ensemble_size),
+                    '--seed', str(args.seed),
                     '--workers', "1"]
             if "preproc" in task:
                 command.append("--do_preprocess")
@@ -442,5 +443,6 @@ if __name__ == '__main__':
     parser.add_argument('--verbose', action='store_true', help='Whether to print verbose output.')
     parser.add_argument('--epochs', type=int, default=0, help='Number of epochs to run.')
     parser.add_argument('--validation_period', type=int, default=0, help='Number of epochs between validation runs.')
+    parser.add_argument('--seed', type=int, default=135798642, help='Random seed for reproducibility.')
     args = parser.parse_args()
     main_f(args)

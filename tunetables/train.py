@@ -164,23 +164,20 @@ def train(args, dataset, criterion, encoder_generator, emsize=200, nhid=200, nla
             label_weights = None
 
         if extra_prior_kwargs_dict.get("do_preprocess", False):
-            X = preprocess_input(torch.from_numpy(X.copy().astype(np.float32)), preprocess_type, summerize_after_prep)    
-            X_val = preprocess_input(torch.from_numpy(X_val.copy().astype(np.float32)), preprocess_type, summerize_after_prep)  
-            X_test = preprocess_input(torch.from_numpy(X_test.copy().astype(np.float32)), preprocess_type, summerize_after_prep)
-            if X.shape[1] > X_val.shape[1]:
-                #Add padding to X_val
-                X_val = torch.cat([X_val, torch.zeros(X_val.shape[0], X.shape[1] - X_val.shape[1])], dim=1)
-            elif X.shape[1] < X_val.shape[1]:
-                #Add padding to X
-                X = torch.cat([X, torch.zeros(X.shape[0], X_val.shape[1] - X.shape[1])], dim=1)
-            if X.shape[1] > X_test.shape[1]:
-                #Add padding to X_test
-                X_test = torch.cat([X_test, torch.zeros(X_test.shape[0], X.shape[1] - X_test.shape[1])], dim=1)
-            elif X.shape[1] < X_test.shape[1]:
-                #Add padding to X
-                X = torch.cat([X, torch.zeros(X.shape[0], X_test.shape[1] - X.shape[1])], dim=1)
-            if summerize_after_prep:
-                X, X_val, X_test = SummarizeAfter(X, X_val, X_test, y, y_val, y_test, num_features, args)            
+            try:
+                X = preprocess_input(torch.from_numpy(X.copy().astype(np.float32)), preprocess_type, summerize_after_prep, drop_empty=True)    
+                X_val = preprocess_input(torch.from_numpy(X_val.copy().astype(np.float32)), preprocess_type, summerize_after_prep, drop_empty=True)  
+                X_test = preprocess_input(torch.from_numpy(X_test.copy().astype(np.float32)), preprocess_type, summerize_after_prep, drop_empty=True)
+                if summerize_after_prep:
+                    X, X_val, X_test = SummarizeAfter(X, X_val, X_test, y, y_val, y_test, num_features, args)
+            except ValueError:
+                if getattr(dataset, "ssm", None) is not None:
+                    delattr(dataset, "ssm")
+                X = preprocess_input(torch.from_numpy(X.copy().astype(np.float32)), preprocess_type, summerize_after_prep, drop_empty=False)    
+                X_val = preprocess_input(torch.from_numpy(X_val.copy().astype(np.float32)), preprocess_type, summerize_after_prep, drop_empty=False)  
+                X_test = preprocess_input(torch.from_numpy(X_test.copy().astype(np.float32)), preprocess_type, summerize_after_prep, drop_empty=False)
+                if summerize_after_prep:
+                    X, X_val, X_test = SummarizeAfter(X, X_val, X_test, y, y_val, y_test, num_features, args) 
         else:
             X = torch.from_numpy(X.copy().astype(np.float32))
             X_val = torch.from_numpy(X_val.copy().astype(np.float32))
@@ -904,7 +901,8 @@ def train(args, dataset, criterion, encoder_generator, emsize=200, nhid=200, nla
                 else:
                     SMALL_VAL_SIZE = min(extra_prior_kwargs_dict.get('val_subset_size', 10), len(val_dl.dataset))
                     val_dl_small = copy.deepcopy(val_dl)
-                    val_dl_small_ds = Subset(val_dl.dataset, list(range(SMALL_VAL_SIZE)))
+                    subset_indices = np.random.choice(len(val_dl.dataset), size=SMALL_VAL_SIZE, replace=False)
+                    val_dl_small_ds = Subset(val_dl.dataset, subset_indices)
                     val_dl_small_dl = DataLoader(val_dl_small_ds, batch_size=val_dl.batch_size, shuffle=False, num_workers=val_dl.num_workers)
                     vrun_dl = val_dl_small_dl
                 val_results, val_outputs, val_targets = real_data_eval(r_model=t_model, cl=real_data_qty, train_data=data_for_fitting, val_dl=vrun_dl)
