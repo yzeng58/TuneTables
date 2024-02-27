@@ -197,7 +197,7 @@ def main_f(args):
             args.seed = base_seed
             if all_res_d.get(task, None) is not None:
                 continue
-            if 'zs' in task:
+            if 'zs' in task and feat_sel_method != '':
                 for j in range(10):
                     args.seed = args.seed + j
                     res, _ = run_single_job(dataset_path, task, split, log_dir, args, base_cmd, gcp_txt)
