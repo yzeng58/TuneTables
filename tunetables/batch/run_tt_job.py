@@ -153,15 +153,15 @@ def main_f(args):
                             f'zs-preproc-{feat_sel_method}-32',
                             f'pt1000-10ens-randinit-avg-top2-unif-reseed-{feat_sel_method}', 
                             f'pt1000-10ens-randinit-avg-top2-unif-reseed-sumafter-{feat_sel_method}',
-                            #f'pt100-10ens-randinit-avg-top2-reseed-{feat_sel_method}',
-                            #f'pt100-10ens-randinit-avg-top2-reseed-sumafter-{feat_sel_method}',
+                            f'pt1000-10ens-randinit-avg-top2-reseed-{feat_sel_method}',
+                            f'pt1000-10ens-randinit-avg-top2-reseed-sumafter-{feat_sel_method}',
                             ]
             else:
                 tt_tasks = [
                             'zs-random-32',
                             # 'zs-preproc-random-32',
                             'pt1000-10ens-randinit-avg-top2-unif-reseed',
-                            # 'pt1000-10ens-randinit-avg-top2-reseed',
+                            'pt1000-10ens-randinit-avg-top2-reseed',
                             ]
         if args.verbose:
             print("For dataset", dataset_path, "split", split, "with", n_classes, "classes, and", n_features, "features, and", n_samples, "samples, running tasks:", tt_tasks)
@@ -197,26 +197,26 @@ def main_f(args):
             args.seed = base_seed
             if all_res_d.get(task, None) is not None:
                 continue
-            if 'zs' in task and n_features > MAX_FEATURES:
-                for j in range(10):
-                    args.seed = args.seed + j
-                    res, _ = run_single_job(dataset_path, task, split, log_dir, args, base_cmd, gcp_txt)
-                    i += 1
-                    if do_wandb:
-                        wandb.log(res, step=i, commit=True)
-                    if args.verbose:
-                        print("Best epoch results for", dataset.strip(), "split", split, "task", task.strip(), ":", res)
-                    all_res_d[task] = res
-                    all_res[task] = max(res.get("Val_Accuracy", 0.0), res.get("Val_nc_Accuracy", 0.0), res.get("Ens_Val_Accuracy", 0.0), res.get("Ens_Val_Accuracy_NC", 0.0))
-            else:
-                res, _ = run_single_job(dataset_path, task, split, log_dir, args, base_cmd, gcp_txt)
-                i += 1
-                if do_wandb:
-                    wandb.log(res, step=i, commit=True)
-                if args.verbose:
-                    print("Best epoch results for", dataset.strip(), "split", split, "task", task.strip(), ":", res)
-                all_res_d[task] = res
-                all_res[task] = max(res.get("Val_Accuracy", 0.0), res.get("Val_nc_Accuracy", 0.0), res.get("Ens_Val_Accuracy", 0.0), res.get("Ens_Val_Accuracy_NC", 0.0))
+            # if 'zs' in task and n_features > MAX_FEATURES:
+            #     for j in range(10):
+            #         args.seed = args.seed + j
+            #         res, _ = run_single_job(dataset_path, task, split, log_dir, args, base_cmd, gcp_txt)
+            #         i += 1
+            #         if do_wandb:
+            #             wandb.log(res, step=i, commit=True)
+            #         if args.verbose:
+            #             print("Best epoch results for", dataset.strip(), "split", split, "task", task.strip(), ":", res)
+            #         all_res_d[task] = res
+            #         all_res[task] = max(res.get("Val_Accuracy", 0.0), res.get("Val_nc_Accuracy", 0.0), res.get("Ens_Val_Accuracy", 0.0), res.get("Ens_Val_Accuracy_NC", 0.0))
+            # else:
+            res, _ = run_single_job(dataset_path, task, split, log_dir, args, base_cmd, gcp_txt)
+            i += 1
+            if do_wandb:
+                wandb.log(res, step=i, commit=True)
+            if args.verbose:
+                print("Best epoch results for", dataset.strip(), "split", split, "task", task.strip(), ":", res)
+            all_res_d[task] = res
+            all_res[task] = max(res.get("Val_Accuracy", 0.0), res.get("Val_nc_Accuracy", 0.0), res.get("Ens_Val_Accuracy", 0.0), res.get("Ens_Val_Accuracy_NC", 0.0))
         best_task = max(all_res, key=all_res.get)
         time_taken = time.time() - start_time
         if do_wandb:

@@ -56,8 +56,6 @@ def train(args, dataset, criterion, encoder_generator, emsize=200, nhid=200, nla
     max_time = extra_prior_kwargs_dict.get('max_time', 0)
     do_kl_loss = extra_prior_kwargs_dict.get('kl_loss', False)
     n_workers = extra_prior_kwargs_dict.get('num_workers', 1)
-    preprocess_type=extra_prior_kwargs_dict.get("preprocess_type", "none")
-    summerize_after_prep=extra_prior_kwargs_dict.get("summerize_after_prep", "False")
 
     if extra_prior_kwargs_dict.get('pad_features', None):
         num_features = 100
@@ -83,8 +81,8 @@ def train(args, dataset, criterion, encoder_generator, emsize=200, nhid=200, nla
 
     def make_datasets(extra_prior_kwargs_dict, do_permute=True, bptt = 0, steps_per_epoch=None):
 
-        args.summerize_after_prep = summerize_after_prep
-        args.preprocess_type = preprocess_type
+        args.summerize_after_prep = extra_prior_kwargs_dict.get("summerize_after_prep", "False")
+        args.preprocess_type = extra_prior_kwargs_dict.get("preprocess_type", "none")
         args.rand_seed = extra_prior_kwargs_dict.get('rand_seed', 0)
 
         for i, split_dictionary in enumerate(dataset.split_indeces):
@@ -163,30 +161,20 @@ def train(args, dataset, criterion, encoder_generator, emsize=200, nhid=200, nla
         else:
             label_weights = None
 
-        #Data preprocessing
         if extra_prior_kwargs_dict.get("do_preprocess", False):
-            try:
-                X_new = preprocess_input(torch.from_numpy(X.copy().astype(np.float32)), preprocess_type, summerize_after_prep, drop_empty=True)    
-                X_val_new = preprocess_input(torch.from_numpy(X_val.copy().astype(np.float32)), preprocess_type, summerize_after_prep, drop_empty=True)  
-                X_test_new = preprocess_input(torch.from_numpy(X_test.copy().astype(np.float32)), preprocess_type, summerize_after_prep, drop_empty=True)
-                if summerize_after_prep:
-                    X_new, X_val_new, X_test_new = SummarizeAfter(X_new, X_val_new, X_test_new, y, y_val, y_test, num_features, args)
-            except ValueError:
-                if getattr(dataset, "ssm", None) is not None:
-                    delattr(dataset, "ssm")
-                X_new = preprocess_input(torch.from_numpy(X.copy().astype(np.float32)), preprocess_type, summerize_after_prep, drop_empty=False)    
-                X_val_new = preprocess_input(torch.from_numpy(X_val.copy().astype(np.float32)), preprocess_type, summerize_after_prep, drop_empty=False)  
-                X_test_new = preprocess_input(torch.from_numpy(X_test.copy().astype(np.float32)), preprocess_type, summerize_after_prep, drop_empty=False)
-                if summerize_after_prep:
-                    X_new, X_val_new, X_test_new = SummarizeAfter(X_new, X_val_new, X_test_new, y, y_val, y_test, num_features, args)
-            X = X_new
-            X_val = X_val_new
-            X_test = X_test_new
+            preprocess_type=extra_prior_kwargs_dict.get("preprocess_type", "none")
+            summerize_after_prep=extra_prior_kwargs_dict.get("summerize_after_prep", "False")
+
+            X = preprocess_input(torch.from_numpy(X.copy().astype(np.float32)), preprocess_type, summerize_after_prep)    
+            X_val = preprocess_input(torch.from_numpy(X_val.copy().astype(np.float32)), preprocess_type, summerize_after_prep)  
+            X_test = preprocess_input(torch.from_numpy(X_test.copy().astype(np.float32)), preprocess_type, summerize_after_prep)
+            if args.summerize_after_prep:
+                X, X_val, X_test = SummarizeAfter(X, X_val, X_test, y, y_val, y_test, num_features, args.subset_features_method, args.subset_rows)            
         else:
             X = torch.from_numpy(X.copy().astype(np.float32))
             X_val = torch.from_numpy(X_val.copy().astype(np.float32))
             X_test = torch.from_numpy(X_test.copy().astype(np.float32))
-        
+
         #feature padding
         do_pf = extra_prior_kwargs_dict.get("pad_features", True)
         if do_pf:
@@ -255,7 +243,7 @@ def train(args, dataset, criterion, encoder_generator, emsize=200, nhid=200, nla
         X, y = shuffle_data(X, y)
         X_val, y_val = shuffle_data(X_val, y_val)
         X_test, y_test = shuffle_data(X_test, y_test)
-        
+
         old_bptt = bptt
         dl, val_dl, test_dl, bptt, data_for_fitting  = make_dataloaders(bptt=bptt, not_zs=not_zs)
 

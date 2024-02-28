@@ -4,11 +4,11 @@ base_dict = {
     'prior_type' : 'real',
     'pad_features' : '',
     'resume' : '/home/benfeuer/TabPFN-pt/tunetables/models_diff/prior_diff_real_checkpoint_n_0_epoch_42.cpkt',
-    'epochs' : 51,
+    'epochs' : 61,
     'validation_period' : 2,
     'save_every_k_epochs' : 15,
     'aggregate_k_gradients' : 1,
-    'early_stopping' : 4,
+    'early_stopping' : 6,
     'lr' : 1e-3,
     'subset_features_method' : 'pca',
     'wandb_log' : '',
@@ -19,7 +19,7 @@ base_dict = {
 
 pt10_dict = {
         'prompt_tuning' : '',
-        'save_every_k_epochs' : 52,
+        'save_every_k_epochs' : 62,
         'tuned_prompt_size' : 10,
         'lr' : 0.1,
 }
