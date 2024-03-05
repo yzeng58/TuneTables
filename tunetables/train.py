@@ -28,7 +28,7 @@ import tunetables.utils as utils
 from tunetables.transformer import TransformerModel
 from tunetables.utils import get_cosine_schedule_with_warmup, get_openai_lr, StoreDictKeyPair, get_weighted_single_eval_pos_sampler, get_uniform_single_eval_pos_sampler
 import tunetables.priors as priors
-from tunetables.priors.real import SummarizeAfter, process_data, loop_translate, TabDS, preprocess_input, get_train_dataloader, shuffle_data
+from tunetables.priors.real import SummarizeAfter, process_data, loop_translate, TabDS, preprocess_input, get_train_dataloader, get_shuffle_index
 from tunetables.losses import kl_divergence
 import tunetables.encoders as encoders
 import tunetables.positional_encodings as positional_encodings
@@ -107,6 +107,21 @@ def train(args, dataset, criterion, encoder_generator, emsize=200, nhid=200, nla
             X_train, y_train = processed_data["data_train"]
             X_val, y_val = processed_data["data_val"]
             X_test, y_test = processed_data["data_test"]
+
+            if extra_prior_kwargs_dict.get("shuffle_index", None) == None:
+                extra_prior_kwargs_dict['shuffle_index'] = {
+                    'train': get_shuffle_index(X_train),
+                    'val': get_shuffle_index(X_val),
+                    'test': get_shuffle_index(X_test),
+                }
+                
+            X_train = X_train[extra_prior_kwargs_dict['shuffle_index']['train']]
+            y_train = y_train[extra_prior_kwargs_dict['shuffle_index']['train']]
+            X_val = X_val[extra_prior_kwargs_dict['shuffle_index']['val']]
+            y_val = y_val[extra_prior_kwargs_dict['shuffle_index']['val']]
+            X_test = X_test[extra_prior_kwargs_dict['shuffle_index']['test']]
+            y_test = y_test[extra_prior_kwargs_dict['shuffle_index']['test']]
+
             n_features = X_train.shape[1]
             n_samples = X_train.shape[0]
             #config['num_classes'] = len(set(y_train))
@@ -165,11 +180,11 @@ def train(args, dataset, criterion, encoder_generator, emsize=200, nhid=200, nla
             preprocess_type=extra_prior_kwargs_dict.get("preprocess_type", "none")
             summerize_after_prep=extra_prior_kwargs_dict.get("summerize_after_prep", "False")
 
-            X = preprocess_input(torch.from_numpy(X.copy().astype(np.float32)), preprocess_type, summerize_after_prep)    
-            X_val = preprocess_input(torch.from_numpy(X_val.copy().astype(np.float32)), preprocess_type, summerize_after_prep)  
-            X_test = preprocess_input(torch.from_numpy(X_test.copy().astype(np.float32)), preprocess_type, summerize_after_prep)
+            X = preprocess_input(torch.from_numpy(X.copy().astype(np.float32)), preprocess_type, summerize_after_prep, args, is_train=True)    
+            X_val = preprocess_input(torch.from_numpy(X_val.copy().astype(np.float32)), preprocess_type, summerize_after_prep, args, is_train=False)  
+            X_test = preprocess_input(torch.from_numpy(X_test.copy().astype(np.float32)), preprocess_type, summerize_after_prep, args, is_train=False)
             if args.summerize_after_prep:
-                X, X_val, X_test = SummarizeAfter(X, X_val, X_test, y, y_val, y_test, num_features, args.subset_features_method, args.subset_rows)            
+                X, X_val, X_test = SummarizeAfter(X, X_val, X_test, y, y_val, y_test, num_features, args)            
         else:
             X = torch.from_numpy(X.copy().astype(np.float32))
             X_val = torch.from_numpy(X_val.copy().astype(np.float32))
@@ -238,12 +253,6 @@ def train(args, dataset, criterion, encoder_generator, emsize=200, nhid=200, nla
             
         data_for_fitting = None
         X, y, X_val, y_val, X_test, y_test, invert_perm_map, steps_per_epoch, num_classes, label_weights, train_ds, val_ds, test_ds = make_datasets(extra_prior_kwargs_dict, do_permute=not_zs, bptt=bptt, steps_per_epoch=steps_per_epoch)
-        
-        #Shuffle data once
-        X, y = shuffle_data(X, y)
-        X_val, y_val = shuffle_data(X_val, y_val)
-        X_test, y_test = shuffle_data(X_test, y_test)
-
         old_bptt = bptt
         dl, val_dl, test_dl, bptt, data_for_fitting  = make_dataloaders(bptt=bptt, not_zs=not_zs)
 
@@ -438,6 +447,7 @@ def train(args, dataset, criterion, encoder_generator, emsize=200, nhid=200, nla
         td[1] = td[1][:cl, ...]
         single_eval_pos = len(td[0])
         softmax_temperature = softmax_temperature.to(device)
+        # print("In real data eval, eval set size: ", len(val_dl.dataset))
         with torch.inference_mode():
             # correct = 0
             # total = len(val_dl.dataset)
@@ -460,6 +470,7 @@ def train(args, dataset, criterion, encoder_generator, emsize=200, nhid=200, nla
             outputs = torch.cat(output_list, dim=0).cpu().numpy()
             predictions = torch.cat(prediction_list, dim=0).cpu().numpy()
             targets = torch.cat(target_list, dim=0).cpu().numpy()
+            # print("In real data eval, Targets: ", targets[:20])
 
         results = dict()
         warnings.filterwarnings("ignore")
@@ -826,6 +837,9 @@ def train(args, dataset, criterion, encoder_generator, emsize=200, nhid=200, nla
             nc_test_ll = 0
             nc_test_ece = 0
             nc_test_tace = 0
+        if verbose:
+            # print("In update ensemble acc, Targets: ", labels_np[:20])
+            print("Ensemble accuracy: ", ens_acc, "Ensemble accuracy (NC): ", ens_acc_nc)
         new_res = {
             "Ens_Val_Accuracy": ens_acc,
             "Ens_Val_Accuracy_NC": ens_acc_nc,
@@ -858,6 +872,19 @@ def train(args, dataset, criterion, encoder_generator, emsize=200, nhid=200, nla
         }
         return new_res
 
+    def get_subset_dl(LONG_VAL_EP=False):
+        #NOTE: ignoring LONG_VAL_EP for now as it can disrupt ensemble eval
+        SMALL_VAL_SIZE = min(extra_prior_kwargs_dict.get('val_subset_size', 10), len(val_dl.dataset))
+        if SMALL_VAL_SIZE > len(val_dl.dataset):
+            # val_dl_small = None
+            return val_dl
+        else:
+            # val_dl_small = copy.deepcopy(val_dl)
+            # subset_indices = np.random.choice(len(val_dl.dataset), size=SMALL_VAL_SIZE, replace=False)
+            val_dl_small_ds = Subset(val_dl.dataset, np.arange(SMALL_VAL_SIZE))
+            val_dl_small_dl = DataLoader(val_dl_small_ds, batch_size=val_dl.batch_size, shuffle=False, num_workers=val_dl.num_workers)
+            return val_dl_small_dl
+
     def train_test_loop(t_model, t_optim, t_sched, eval_model, dl, val_dl, test_dl):      
         # Select a fixed training data prior of size bptt
         return_outputs = None
@@ -887,16 +914,7 @@ def train(args, dataset, criterion, encoder_generator, emsize=200, nhid=200, nla
             res_dict['master_epoch_count'] = len(master_epoch_count)
             LONG_VAL_EP = ((epoch - 1) % validation_period == 0)
             if real_prior:
-                if LONG_VAL_EP:
-                    val_dl_small = None
-                    vrun_dl = val_dl
-                else:
-                    SMALL_VAL_SIZE = min(extra_prior_kwargs_dict.get('val_subset_size', 10), len(val_dl.dataset))
-                    val_dl_small = copy.deepcopy(val_dl)
-                    subset_indices = np.random.choice(len(val_dl.dataset), size=SMALL_VAL_SIZE, replace=False)
-                    val_dl_small_ds = Subset(val_dl.dataset, subset_indices)
-                    val_dl_small_dl = DataLoader(val_dl_small_ds, batch_size=val_dl.batch_size, shuffle=False, num_workers=val_dl.num_workers)
-                    vrun_dl = val_dl_small_dl
+                vrun_dl = get_subset_dl(LONG_VAL_EP=LONG_VAL_EP)
                 val_results, val_outputs, val_targets = real_data_eval(r_model=t_model, cl=real_data_qty, train_data=data_for_fitting, val_dl=vrun_dl)
                 res_dict = dict(res_dict, **{"Val_" + k : v for k, v in val_results.items()})
                 val_score = res_dict["Val_Accuracy"]
@@ -1140,8 +1158,8 @@ def train(args, dataset, criterion, encoder_generator, emsize=200, nhid=200, nla
 
             if extra_prior_kwargs_dict.get('reseed_data', True):
                 #reset subset maker
-                if getattr(dataset, "ssm", None) is not None:
-                    delattr(dataset, "ssm")
+                # if getattr(dataset, "ssm", None) is not None:
+                #     delattr(dataset, "ssm")
                 #load data
                 extra_prior_kwargs_dict['preprocess_type'] = np.random.choice(['none', 'power_all', 'robust_all', 'quantile_all'])
                 X, y, X_val, y_val, X_test, y_test, invert_perm_map, steps_per_epoch, num_classes, label_weights, train_ds, val_ds, test_ds = make_datasets(extra_prior_kwargs_dict, do_permute=not_zs, bptt=bptt, steps_per_epoch=steps_per_epoch)
