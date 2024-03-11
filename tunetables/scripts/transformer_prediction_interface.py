@@ -580,12 +580,29 @@ def get_params_from_config(c):
 
 class TuneTablesClassifier(BaseEstimator, ClassifierMixin):
 
-    def __init__(self):
+    def __init__(self, user_args = None):
         class Args:
             pass
 
         args = Args()
 
+        #load default configuration settings
+        args = self.get_default_config(args)
+
+        if user_args is not None:
+            for k, v in user_args.items():
+                setattr(args, k, v)
+
+        self.config, self.model_string = reload_config(longer=1, args=args)
+        self.config['wandb_log'] = False
+
+        import ConfigSpace
+
+        for k, v in self.config.items():
+            if isinstance(v, ConfigSpace.hyperparameters.CategoricalHyperparameter):
+                self.config[k] = v.default_value
+
+    def get_default_config(self, args):
         # Hardcoded parameters
         args.resume = '/home/benfeuer/TabPFN-pt/tunetables/models_diff/prior_diff_real_checkpoint_n_0_epoch_42.cpkt'
         args.save_path = './logs'
@@ -642,35 +659,33 @@ class TuneTablesClassifier(BaseEstimator, ClassifierMixin):
         args.summerize_after_prep = False
         args.kl_loss = False
 
-        self.config, self.model_string = reload_config(longer=1, args=args)
-        self.config['wandb_log'] = False
-
-        import ConfigSpace
-
-        for k, v in self.config.items():
-            if isinstance(v, ConfigSpace.hyperparameters.CategoricalHyperparameter):
-                self.config[k] = v.default_value
-
+        return args
 
     def fit(self, x, y, cat_idx = []):
+
+        assert isinstance(x, np.ndarray), "x must be a numpy array"
+        assert isinstance(y, np.ndarray), "x must be a numpy array"
+        assert len(x.shape) == 2, "x must be a 2D array (samples, features)"
+        assert len(y.shape) == 1, "y must be a 1D array"
         
         self.model, self.data_for_fitting, _ = train_function(self.config.copy(), 0, self.model_string, is_wrapper = True, x_wrapper = x, y_wrapper = y, cat_idx = cat_idx)
         self.eval_pos = self.data_for_fitting[0].shape[0]
+        self.num_classes = len(np.unique(y))
 
-    def predict(self, x, y, cat_idx = []):
+    def predict(self, x, cat_idx = []):
+
+        assert isinstance(x, np.ndarray), "x must be a numpy array"
         
         self.config['epochs'] = 0 # only process data
-        print("y entering predict", y)
-        _, _, test_loader = train_function(self.config, 0, self.model_string, is_wrapper = True, x_wrapper = x, y_wrapper = y, cat_idx = cat_idx)
+        _, _, test_loader = train_function(self.config, 0, self.model_string, is_wrapper = True, x_wrapper = x, y_wrapper = np.random.randint(self.num_classes, size=x.shape[0]), cat_idx = cat_idx)
         out = real_data_eval_out(r_model=self.model, cl=self.eval_pos, train_data=self.data_for_fitting, val_dl=test_loader)
-        res = out[0]
-        print(res)
         return out[1]
 
     def predict_proba(self, x, cat_idx = []):
+
+        assert isinstance(x, np.ndarray), "x must be a numpy array"
         
         self.config['epochs'] = 0 # only process data
-        _, _, test_loader = train_function(self.config, 0, self.model_string, is_wrapper = True, x_wrapper = x, y_wrapper = np.zeros(len(x)), cat_idx = cat_idx)
+        _, _, test_loader = train_function(self.config, 0, self.model_string, is_wrapper = True, x_wrapper = x, y_wrapper = np.random.randint(self.num_classes, size=x.shape[0]), cat_idx = cat_idx)
         out = real_data_eval_out(r_model=self.model, cl=self.eval_pos, train_data=self.data_for_fitting, val_dl=test_loader, return_probs=True)
-        prob = out[1]
-        return prob
+        return out[1]

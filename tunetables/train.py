@@ -50,9 +50,6 @@ def real_data_eval_out(r_model, cl=1000, train_data=None, val_dl=None, softmax_t
         td[0] = td[0][:cl, ...]
         td[1] = td[1][:cl, ...]
         single_eval_pos = len(td[0])
-        print("single eval pos: ", single_eval_pos)
-        print("Size of td[0]: ", td[0].shape)
-        print("Size of td[1]: ", td[1].shape)
         device = next(r_model.parameters()).device
         softmax_temperature = softmax_temperature.to(device)
         with torch.inference_mode():
@@ -62,13 +59,14 @@ def real_data_eval_out(r_model, cl=1000, train_data=None, val_dl=None, softmax_t
             target_list = []
             output_list = []
             for batch, (data, targets, _) in enumerate(val_dl):
+
+                #extra safeguard against learning from test set
+                data_temp_idx = torch.randperm(data[1].nelement())
+                data[1] = data[1].view(-1)[data_temp_idx].view(data[1].size())
+
                 batch_data = tuple([torch.cat((td[0], data[0]), dim=0).to(torch.float32), torch.cat((td[1], data[1]), dim=0).to(torch.float32)])
-                print("Size of batch_data[0]: ", batch_data[0].shape)
                 output = r_model(tuple(e.to(device) if torch.is_tensor(e) else e for e in batch_data) if isinstance(batch_data, tuple) else batch_data.to(device)
                     , single_eval_pos=single_eval_pos)
-                #invert permutation of labels
-                #new_output = loop_translate(output, invert_perm_map)
-                new_output = output
                 output = output[:, 0:num_classes_local] / torch.exp(softmax_temperature)
                 output = torch.nn.functional.softmax(output, dim=-1)
                 output_list.append(output)
@@ -82,10 +80,6 @@ def real_data_eval_out(r_model, cl=1000, train_data=None, val_dl=None, softmax_t
         results = dict()
         warnings.filterwarnings("ignore")
         results['Eval_Time'] = np.round(time.time() - start_time, 3).item()
-        print("Targets: ", targets)
-        print("Predictions: ", predictions)
-        print("Targets shape: ", targets.shape)
-        print("Predictions shape: ", predictions.shape)
         results['Accuracy'] = np.round(accuracy_score(targets, predictions), 3).item()
         results['Log_Loss'] = np.round(log_loss(targets, outputs, labels=np.arange(num_classes_local)), 3).item()
         results['F1_Weighted'] = np.round(f1_score(targets, predictions, average='weighted'), 3).item()
@@ -231,7 +225,7 @@ def train(args, dataset, criterion, encoder_generator, emsize=200, nhid=200, nla
         X, y = X_train, y_train
 
         #Permutation of label order
-        if do_permute and not is_wrapper:
+        if do_permute and (not is_wrapper):
             label_perm = np.random.permutation(num_classes)
         else:
             label_perm = np.arange(num_classes)
@@ -244,7 +238,7 @@ def train(args, dataset, criterion, encoder_generator, emsize=200, nhid=200, nla
         }
 
         #Permutation of feature order
-        if do_permute  and not is_wrapper:
+        if do_permute and (not is_wrapper):
             feat_idx = np.random.permutation(X.shape[1])
         else:
             feat_idx = np.arange(X.shape[1])
@@ -553,16 +547,16 @@ def train(args, dataset, criterion, encoder_generator, emsize=200, nhid=200, nla
             for batch, (data, targets, _) in enumerate(val_dl):
                 # batch_data = tuple([torch.cat((td[0], data[0]), dim=0).to(torch.float32), torch.cat((td[1], data[1]), dim=0).to(torch.float32)])
                 
-                # Extra safeguard against data leakage, model sees randomly permuted ground truth labels
-                # idx = torch.randperm(data[1].nelement())
-                # data[1] = data[1].view(-1)[idx].view(data[1].size())
+                if extra_prior_kwargs_dict.get('debug', False):
+                    # Extra safeguard against test set contamination, permute label order before passing into model
+                    data_temp_idx = torch.randperm(data[1].nelement())
+                    data[1] = data[1].view(-1)[data_temp_idx].view(data[1].size())
 
                 batch_data = tuple([torch.cat((td[0], data[0]), dim=0).to(torch.float32), torch.cat((td[1], data[1]), dim=0).to(torch.float32)])
                 output = r_model(tuple(e.to(device) if torch.is_tensor(e) else e for e in batch_data) if isinstance(batch_data, tuple) else batch_data.to(device)
                     , single_eval_pos=single_eval_pos)
                 #invert permutation of labels
-                #new_output = loop_translate(output, invert_perm_map)
-                new_output = output
+                new_output = loop_translate(output, invert_perm_map)
                 output = new_output
                 output = output[:, 0:num_classes_local] / torch.exp(softmax_temperature)
                 output = torch.nn.functional.softmax(output, dim=-1)
@@ -843,13 +837,13 @@ def train(args, dataset, criterion, encoder_generator, emsize=200, nhid=200, nla
         prefix_weights = model.state_dict()['prefix_embedding.weight'].cpu().numpy()
         prefix_fn = f"prefix_weights_{i}.npy"
         prefix_save_path = os.path.join(path, prefix_fn)
-        if is_wrapper == False:
+        if not is_wrapper:
             np.save(prefix_save_path, prefix_weights)
         prefix_y_labels = model.prefix_y_embedding.cpu().numpy()
         prefix_y_fn = f"prefix_y_labels_{i}.npy"
         prefix_y_save_path = os.path.join(path, prefix_y_fn)
 
-        if is_wrapper == False:
+        if not is_wrapper:
             np.save(prefix_y_save_path, prefix_y_labels)
         if do_concat:
             prefix_weights_l.append({"prefix_weights": torch.from_numpy(prefix_weights).float(), "prefix_y_labels": torch.from_numpy(prefix_y_labels)})
@@ -1113,7 +1107,7 @@ def train(args, dataset, criterion, encoder_generator, emsize=200, nhid=200, nla
                     mstr = extra_prior_kwargs_dict.get('model_string')
                     boost_iter = f"ensemble_iter_{cur_boost_iter}" if is_ensemble else ""
                     log_path = os.path.join(extra_prior_kwargs_dict.get('save_path'), f'{mstr}_{boost_iter}_log_{epoch}.json')
-                    if is_wrapper == False:
+                    if not is_wrapper:
                         with open(log_path, 'w') as f:
                             json.dump(res_dict, f, indent=4)
 
