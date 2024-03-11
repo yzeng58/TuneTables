@@ -50,6 +50,9 @@ def real_data_eval_out(r_model, cl=1000, train_data=None, val_dl=None, softmax_t
         td[0] = td[0][:cl, ...]
         td[1] = td[1][:cl, ...]
         single_eval_pos = len(td[0])
+        print("single eval pos: ", single_eval_pos)
+        print("Size of td[0]: ", td[0].shape)
+        print("Size of td[1]: ", td[1].shape)
         device = next(r_model.parameters()).device
         softmax_temperature = softmax_temperature.to(device)
         with torch.inference_mode():
@@ -60,6 +63,7 @@ def real_data_eval_out(r_model, cl=1000, train_data=None, val_dl=None, softmax_t
             output_list = []
             for batch, (data, targets, _) in enumerate(val_dl):
                 batch_data = tuple([torch.cat((td[0], data[0]), dim=0).to(torch.float32), torch.cat((td[1], data[1]), dim=0).to(torch.float32)])
+                print("Size of batch_data[0]: ", batch_data[0].shape)
                 output = r_model(tuple(e.to(device) if torch.is_tensor(e) else e for e in batch_data) if isinstance(batch_data, tuple) else batch_data.to(device)
                     , single_eval_pos=single_eval_pos)
                 #invert permutation of labels
@@ -547,6 +551,12 @@ def train(args, dataset, criterion, encoder_generator, emsize=200, nhid=200, nla
             target_list = []
             output_list = []
             for batch, (data, targets, _) in enumerate(val_dl):
+                # batch_data = tuple([torch.cat((td[0], data[0]), dim=0).to(torch.float32), torch.cat((td[1], data[1]), dim=0).to(torch.float32)])
+                
+                # Extra safeguard against data leakage, model sees randomly permuted ground truth labels
+                # idx = torch.randperm(data[1].nelement())
+                # data[1] = data[1].view(-1)[idx].view(data[1].size())
+
                 batch_data = tuple([torch.cat((td[0], data[0]), dim=0).to(torch.float32), torch.cat((td[1], data[1]), dim=0).to(torch.float32)])
                 output = r_model(tuple(e.to(device) if torch.is_tensor(e) else e for e in batch_data) if isinstance(batch_data, tuple) else batch_data.to(device)
                     , single_eval_pos=single_eval_pos)
