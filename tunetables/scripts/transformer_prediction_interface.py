@@ -604,7 +604,7 @@ class TuneTablesClassifier(BaseEstimator, ClassifierMixin):
 
     def get_default_config(self, args):
         # Hardcoded parameters
-        args.resume = '/home/benfeuer/TabPFN-pt/tunetables/models_diff/prior_diff_real_checkpoint_n_0_epoch_42.cpkt'
+        args.resume = '../models/prior_diff_real_checkpoint_n_0_epoch_42.cpkt'
         args.save_path = './logs'
         args.prior_type = 'real'
         args.data_path = "" #'/home/benfeuer/TabPFN-pt/tabpfn/data/openml__colic__27'
