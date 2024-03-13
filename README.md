@@ -154,7 +154,7 @@ The `run_tt_job` script accepts several special flags. We describe their functio
 
 ## Citation
 
-Please cite our paper if you use the code or model in this repo.
+Please cite our [paper]([xxx](https://arxiv.org/abs/2402.11137)) if you use the code or model in this repo.
 
 ```bibtex
 @article{feuer2024tunetables,
