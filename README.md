@@ -151,3 +151,16 @@ The `run_tt_job` script accepts several special flags. We describe their functio
 `--verbose`: If you pass this argument, TuneTables will log a lot more information about your runs to the console. This is useful for debugging or digging into the code.
 
 `--print_stdout`: If you pass this argument, TuneTables will print stdout and stderr to the console after each task completes.
+
+## Citation
+
+Please cite our paper if you use the code or model in this repo.
+
+```bibtex
+@article{feuer2024tunetables,
+  title={TuneTables: Context Optimization for Scalable Prior-Data Fitted Networks},
+  author={Feuer, Benjamin and Schirrmeister, Robin Tibor and Cherepanova, Valeriia and Hegde, Chinmay and Hutter, Frank and Goldblum, Micah and Cohen, Niv and White, Colin},
+  journal={arXiv preprint arXiv:2402.11137},
+  year={2024}
+}
+```
