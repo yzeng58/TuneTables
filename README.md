@@ -10,7 +10,7 @@ While TabPFN achieves very strong performance on small tabular datasets, its cur
 
 <p align="center"><img src="img/tunetables_overview.png" width=700 /></p>
 
-This codebase extends the excellent public repository [TabPFN]([xxx](https://github.com/automl/tabpfn)), by Noah Hollmann, Samuel Müller, Katharina Eggensperger, and Frank Hutter.
+This codebase extends the excellent public repository [TabPFN](https://github.com/automl/tabpfn), by Noah Hollmann, Samuel Müller, Katharina Eggensperger, and Frank Hutter.
 
 ## Table of Contents
 1. [Hardware Requirements](#hardware-requirements)
@@ -154,7 +154,7 @@ The `run_tt_job` script accepts several special flags. We describe their functio
 
 ## Citation
 
-Please cite our [paper]([xxx](https://arxiv.org/abs/2402.11137)) if you use the code or model in this repo.
+Please cite our [paper](https://arxiv.org/abs/2402.11137) if you use the code or model in this repo.
 
 ```bibtex
 @article{feuer2024tunetables,
