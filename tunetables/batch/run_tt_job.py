@@ -104,24 +104,27 @@ def main_f(args):
             if args.verbose:
                 print(f"Adaptive bptt: setting bptt to {new_bptt}")
             args.bptt = new_bptt
+        if args.adaptive_delta:
+            new_delta = max(1.0 / n_samples, 1e-5)
+            if args.verbose:
+                print(f"Adaptive delta: setting delta to {new_delta}")
+            args.edg = f"{args.edg.split(' ')[0]} {new_delta} {args.edg.split(' ')[2]}"
         all_res = {}
         all_res_d = {}
-        #Feature subselection logic
-        if n_features > MAX_FEATURES and args.zsfs:
-            print("Sweeping feature subselection methods.")
-            #NOTE: Other options: zs-pca_white-32, zs-isomap-32, zs-ica-32, zs-random-32, zs-sparse_random_projection-32
-            tt_tasks = ['zs-pca-16', 'zs-mutual_information-16']
-            for task in tt_tasks:
-                try:
-                    res, _ = run_single_job(dataset_path, task, split, log_dir, args, base_cmd, gcp_txt)
-                    all_res[task] = res["Val_Accuracy"]
-                    all_res_d[task] = res
-                except:
-                    pass
-            best_task = max(all_res, key=all_res.get)
-            feat_sel_method = [best_task.split('-')[1]]
-            skip_fs = False
-        elif n_features > MAX_FEATURES and not args.zsfs:
+        # if n_features > MAX_FEATURES:
+        #     print("Sweeping feature subselection methods.")
+        #     #NOTE: Other options: zs-pca_white-32, zs-isomap-32, zs-ica-32, zs-random-32, zs-sparse_random_projection-32
+        #     tt_tasks = ['zs-pca-16', 'zs-mutual_information-16']
+        #     for task in tt_tasks:
+        #         try:
+        #             res, _ = run_single_job(dataset_path, task, split, log_dir, args, base_cmd, gcp_txt)
+        #             all_res[task] = res["Val_Accuracy"]
+        #             all_res_d[task] = res
+        #         except:
+        #             pass
+        #     best_task = max(all_res, key=all_res.get)
+        #     feat_sel_method = best_task.split('-')[1]
+        if n_features > MAX_FEATURES:
             feat_sel_method = ['pca', 'mutual_information']
             skip_fs = False
         else:
@@ -135,6 +138,14 @@ def main_f(args):
         #CASE 2: small datasets
         elif n_samples <= MAX_SAMPLES:
             if skip_fs:
+                # if args.privacy_sweep:
+                #     tt_tasks = [
+                #         "pt10-uniform",
+                #         "pt10-uniform-nopp-prop",
+                #         "pt10-uniform-kl-nopp",
+                #         "pt10-uniform-kl-nopp-prop",
+                #     ]
+                # else:
                 tt_tasks = [
                     'zs-random-32',
                     # 'zs-preproc-random-32',
@@ -146,6 +157,13 @@ def main_f(args):
                 #     tt_tasks.append('pt1000-10ens-randinit-avg-top1-unif-reseed-stopearly')
             else:
                 tt_tasks = []
+                # if args.privacy_sweep:
+                #     for fsm in feat_sel_method:
+                #         tt_tasks.append(f'pt10-uniform-{fsm}')
+                #         tt_tasks.append(f'pt10-uniform-nopp-prop-{fsm}')
+                #         tt_tasks.append(f'pt10-uniform-kl-nopp-{fsm}')
+                #         tt_tasks.append(f'pt10-uniform-kl-nopp-prop-{fsm}')
+                # else:
                 for fsm in feat_sel_method:
                     tt_tasks.append(f'zs-{fsm}-32')
                     # tt_tasks.append(f'zs-preproc-{fsm}-32')
@@ -188,6 +206,7 @@ def main_f(args):
         if args.verbose:
             print("For dataset", dataset_path, "split", split, "with", n_classes, "classes, and", n_features, "features, and", n_samples, "samples, running tasks:", tt_tasks)
         
+        
         args.bptt_backup = args.bptt
         
         #wandb logging for tunetables meta-optimization
@@ -207,6 +226,11 @@ def main_f(args):
             config['n_samples'] = n_samples
             config['upper_cutoff'] = UPPER_CUTOFF
             config['state_dict'] = None
+            if args.privacy_sweep:
+                model_string += '_privacy_' + '_edg_' + str(args.edg).replace(" ", "_")
+                config['epsilon'] = str(args.edg).replace(" ", "_").split("_")[0]
+                config['delta'] = str(args.edg).replace(" ", "_").split("_")[1]
+                config['gradnorm'] = str(args.edg).replace(" ", "_").split("_")[2]
             wandb_init(config, model_string)
             
         start_time = time.time()
@@ -223,19 +247,19 @@ def main_f(args):
             args.seed = base_seed
             if all_res_d.get(task, None) is not None:
                 continue
-            if 'zs' in task and args.zsrs and n_features > MAX_FEATURES:
-                for j in range(10):
-                    args.seed = args.seed + j
-                    res, _ = run_single_job(dataset_path, task, split, log_dir, args, base_cmd, gcp_txt)
-                    i += 1
-                    if do_wandb:
-                        wandb.log(res, step=i, commit=True)
-                    if args.verbose:
-                        print("Best epoch results for", dataset.strip(), "split", split, "task", task.strip(), ":", res)
-                    all_res_d[task] = res
-                    all_res[task] = max(res.get("Val_Accuracy", 0.0), res.get("Val_nc_Accuracy", 0.0), res.get("Ens_Val_Accuracy", 0.0), res.get("Ens_Val_Accuracy_NC", 0.0))
-            else:
-                res, _ = run_single_job(dataset_path, task, split, log_dir, args, base_cmd, gcp_txt)
+            # if 'zs' in task and n_features > MAX_FEATURES:
+            #     for j in range(10):
+            #         args.seed = args.seed + j
+            #         res, _ = run_single_job(dataset_path, task, split, log_dir, args, base_cmd, gcp_txt)
+            #         i += 1
+            #         if do_wandb:
+            #             wandb.log(res, step=i, commit=True)
+            #         if args.verbose:
+            #             print("Best epoch results for", dataset.strip(), "split", split, "task", task.strip(), ":", res)
+            #         all_res_d[task] = res
+            #         all_res[task] = max(res.get("Val_Accuracy", 0.0), res.get("Val_nc_Accuracy", 0.0), res.get("Ens_Val_Accuracy", 0.0), res.get("Ens_Val_Accuracy_NC", 0.0))
+            # else:
+            res, _ = run_single_job(dataset_path, task, split, log_dir, args, base_cmd, gcp_txt)
             i += 1
             if do_wandb:
                 wandb.log(res, step=i, commit=True)
@@ -257,6 +281,9 @@ def main_f(args):
         task_str = task
         if args.run_optuna:
             task_str += '_optuna'
+        if args.privacy_sweep:
+            temp_str = '_privacy_' + '_edg_' + str(args.edg).replace(" ", "_")
+            task_str += temp_str
         if args.bptt > -1:
             task_str += '_bptt_' + str(args.bptt)
         if args.shuffle_every_epoch:
@@ -282,7 +309,8 @@ def main_f(args):
             if args.wandb_log:
                 command = command + [
                     '--wandb_log',
-                    '--wandb_group', "\"" + dataset.strip() + "_" + task_str + "_" + subset_ft_method + "\"", 
+                    '--wandb_group', "\"" + dataset.strip() + "_" + task_str + "_" + subset_ft_method + "\"",
+                    '--wandb_project', args.wandb_project, 
                 ]
         else:
             # Get task args
@@ -333,8 +361,15 @@ def main_f(args):
                 elif args.wandb_log:
                     command = command + ["--wandb_project", "tabpfn-pt-optuna"]
         if args.bptt > -1:
-            command.append("--bptt")
-            command.append(str(args.bptt))     
+            if "--bptt" in command:
+                command[command.index("--bptt") + 1] = str(args.bptt)
+            else:
+                command.append("--bptt")
+                command.append(str(args.bptt))
+        if args.privacy_sweep:
+            command.append("--private_data")
+            command.append("--edg")
+            command.append(args.edg)
         if args.shuffle_every_epoch:
             command.append("--shuffle_every_epoch")
         if args.verbose:
@@ -393,6 +428,11 @@ def main_f(args):
 
     gcp_txt = "run_commands=(\n"
 
+    if args.privacy_sweep:
+        edg_vals = [0.01, 0.1, 0.5, 1.0, 5.0]
+    else:
+        edg_vals = [0.0]
+
     for dataset in tqdm(datasets):
         dataset_path = "\"" + os.path.join(args.base_path, dataset.strip()) + '\"'
         #sanitize name
@@ -403,37 +443,40 @@ def main_f(args):
             os.makedirs(log_dir)
         for split in args.splits:
             for task in tasks:
-                if 'tunetables' in task and args.gcp_run:
-                    task_args = [
-                        "--splits", str(split),
-                        "--print_stdout",
-                        "--verbose",
-                    ]
-                    if args.adaptive_bptt:
-                        task_args = task_args + ["--adaptive_bptt"]
-                    if args.bptt > -1:
-                        task_args = task_args + ["--bptt", str(args.bptt)]
-                    if args.epochs > 0:
-                        task_args = task_args + ["--epochs", str(args.epochs)]
-                    if args.validation_period > 0:
-                        task_args = task_args + ["--validation_period", str(args.validation_period)]
-                    if args.wandb_log:
-                        task_args = task_args + [
-                            "--wandb_log",
-                            "--wandb_project", args.wandb_project,
-                            "--wandb_entity", args.wandb_entity,
+                for edgval in edg_vals:
+                    args.edg = str(edgval) + " " + "1e-4" + " " + "1.2"
+                    if 'tunetables' in task and args.gcp_run:
+                        task_args = [
+                            "--splits", str(split),
+                            "--print_stdout",
+                            "--verbose",
                         ]
-                    task_str = task + "_dataset_" + dataset.strip() + "_args_" + " ".join(task_args)
-                    res = None
-                elif 'tunetables' in task:
-                    do_wandb = args.wandb_log
-                    tt_args = copy.deepcopy(args)
-                    tt_args.wandb_log = False
-                    res, task_str = run_tunetables(dataset_path, task, split, log_dir, tt_args, base_cmd, gcp_txt, do_wandb)
-                else:
-                    res, task_str = run_single_job(dataset_path, task, split, log_dir, args, base_cmd, gcp_txt)
+                        if args.adaptive_bptt:
+                            task_args = task_args + ["--adaptive_bptt"]
+                        if args.bptt > -1:
+                            task_args = task_args + ["--bptt", str(args.bptt)]
+                        if args.epochs > 0:
+                            task_args = task_args + ["--epochs", str(args.epochs)]
+                        if args.validation_period > 0:
+                            task_args = task_args + ["--validation_period", str(args.validation_period)]
+                        if args.wandb_log:
+                            task_args = task_args + [
+                                "--wandb_log",
+                                "--wandb_project", args.wandb_project,
+                                "--wandb_entity", args.wandb_entity,
+                            ]
+                        task_str = task + "_dataset_" + dataset.strip() + "_args_" + " ".join(task_args)
+                        res = None
+                    elif 'tunetables' in task:
+                        do_wandb = args.wandb_log
+                        tt_args = copy.deepcopy(args)
+                        tt_args.wandb_log = False
+                        res, task_str = run_tunetables(dataset_path, task, split, log_dir, tt_args, base_cmd, gcp_txt, do_wandb)
+                    else:
+                        res, task_str = run_single_job(dataset_path, task, split, log_dir, args, base_cmd, gcp_txt)
                 wandb_bu = args.wandb_log
-                args = tt_args
+                if 'tunetables' in task:
+                    args = tt_args
                 args.wandb_log = wandb_bu
                 if args.gcp_run:
                     gcp_txt += "\"" + task_str + "\"" "\n"
@@ -468,8 +511,6 @@ if __name__ == '__main__':
     parser.add_argument('--resume', type=str, default='/home/benfeuer/TabPFN-pt/tunetables/models_diff/prior_diff_real_checkpoint_n_0_epoch_42.cpkt', help='TabPFN checkpoint to resume from')
     parser.add_argument('--bptt', type=int, default=-1, help='bptt batch size')
     parser.add_argument('--adaptive_bptt', action='store_true', help='Whether to use adaptive bptt')
-    parser.add_argument('--zsfs', action='store_true', help='Whether to use zero-shot feature selection')
-    parser.add_argument('--zsrs', action='store_true', help='Whether to use zero-shot reseeding')
     parser.add_argument('--splits', nargs='+', type=int, default=[0], help='Splits to run')
     parser.add_argument('--shuffle_every_epoch', action='store_true', help='Whether to shuffle the order of the data every epoch (can help when bptt is large).')
     parser.add_argument('--run_optuna', action='store_true', help='Whether to run optuna hyperparameter search.')
@@ -483,5 +524,7 @@ if __name__ == '__main__':
     parser.add_argument('--epochs', type=int, default=0, help='Number of epochs to run.')
     parser.add_argument('--validation_period', type=int, default=0, help='Number of epochs between validation runs.')
     parser.add_argument('--seed', type=int, default=135798642, help='Random seed for reproducibility.')
+    parser.add_argument('--privacy_sweep', action='store_true', help='Train with differential privacy.')
+    parser.add_argument('--adaptive_delta', action='store_true', help='Adapt delta for differential privacy.')
     args = parser.parse_args()
     main_f(args)

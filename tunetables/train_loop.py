@@ -12,7 +12,7 @@ from tunetables.priors.utils import uniform_int_sampler_f
 from tunetables.notebook_utils import *
 from tunetables.utils import make_serializable, wandb_init
 
-def train_function(config_sample, i=0, add_name='', is_wrapper = False, x_wrapper = None, y_wrapper = None, cat_idx = []):
+def train_function(config_sample, i=0, add_name=''):
 
     if config_sample['boosting'] or config_sample['rand_init_ensemble'] or config_sample['bagging']:
         #don't save checkpoints for ensembling, just prefixes
@@ -42,16 +42,13 @@ def train_function(config_sample, i=0, add_name='', is_wrapper = False, x_wrappe
         my_callback = save_callback
 
     #TODO: get_model shouldn't be the method that trains the model
-    model, results_dict, data_for_fitting, test_loader = get_model(config_sample
+    model, results_dict = get_model(config_sample
                       , config_sample["device"]
                       , should_train=True
                       , state_dict=config_sample["state_dict"]
-                      , epoch_callback = my_callback, is_wrapper = is_wrapper, x_wrapper = x_wrapper, y_wrapper = y_wrapper, cat_idx = cat_idx)
+                      , epoch_callback = my_callback)
     
-    if is_wrapper:
-        return model, data_for_fitting, test_loader
-    else:
-        return results_dict
+    return results_dict
 
 def set_compatibility_params(config, args):
     """
@@ -176,6 +173,11 @@ def reload_config(config_type='causal', task_type='multiclass', longer=0, args=N
     config['reseed_data'] = args.reseed_data
     config['normalize_to_ranking'] = False # This should be kept to false, it has learning from the future issues
     config['workers'] = args.workers
+
+    #differential privacy
+    config['private_model'] = args.private_model
+    config['private_data'] = args.private_data
+    config['epsilon'], config['delta'], config['gradnorm'] = float(args.edg[0]), float(args.edg[1]), float(args.edg[2])
     
     #meta-parameters
     config['validation_period'] = args.validation_period
@@ -328,6 +330,9 @@ def parse_args():
     parser.add_argument('--summerize_after_prep', action='store_true', help='train_feature_extractor.')
     parser.add_argument('--kl_loss', action='store_true', help='Whether to use KL loss.')
     parser.add_argument('--workers', type=int, default=8, help='Number of workers for data loading.')
+    parser.add_argument('--private_model', action='store_true', help='Train model with differential privacy.')
+    parser.add_argument('--private_data', action='store_true', help='Train with differential privacy added to the dataset.')
+    parser.add_argument('--edg', nargs='+', type=str, default=["50", "1e-4", "1.2"], help="Epsilon, delta, gradnorm for differential privacy.")
     args = parser.parse_args()
     return args
 
@@ -356,7 +361,7 @@ def train_loop():
         if isinstance(v, ConfigSpace.hyperparameters.CategoricalHyperparameter):
             config[k] = v.default_value
 
-    results_dict = train_function(config, 0, model_string, is_wrapper = False)
+    results_dict = train_function(config, 0, model_string)
 
     if config['wandb_log']:
         wandb.finish()
