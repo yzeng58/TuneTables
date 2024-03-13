@@ -362,11 +362,10 @@ def train(args, dataset, criterion, encoder_generator, emsize=200, nhid=200, nla
                 ens_size = 32
             eval_model = TabPFNClassifier(device='cuda', 
                                                     N_ensemble_configurations=ens_size, 
-                                                    base_path="/home/benfeuer/TabPFN-pt/tabpfn",
-                                                    # seed=None,
+                                                    base_path=".",
                                                     seed=extra_prior_kwargs_dict.get('rand_seed', 0),
                                                     batch_size_inference=1,
-                                                    )
+                                        )
             if do_kl_loss:
                 eval_model.fit(data_for_fitting[0], data_for_fitting[1], overwrite_warning=True)
         else:
