@@ -503,7 +503,7 @@ def main_f(args):
             f.write(stderr.decode())
         
 if __name__ == '__main__':
-    parser = argparse.ArgumentParser(description='Run TabPFN')
+    parser = argparse.ArgumentParser(description='Run TuneTables')
     parser.add_argument('--base_path', type=str, default='data', help='Path to TuneTables dataset directory')
     parser.add_argument('--datasets', type=str, default='../metadata/subset.txt', help='Path to datasets text file')
     parser.add_argument('--tasks', type=str, default='../metadata/subset_tasks.txt', help='Tasks to run')

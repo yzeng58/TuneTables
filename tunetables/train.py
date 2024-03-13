@@ -34,12 +34,6 @@ import tunetables.encoders as encoders
 import tunetables.positional_encodings as positional_encodings
 from tunetables.utils import init_dist, seed_all, EmbeddingConcatenator
 
-# script_path = os.path.abspath(__file__)
-# project_path = os.path.dirname(os.path.dirname(script_path))
-# sys.path.insert(0, os.path.join(project_path + "/tabpfn/priors"))
-
-
-
 def real_data_eval_out(r_model, cl=1000, train_data=None, val_dl=None, softmax_temperature = torch.log(torch.tensor([0.8])), return_probs=False):
 
         verbose = False
