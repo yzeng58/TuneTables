@@ -660,6 +660,7 @@ class TuneTablesClassifier(BaseEstimator, ClassifierMixin):
         args.kl_loss = False
         args.private_model = False
         args.private_data = False
+        args.edg = ["50", "1e-4", "1.2"]
 
         return args
 
