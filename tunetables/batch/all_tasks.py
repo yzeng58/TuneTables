@@ -72,8 +72,12 @@ pt10_short_lowlr_prop_dict = copy.deepcopy(pt10_short_lowlr_dict)
 pt10_short_lowlr_prop_dict['tuned_prompt_label_balance'] = 'proportional'
 pt10_short_lowlr_prop_pca_dict = copy.deepcopy(pt10_short_lowlr_prop_dict)
 pt10_short_lowlr_prop_pca_dict['subset_features_method'] = 'pca'
+pt10_short_lowlr_prop_sumafter_pca_dict = copy.deepcopy(pt10_short_lowlr_prop_pca_dict)
+pt10_short_lowlr_prop_sumafter_pca_dict['summerize_after_prep'] = ''
 pt10_short_lowlr_prop_mutinf_dict = copy.deepcopy(pt10_short_lowlr_prop_dict)
 pt10_short_lowlr_prop_mutinf_dict['subset_features_method'] = 'mutual_information'
+pt10_short_lowlr_prop_sumafter_mutinf_dict = copy.deepcopy(pt10_short_lowlr_prop_mutinf_dict)
+pt10_short_lowlr_prop_sumafter_mutinf_dict['summerize_after_prep'] = ''
 pt10_shorter_dict = copy.deepcopy(pt10_dict)
 pt10_shorter_dict['epochs'] = 4
 pt10_shorter_dict['save_every_k_epochs'] = 5
@@ -94,16 +98,24 @@ pt10_unif_kl_nopp_dict = copy.deepcopy(pt10_unif_kl_dict)
 pt10_unif_kl_nopp_dict.pop('do_preprocess')
 pt10_unif_kl_nopp_pca_dict = copy.deepcopy(pt10_unif_kl_nopp_dict)
 pt10_unif_kl_nopp_pca_dict['subset_features_method'] = 'pca'
+pt10_unif_kl_nopp_sumafter_pca_dict = copy.deepcopy(pt10_unif_kl_nopp_pca_dict)
+pt10_unif_kl_nopp_sumafter_pca_dict['summerize_after_prep'] = ''
 pt10_unif_kl_nopp_mutinf_dict = copy.deepcopy(pt10_unif_kl_nopp_dict)
 pt10_unif_kl_nopp_mutinf_dict['subset_features_method'] = 'mutual_information'
+pt10_unif_kl_nopp_sumafter_mutinf_dict = copy.deepcopy(pt10_unif_kl_nopp_mutinf_dict)
+pt10_unif_kl_nopp_sumafter_mutinf_dict['summerize_after_prep'] = ''
 pt10_unif_kl_prop_dict = copy.deepcopy(pt10_unif_kl_dict)
 pt10_unif_kl_prop_dict['tuned_prompt_label_balance'] = 'proportional'
 pt10_unif_kl_nopp_prop_dict = copy.deepcopy(pt10_unif_kl_nopp_dict)
 pt10_unif_kl_nopp_prop_dict['tuned_prompt_label_balance'] = 'proportional'
 pt10_unif_kl_nopp_prop_pca_dict = copy.deepcopy(pt10_unif_kl_nopp_prop_dict)
 pt10_unif_kl_nopp_prop_pca_dict['subset_features_method'] = 'pca'
+pt10_unif_kl_nopp_prop_sumafter_pca_dict = copy.deepcopy(pt10_unif_kl_nopp_prop_pca_dict)
+pt10_unif_kl_nopp_prop_sumafter_pca_dict['summerize_after_prep'] = ''
 pt10_unif_kl_nopp_prop_mutinf_dict = copy.deepcopy(pt10_unif_kl_nopp_prop_dict)
 pt10_unif_kl_nopp_prop_mutinf_dict['subset_features_method'] = 'mutual_information'
+pt10_unif_kl_nopp_prop_sumafter_mutinf_dict = copy.deepcopy(pt10_unif_kl_nopp_prop_mutinf_dict)
+pt10_unif_kl_nopp_prop_sumafter_mutinf_dict['summerize_after_prep'] = ''
 pt10_prop_dict = copy.deepcopy(pt10_dict)
 pt10_prop_dict['tuned_prompt_label_balance'] = 'proportional'
 pt10_pca_dict = copy.deepcopy(pt10_dict)
@@ -435,12 +447,24 @@ all_tasks = {
     'pt10-short' : pt10_short_dict,
     'pt10-short-lowlr' : pt10_short_lowlr_dict,
     'pt10-short-lowlr-prop' : pt10_short_lowlr_prop_dict,
+    'pt10-short-lowlr-prop-pca' : pt10_short_lowlr_prop_pca_dict,
+    'pt10-short-lowlr-prop-mutual_information' : pt10_short_lowlr_prop_mutinf_dict,
+    'pt10-short-lowlr-prop-sumafter-pca' : pt10_short_lowlr_prop_sumafter_pca_dict,
+    'pt10-short-lowlr-prop-sumafter-mutual_information' : pt10_short_lowlr_prop_sumafter_mutinf_dict,
     'pt10-shorter' : pt10_shorter_dict,
     'pt10-uniform' : pt10_unif_dict,
     'pt10-uniform-kl' : pt10_unif_kl_dict,
     'pt10-uniform-kl-nopp' : pt10_unif_kl_nopp_dict,
+    'pt10-uniform-kl-nopp-pca' : pt10_unif_kl_nopp_pca_dict,
+    'pt10-uniform-kl-nopp-mutual_information' : pt10_unif_kl_nopp_mutinf_dict,
+    'pt10-uniform-kl-nopp-sumafter-pca' : pt10_unif_kl_nopp_sumafter_pca_dict,
+    'pt10-uniform-kl-nopp-sumafter-mutual_information' : pt10_unif_kl_nopp_sumafter_mutinf_dict,
     'pt10-uniform-kl-prop' : pt10_unif_kl_prop_dict,
     'pt10-uniform-kl-nopp-prop' : pt10_unif_kl_nopp_prop_dict,
+    'pt10-uniform-kl-nopp-prop-pca' : pt10_unif_kl_nopp_prop_pca_dict,
+    'pt10-uniform-kl-nopp-prop-mutual_information' : pt10_unif_kl_nopp_prop_mutinf_dict,
+    'pt10-uniform-kl-nopp-prop-sumafter-pca' : pt10_unif_kl_nopp_prop_sumafter_pca_dict,
+    'pt10-uniform-kl-nopp-prop-sumafter-mutual_information' : pt10_unif_kl_nopp_prop_sumafter_mutinf_dict,
     'pt10-uniform-sumafter-pca' : pt10_sumafter_pca_unif_dict,
     'pt10-uniform-sumafter-mutual_information' : pt10_sumafter_mutinf_unif_dict,
     'pt10-uniform-short' : pt10_short_unif_dict,
