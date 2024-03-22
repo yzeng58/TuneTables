@@ -129,11 +129,20 @@ def main_f(args):
         else:
             feat_sel_method = ['']
             skip_fs = True
-        if n_classes > 25:
+        if n_classes > 100:
             raise NotImplementedError("Please add a task to all_tasks for the correct number of classes (modify task pt1000-10ens-randinit-avg-top2-unif-reseed-25cl-long).")
         #CASE 1: large-class datasets
-        if n_classes > MAX_CLASSES and n_classes < 25:
-            tt_tasks = [f'pt1000-10ens-randinit-avg-top2-unif-reseed-25cl-long']
+        if n_classes > MAX_CLASSES and n_classes < 100:
+            if skip_fs:
+                tt_tasks = [f'pt1000-10ens-randinit-avg-top2-unif-reseed-100cl-long', 
+                            f'pt1000-10ens-randinit-avg-top2-reseed-100cl-long'
+                            ]
+            else:
+                tt_tasks = []
+                for fsm in feat_sel_method:
+                    # tt_tasks.append(f'zs-preproc-{fsm}-32')
+                    tt_tasks.append(f'pt1000-10ens-randinit-avg-top2-reseed-100cl-long-{fsm}')
+                    tt_tasks.append(f'pt1000-10ens-randinit-avg-top2-unif-reseed-100cl-long-{fsm}')
         #CASE 2: small datasets
         elif n_samples <= MAX_SAMPLES:
             if skip_fs:
