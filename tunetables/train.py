@@ -75,7 +75,12 @@ def real_data_eval_out(r_model, cl=1000, train_data=None, val_dl=None, softmax_t
         warnings.filterwarnings("ignore")
         results['Eval_Time'] = np.round(time.time() - start_time, 3).item()
         results['Accuracy'] = np.round(accuracy_score(targets, predictions), 3).item()
-        results['Log_Loss'] = np.round(log_loss(targets, outputs, labels=np.arange(num_classes_local)), 3).item()
+        try:
+            results['Log_Loss'] = np.round(log_loss(targets, outputs, labels=np.arange(num_classes_local)), 3).item()
+        except Exception as e:
+            if verbose:
+                print("Error calculating log loss: ", e)
+            results['Log_Loss'] = 0.0
         results['F1_Weighted'] = np.round(f1_score(targets, predictions, average='weighted'), 3).item()
         results['F1_Macro'] = np.round(f1_score(targets, predictions, average='macro'), 3).item()
         try:
@@ -396,7 +401,12 @@ def train(args, dataset, criterion, encoder_generator, emsize=200, nhid=200, nla
                     end_time = time.time()
                     results['Eval_Time'] = np.round(end_time - start_time, 3).item()
                     results['Accuracy'] = np.round(accuracy_score(targets, predictions), 3).item()
-                    results['Log_Loss'] = np.round(log_loss(targets, outputs, labels=np.arange(num_classes_local)), 3).item()
+                    try:
+                        results['Log_Loss'] = np.round(log_loss(targets, outputs, labels=np.arange(num_classes_local)), 3).item()
+                    except Exception as e:
+                        if verbose:
+                            print("Error calculating log loss: ", e)
+                        results['Log_Loss'] = 0.0
                     results['F1_Weighted'] = np.round(f1_score(targets, predictions, average='weighted'), 3).item()
                     results['F1_Macro'] = np.round(f1_score(targets, predictions, average='macro'), 3).item()
                     try:
@@ -565,7 +575,12 @@ def train(args, dataset, criterion, encoder_generator, emsize=200, nhid=200, nla
         warnings.filterwarnings("ignore")
         results['Eval_Time'] = np.round(time.time() - start_time, 3).item()
         results['Accuracy'] = np.round(accuracy_score(targets, predictions), 3).item()
-        results['Log_Loss'] = np.round(log_loss(targets, outputs, labels=np.arange(num_classes_local)), 3).item()
+        try:
+            results['Log_Loss'] = np.round(log_loss(targets, outputs, labels=np.arange(num_classes_local)), 3).item()
+        except Exception as e:
+            if verbose:
+                print("Error calculating log loss: ", e)
+            results['Log_Loss'] = 0.0
         results['F1_Weighted'] = np.round(f1_score(targets, predictions, average='weighted'), 3).item()
         results['F1_Macro'] = np.round(f1_score(targets, predictions, average='macro'), 3).item()
         try:
@@ -843,15 +858,17 @@ def train(args, dataset, criterion, encoder_generator, emsize=200, nhid=200, nla
         return prefix_weights_l
 
     def update_ensemble_acc(ens_acc, ens_acc_nc, ens_acc_test, ens_acc_test_nc, num_classes):
+        num_classes_local_val = len(np.unique(labels_np))
+        num_classes_local_test = len(np.unique(labels_np_test))
         predictions_np = np.argmax(probs_np, axis=1)
         predictions_np_test = np.argmax(probs_np_test, axis=1)
         try:
             if num_classes == 2:
-                roc_auc = np.round(roc_auc_score(labels_np, probs_np[:, 1], labels=np.arange(num_classes)), 3).item()
-                test_roc_auc = np.round(roc_auc_score(labels_np_test, probs_np_test[:, 1], labels=np.arange(num_classes)), 3).item()
+                roc_auc = np.round(roc_auc_score(labels_np, probs_np[:, 1], labels=np.arange(num_classes_local_val)), 3).item()
+                test_roc_auc = np.round(roc_auc_score(labels_np_test, probs_np_test[:, 1], labels=np.arange(num_classes_local_test)), 3).item()
             else:
-                roc_auc = np.round(roc_auc_score(labels_np, probs_np, labels=np.arange(num_classes), multi_class='ovr'), 3).item()
-                test_roc_auc = np.round(roc_auc_score(labels_np_test, probs_np_test, labels=np.arange(num_classes), multi_class='ovr'), 3).item()
+                roc_auc = np.round(roc_auc_score(labels_np, probs_np, labels=np.arange(num_classes_local_val), multi_class='ovr'), 3).item()
+                test_roc_auc = np.round(roc_auc_score(labels_np_test, probs_np_test, labels=np.arange(num_classes_local_test), multi_class='ovr'), 3).item()
         except Exception as e:
             if verbose:
                 print("Error calculating ROC AUC: ", e)
@@ -859,24 +876,26 @@ def train(args, dataset, criterion, encoder_generator, emsize=200, nhid=200, nla
             test_roc_auc = 0.0
         f1_weighted = np.round(f1_score(labels_np, predictions_np, average='weighted'), 3).item()
         f1_macro = np.round(f1_score(labels_np, predictions_np, average='macro'), 3).item()
-        ll = np.round(log_loss(labels_np, probs_np, labels=np.arange(num_classes)), 3)
         try:
+            ll = np.round(log_loss(labels_np, probs_np, labels=np.arange(num_classes_local_val)), 3)
             ece = np.round(um.ece(labels_np, probs_np, num_bins=30), 3)
             tace = np.round(um.tace(labels_np, probs_np, num_bins=30), 3)
         except Exception as e:
             if verbose:
-                print("Error calculating ECE/TACE: ", e)
+                print("Error calculating ll/ECE/TACE: ", e)
+            ll = 0.0
             ece = 0.0
             tace = 0.0
         test_f1_weighted = np.round(f1_score(labels_np_test, predictions_np_test, average='weighted'), 3).item()
         test_f1_macro = np.round(f1_score(labels_np_test, predictions_np_test, average='macro'), 3).item()
-        test_ll = np.round(log_loss(labels_np_test, probs_np_test, labels=np.arange(num_classes)), 3)
         try:
+            test_ll = np.round(log_loss(labels_np_test, probs_np_test, labels=np.arange(num_classes_local_test)), 3)
             test_ece = np.round(um.ece(labels_np_test, probs_np_test, num_bins=30), 3)
             test_tace = np.round(um.tace(labels_np_test, probs_np_test, num_bins=30), 3)
         except Exception as e:
             if verbose:
-                print("Error calculating ECE/TACE: ", e)
+                print("Error calculating ll/ECE/TACE: ", e)
+            test_ll = 0.0
             test_ece = 0.0
             test_tace = 0.0
         if do_prompt_tuning:
@@ -886,34 +905,36 @@ def train(args, dataset, criterion, encoder_generator, emsize=200, nhid=200, nla
             nc_f1_macro = np.round(f1_score(labels_np_nc, predictions_np_nc, average='macro'), 3).item()
             try:
                 if num_classes == 2:
-                    roc_auc_nc = np.round(roc_auc_score(labels_np_nc, probs_np_nc[:, 1], labels=np.arange(num_classes)), 3).item()
-                    test_roc_auc_nc = np.round(roc_auc_score(labels_np_nc_test, probs_np_nc_test[:, 1], labels=np.arange(num_classes)), 3).item()
+                    roc_auc_nc = np.round(roc_auc_score(labels_np_nc, probs_np_nc[:, 1], labels=np.arange(num_classes_local_val)), 3).item()
+                    test_roc_auc_nc = np.round(roc_auc_score(labels_np_nc_test, probs_np_nc_test[:, 1], labels=np.arange(num_classes_local_test)), 3).item()
                 else:
-                    roc_auc_nc = np.round(roc_auc_score(labels_np_nc, probs_np_nc, labels=np.arange(num_classes), multi_class='ovr'), 3).item()
-                    test_roc_auc_nc = np.round(roc_auc_score(labels_np_nc_test, probs_np_nc_test, labels=np.arange(num_classes), multi_class='ovr'), 3).item()
+                    roc_auc_nc = np.round(roc_auc_score(labels_np_nc, probs_np_nc, labels=np.arange(num_classes_local_val), multi_class='ovr'), 3).item()
+                    test_roc_auc_nc = np.round(roc_auc_score(labels_np_nc_test, probs_np_nc_test, labels=np.arange(num_classes_local_test), multi_class='ovr'), 3).item()
             except Exception as e:
                 if verbose:
                     print("Error calculating ROC AUC: ", e)
                 roc_auc_nc = 0.0
                 test_roc_auc_nc = 0.0
-            nc_ll = np.round(log_loss(labels_np_nc, probs_np_nc, labels=np.arange(num_classes)), 3)
             try:
+                nc_ll = np.round(log_loss(labels_np_nc, probs_np_nc, labels=np.arange(num_classes_local_val)), 3)
                 nc_ece = np.round(um.ece(labels_np_nc, probs_np_nc, num_bins=30), 3)
                 nc_tace = np.round(um.tace(labels_np_nc, probs_np_nc, num_bins=30), 3)
             except Exception as e:
                 if verbose:
-                    print("Error calculating ECE/TACE: ", e)
+                    print("Error calculating ll/ECE/TACE: ", e)
+                nc_ll = 0.0
                 nc_ece = 0.0
                 nc_tace = 0.0
             nc_test_f1_weighted = np.round(f1_score(labels_np_nc_test, predictions_np_nc_test, average='weighted'), 3).item()
             nc_test_f1_macro = np.round(f1_score(labels_np_nc_test, predictions_np_nc_test, average='macro'), 3).item()
-            nc_test_ll = np.round(log_loss(labels_np_nc_test, probs_np_nc_test, labels=np.arange(num_classes)), 3)
             try:
+                nc_test_ll = np.round(log_loss(labels_np_nc_test, probs_np_nc_test, labels=np.arange(num_classes_local_test)), 3)
                 nc_test_ece = np.round(um.ece(labels_np_nc_test, probs_np_nc_test, num_bins=30), 3)
                 nc_test_tace = np.round(um.tace(labels_np_nc_test, probs_np_nc_test, num_bins=30), 3)
             except Exception as e:
                 if verbose:
-                    print("Error calculating ECE/TACE: ", e)
+                    print("Error calculating ll/ECE/TACE: ", e)
+                nc_test_ll = 0.0
                 nc_test_ece = 0.0
                 nc_test_tace = 0.0
         else:
