@@ -453,6 +453,7 @@ def main_f(args):
             for task in tasks:
                 for edgval in edg_vals:
                     args.edg = str(edgval) + " " + "1e-4" + " " + "1.2"
+                    tt_args = None
                     if 'tunetables' in task and args.gcp_run:
                         task_args = [
                             "--splits", str(split),
@@ -483,7 +484,7 @@ def main_f(args):
                     else:
                         res, task_str = run_single_job(dataset_path, task, split, log_dir, args, base_cmd, gcp_txt)
                 wandb_bu = args.wandb_log
-                if 'tunetables' in task:
+                if tt_args is not None:
                     args = tt_args
                 args.wandb_log = wandb_bu
                 if args.gcp_run:

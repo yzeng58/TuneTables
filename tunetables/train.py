@@ -432,7 +432,7 @@ def train(args, dataset, criterion, encoder_generator, emsize=200, nhid=200, nla
         raise Exception("Excepted a real dataset")
 
     if do_zs:
-        return "", res_dict
+        return "", res_dict, None, None
 
     encoder = encoder_generator(num_features, emsize)
     #style_def = dl.get_test_batch()[0][0] # the style in batch of the form ((style, x, y), target, single_eval_pos)
