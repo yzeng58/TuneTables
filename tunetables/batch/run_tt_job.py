@@ -132,7 +132,7 @@ def main_f(args):
         if n_classes > 100:
             raise NotImplementedError("Please add a task to all_tasks for the correct number of classes (modify task pt1000-10ens-randinit-avg-top2-unif-reseed-25cl-long).")
         #CASE 1: large-class datasets
-        if n_classes > MAX_CLASSES and n_classes < 100:
+        if n_classes > MAX_CLASSES and n_classes < 101:
             if skip_fs:
                 tt_tasks = [f'pt1000-10ens-randinit-avg-top2-unif-reseed-100cl-long', 
                             f'pt1000-10ens-randinit-avg-top2-reseed-100cl-long'
