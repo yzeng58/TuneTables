@@ -18,7 +18,7 @@ import torch
 MAX_CLASSES = 10
 MAX_FEATURES = 100
 LOW_MAX_SAMPLES = 1000
-MAX_SAMPLES = 3000
+MAX_SAMPLES = 4000
 
 def is_json_serializable(obj):
     """
@@ -84,10 +84,10 @@ def main_f(args):
 
     def run_tunetables(dataset_path, task, split, log_dir, args, base_cmd, gcp_txt, do_wandb):
         if task == "tunetables-long":
-            UPPER_CUTOFF = 1e10
+            UPPER_CUTOFF = 10000000
         elif task == "tunetables-short":
             UPPER_CUTOFF = 10000
-        elif "tunetables" in task:
+        else:
             UPPER_CUTOFF = 100000
         if args.verbose:
             print(f"Using upper cutoff of {UPPER_CUTOFF} for task {task}")
@@ -488,7 +488,10 @@ def main_f(args):
                     args = tt_args
                 args.wandb_log = wandb_bu
                 if args.gcp_run:
-                    gcp_txt += "\"" + task_str + "\"" "\n"
+                    if "tunetables" in task:
+                        gcp_txt += "\"" + task_str + "\"" "\n"
+                    else:
+                        gcp_txt += task_str
                     if res:
                         print("Results for", dataset.strip(), "split", split, "task", task.strip(), ":", res)
     if args.gcp_run:
