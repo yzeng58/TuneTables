@@ -844,14 +844,14 @@ def train(args, dataset, criterion, encoder_generator, emsize=200, nhid=200, nla
         prefix_weights = model.state_dict()['prefix_embedding.weight'].cpu().numpy()
         prefix_fn = f"prefix_weights_{i}.npy"
         prefix_save_path = os.path.join(path, prefix_fn)
-        if not is_wrapper:
-            np.save(prefix_save_path, prefix_weights)
+        # if not is_wrapper:
+        np.save(prefix_save_path, prefix_weights)
         prefix_y_labels = model.prefix_y_embedding.cpu().numpy()
         prefix_y_fn = f"prefix_y_labels_{i}.npy"
         prefix_y_save_path = os.path.join(path, prefix_y_fn)
 
-        if not is_wrapper:
-            np.save(prefix_y_save_path, prefix_y_labels)
+        # if not is_wrapper:
+        np.save(prefix_y_save_path, prefix_y_labels)
         if do_concat:
             prefix_weights_l.append({"prefix_weights": torch.from_numpy(prefix_weights).float(), "prefix_y_labels": torch.from_numpy(prefix_y_labels)})
             # print("Prefix weights list length: ", len(prefix_weights_l))
@@ -1120,9 +1120,9 @@ def train(args, dataset, criterion, encoder_generator, emsize=200, nhid=200, nla
                     mstr = extra_prior_kwargs_dict.get('model_string')
                     boost_iter = f"ensemble_iter_{cur_boost_iter}" if is_ensemble else ""
                     log_path = os.path.join(extra_prior_kwargs_dict.get('save_path'), f'{mstr}_{boost_iter}_log_{epoch}.json')
-                    if not is_wrapper:
-                        with open(log_path, 'w') as f:
-                            json.dump(res_dict, f, indent=4)
+                    # if not is_wrapper:
+                    with open(log_path, 'w') as f:
+                        json.dump(res_dict, f, indent=4)
 
                 if NO_PATIENCE:
                     break
