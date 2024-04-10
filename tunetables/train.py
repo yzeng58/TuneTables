@@ -120,9 +120,18 @@ def train(args, dataset, criterion, encoder_generator, emsize=200, nhid=200, nla
     torch.multiprocessing.set_sharing_strategy('file_system')
     #set gpu device
     device = gpu_device if torch.cuda.is_available() else 'cpu:0'
-    # print(f'Using {device} device')
     using_dist, rank, device = init_dist(device)
     start_time = time.time()
+
+    #verify that the save path exists
+    if not os.path.exists(extra_prior_kwargs_dict.get('save_path')):
+        try:
+            os.makedirs(extra_prior_kwargs_dict.get('save_path'))
+        except Exception as e:
+            print("Error creating save path: ", e)
+            print("Using current directory instead")
+            extra_prior_kwargs_dict['save_path'] = os.getcwd()
+
     max_time = extra_prior_kwargs_dict.get('max_time', 0)
     do_kl_loss = extra_prior_kwargs_dict.get('kl_loss', False)
     n_workers = extra_prior_kwargs_dict.get('num_workers', 1)
