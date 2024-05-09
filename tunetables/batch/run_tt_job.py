@@ -19,6 +19,7 @@ MAX_CLASSES = 10
 MAX_FEATURES = 100
 LOW_MAX_SAMPLES = 1000
 MAX_SAMPLES = 4000
+LOWER_CUTOFF = 2000
 
 def is_json_serializable(obj):
     """
@@ -144,7 +145,7 @@ def main_f(args):
                     tt_tasks.append(f'pt1000-10ens-randinit-avg-top2-reseed-100cl-long-{fsm}')
                     tt_tasks.append(f'pt1000-10ens-randinit-avg-top2-unif-reseed-100cl-long-{fsm}')
         #CASE 2: small datasets
-        elif n_samples <= MAX_SAMPLES:
+        elif n_samples <= LOWER_CUTOFF:
             if skip_fs:
                 # if args.privacy_sweep:
                 #     tt_tasks = [

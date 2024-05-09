@@ -135,6 +135,8 @@ def train(args, dataset, criterion, encoder_generator, emsize=200, nhid=200, nla
     max_time = extra_prior_kwargs_dict.get('max_time', 0)
     do_kl_loss = extra_prior_kwargs_dict.get('kl_loss', False)
     n_workers = extra_prior_kwargs_dict.get('num_workers', 1)
+    extra_prior_kwargs_dict['do_impute'] = True
+    extra_prior_kwargs_dict['ohe'] = False
 
     if extra_prior_kwargs_dict.get('pad_features', None):
         num_features = 100
@@ -186,7 +188,8 @@ def train(args, dataset, criterion, encoder_generator, emsize=200, nhid=200, nla
                 test_index,
                 verbose= extra_prior_kwargs_dict.get('verbose'), #config['verbose'],
                 scaler="None",
-                one_hot_encode=False,
+                one_hot_encode=extra_prior_kwargs_dict.get('ohe', True),
+                impute=extra_prior_kwargs_dict.get('do_impute', True),
                 args=args,
             )
             X_train, y_train = processed_data["data_train"]
@@ -671,9 +674,9 @@ def train(args, dataset, criterion, encoder_generator, emsize=200, nhid=200, nla
                     # TODO: TabPFN transformer doesn't support batched inputs
                     # if batch_size > 1:
                     #     data = (data[0].reshape(data[0].shape[0] // batch_size, X.shape[1], batch_size), data[1].reshape(data[1].shape[0] // batch_size, batch_size))
-                    if verbose and batch == 0:
-                        print("Start training epoch")
-                        print("Data shape: ", data[0].shape, "Targets shape: ", data[1].shape, "Single eval pos: ", single_eval_pos)
+                    # if verbose and batch == 0:
+                        # print("Start training epoch")
+                        #print(" Data shape: ", data[0].shape, "Targets shape: ", data[1].shape, "Single eval pos: ", single_eval_pos)
 
                     # If style is set to None, it should not be transferred to device
                     output = e_model(tuple(e.to(torch.float32).to(device) if torch.is_tensor(e) else e for e in data) if isinstance(data, tuple) else data.to(device)
@@ -1013,6 +1016,7 @@ def train(args, dataset, criterion, encoder_generator, emsize=200, nhid=200, nla
         return_targets = None
         res_dict = None
         best_val_score = best_val_score_nc = 0
+        best_total_loss = 1e9
         if do_prompt_tuning:
             best_val_embed = t_model.prefix_embedding.weight.detach().cpu()
         best_res_dict = None
@@ -1062,27 +1066,34 @@ def train(args, dataset, criterion, encoder_generator, emsize=200, nhid=200, nla
                     return_outputs.append(val_outputs)
                     return_targets.append(val_targets)
                     res_dict = dict(res_dict, **{"Val_nc_" + k : v for k, v in val_score_nc.items()})
+                
                 #Early stopping logic
-                if (not extra_prior_kwargs_dict.get('uniform_bptt', False)) \
-                    and val_score and val_score > best_val_score:
-                    if verbose:
-                        print("New best val score: ", val_score)
+                score_condition = (total_loss < best_total_loss)
+                #score_condition = (val_score and (val_score > best_val_score))
+
+                # if (not extra_prior_kwargs_dict.get('uniform_bptt', False)) \
+                #     and score_condition:
+                    # if verbose:
+                    #     print("New best val score: ", val_score)
+                if score_condition:
                     patience = 0
-                    best_val_score = val_score
+                    best_total_loss = total_loss
+                    # best_val_score = val_score
                     is_best = True
                     if do_prompt_tuning:
                         best_val_embed = t_model.prefix_embedding.weight.detach().cpu()
-                elif extra_prior_kwargs_dict.get('uniform_bptt', False) and do_prompt_tuning and \
-                    res_dict.get("Val_nc_Accuracy", 0) > best_val_score_nc:
-                    if verbose:
-                        print("New best val score nc: ", res_dict.get("Val_nc_Accuracy", 0))
-                    patience = 0
-                    best_val_score_nc = res_dict.get("Val_nc_Accuracy", 0)
-                    is_best = True
-                    best_val_embed = t_model.prefix_embedding.weight.detach().cpu()
+
+                # elif extra_prior_kwargs_dict.get('uniform_bptt', False) and do_prompt_tuning and \
+                #     res_dict.get("Val_nc_Accuracy", 0) > best_val_score_nc:
+                #     if verbose:
+                #         print("New best val score nc: ", res_dict.get("Val_nc_Accuracy", 0))
+                #     patience = 0
+                #     best_val_score_nc = res_dict.get("Val_nc_Accuracy", 0)
+                #     is_best = True
+                #     best_val_embed = t_model.prefix_embedding.weight.detach().cpu()
                 else:
-                    print(extra_prior_kwargs_dict.get('uniform_bptt', False), bptt <= 128, res_dict.get("Val_nc_Accuracy", 0), best_val_score_nc)
                     patience += 1
+
             elif hasattr(dl, 'validate') and epoch % validation_period == 0:
                 with torch.no_grad():
                     val_score = dl.validate(model)
@@ -1098,7 +1109,10 @@ def train(args, dataset, criterion, encoder_generator, emsize=200, nhid=200, nla
                     res_dict = dict(res_dict, **{"Test_nc_" + k : v for k, v in test_score_nc.items()})
                     return_outputs.append(test_outputs)
                     return_targets.append(test_targets)
-
+                if is_best:
+                    best_outputs = return_outputs
+                    best_targets = return_targets
+                    best_res_dict = res_dict
             if verbose:
                 get_time = (time.time() - epoch_start_time)
                 print('-' * 89)
@@ -1284,6 +1298,8 @@ def train(args, dataset, criterion, encoder_generator, emsize=200, nhid=200, nla
                 # if getattr(dataset, "ssm", None) is not None:
                 #     delattr(dataset, "ssm")
                 #load data
+                extra_prior_kwargs_dict['do_impute'] = np.random.choice([True, False])
+                extra_prior_kwargs_dict['ohe'] = np.random.choice([True, False])
                 extra_prior_kwargs_dict['preprocess_type'] = np.random.choice(['none', 'power_all', 'robust_all', 'quantile_all'])
                 X, y, X_val, y_val, X_test, y_test, invert_perm_map, steps_per_epoch, num_classes, label_weights, train_ds, val_ds, test_ds = make_datasets(extra_prior_kwargs_dict, do_permute=not_zs, bptt=bptt, steps_per_epoch=steps_per_epoch, is_wrapper=is_wrapper)
                 old_bptt = bptt

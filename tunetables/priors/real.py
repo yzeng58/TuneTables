@@ -658,6 +658,7 @@ def process_data(
     # validate the scaler
     assert scaler in ["None"], f"scaler not recognized: {scaler}"
 
+    print("Do impute: ", impute)
 
     num_mask = np.ones(dataset.X.shape[1], dtype=int)
     num_mask[dataset.cat_idx] = 0
@@ -673,17 +674,19 @@ def process_data(
             (~np.isnan(X_train[:, num_idx].astype("float"))).sum(axis=0) == 0
         )[0]
         if fully_nan_num_idcs.size > 0:
+            print(f"Fully NaN numerical features: {fully_nan_num_idcs}")
             X_train[:, num_idx[fully_nan_num_idcs]] = 0
             X_val[:, num_idx[fully_nan_num_idcs]] = 0
             X_test[:, num_idx[fully_nan_num_idcs]] = 0
 
-        # Impute numerical features, and pass through the rest
-        numeric_transformer = Pipeline(steps=[("imputer", SimpleImputer())])
+        # Impute numerical and categorical features
+        numeric_transformer = Pipeline(steps=[("imputer", SimpleImputer(strategy="mean"))])
+        categorical_transformer = Pipeline(steps=[("imputer", SimpleImputer(strategy="most_frequent"))])
         preprocessor = ColumnTransformer(
             transformers=[
                 ("num", numeric_transformer, num_idx),
-                ("pass", "passthrough", dataset.cat_idx),
-                # ("cat", categorical_transformer, categorical_features),
+                # ("pass", "passthrough", dataset.cat_idx),
+                ("cat", categorical_transformer, dataset.cat_idx),
             ],
             # remainder="passthrough",
         )
