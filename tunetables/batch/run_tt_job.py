@@ -83,9 +83,9 @@ async def run_command(cmd):
 def main_f(args):
 
     def run_tunetables(dataset_path, task, split, log_dir, args, base_cmd, gcp_txt, do_wandb):
-        if task == "tunetables-long":
+        if "tunetables-long" in task:
             UPPER_CUTOFF = 1e10
-        elif task == "tunetables-short":
+        elif "tunetables-short" in task:
             UPPER_CUTOFF = 10000
         elif "tunetables" in task:
             UPPER_CUTOFF = 100000
@@ -110,20 +110,21 @@ def main_f(args):
             args.edg = f"{args.edg.split(' ')[0]} {new_delta} {args.edg.split(' ')[2]}"
         all_res = {}
         all_res_d = {}
-        # if n_features > MAX_FEATURES:
-        #     print("Sweeping feature subselection methods.")
-        #     #NOTE: Other options: zs-pca_white-32, zs-isomap-32, zs-ica-32, zs-random-32, zs-sparse_random_projection-32
-        #     tt_tasks = ['zs-pca-16', 'zs-mutual_information-16']
-        #     for task in tt_tasks:
-        #         try:
-        #             res, _ = run_single_job(dataset_path, task, split, log_dir, args, base_cmd, gcp_txt)
-        #             all_res[task] = res["Val_Accuracy"]
-        #             all_res_d[task] = res
-        #         except:
-        #             pass
-        #     best_task = max(all_res, key=all_res.get)
-        #     feat_sel_method = best_task.split('-')[1]
-        if n_features > MAX_FEATURES:
+        if n_features > MAX_FEATURES and task == "tunetables-short":
+            print("Sweeping feature subselection methods.")
+            #NOTE: Other options: zs-pca_white-32, zs-isomap-32, zs-ica-32, zs-random-32, zs-sparse_random_projection-32
+            tt_tasks = ['zs-pca-16', 'zs-mutual_information-16']
+            for task in tt_tasks:
+                try:
+                    res, _ = run_single_job(dataset_path, task, split, log_dir, args, base_cmd, gcp_txt)
+                    all_res[task] = res["Val_Accuracy"]
+                    all_res_d[task] = res
+                except:
+                    pass
+            best_task = max(all_res, key=all_res.get)
+            feat_sel_method = [best_task.split('-')[1]]
+            skip_fs = False
+        elif n_features > MAX_FEATURES:
             feat_sel_method = ['pca', 'mutual_information']
             skip_fs = False
         else:
