@@ -18,7 +18,8 @@ import torch
 MAX_CLASSES = 10
 MAX_FEATURES = 100
 LOW_MAX_SAMPLES = 1000
-MAX_SAMPLES = 3000
+MAX_SAMPLES = 4000
+LOWER_CUTOFF = 2000
 
 def is_json_serializable(obj):
     """
@@ -83,11 +84,17 @@ async def run_command(cmd):
 def main_f(args):
 
     def run_tunetables(dataset_path, task, split, log_dir, args, base_cmd, gcp_txt, do_wandb):
+<<<<<<< HEAD
         if "tunetables-long" in task:
             UPPER_CUTOFF = 1e10
         elif "tunetables-short" in task:
+=======
+        if task == "tunetables-long":
+            UPPER_CUTOFF = 10000000
+        elif task == "tunetables-short":
+>>>>>>> 0c427edef1fcab67b43d96fc1c48819b7bf8e86f
             UPPER_CUTOFF = 10000
-        elif "tunetables" in task:
+        else:
             UPPER_CUTOFF = 100000
         if args.verbose:
             print(f"Using upper cutoff of {UPPER_CUTOFF} for task {task}")
@@ -145,7 +152,7 @@ def main_f(args):
                     tt_tasks.append(f'pt1000-10ens-randinit-avg-top2-reseed-100cl-long-{fsm}')
                     tt_tasks.append(f'pt1000-10ens-randinit-avg-top2-unif-reseed-100cl-long-{fsm}')
         #CASE 2: small datasets
-        elif n_samples <= MAX_SAMPLES:
+        elif n_samples <= LOWER_CUTOFF:
             if skip_fs:
                 # if args.privacy_sweep:
                 #     tt_tasks = [
@@ -489,7 +496,10 @@ def main_f(args):
                     args = tt_args
                 args.wandb_log = wandb_bu
                 if args.gcp_run:
-                    gcp_txt += "\"" + task_str + "\"" "\n"
+                    if "tunetables" in task:
+                        gcp_txt += "\"" + task_str + "\"" "\n"
+                    else:
+                        gcp_txt += task_str
                     if res:
                         print("Results for", dataset.strip(), "split", split, "task", task.strip(), ":", res)
     if args.gcp_run:

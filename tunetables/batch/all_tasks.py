@@ -3,11 +3,11 @@ import copy
 base_dict = {
     'prior_type' : 'real',
     'pad_features' : '',
-    'epochs' : 61,
+    'epochs' : 101,
     'validation_period' : 2,
     'save_every_k_epochs' : 15,
     'aggregate_k_gradients' : 1,
-    'early_stopping' : 6,
+    'early_stopping' : 5,
     'lr' : 1e-3,
     'subset_features_method' : 'pca',
     'wandb_log' : '',
@@ -18,7 +18,7 @@ base_dict = {
 
 pt10_dict = {
         'prompt_tuning' : '',
-        'save_every_k_epochs' : 62,
+        'save_every_k_epochs' : 102,
         'tuned_prompt_size' : 10,
         'lr' : 0.1,
 }
