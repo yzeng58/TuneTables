@@ -84,15 +84,9 @@ async def run_command(cmd):
 def main_f(args):
 
     def run_tunetables(dataset_path, task, split, log_dir, args, base_cmd, gcp_txt, do_wandb):
-<<<<<<< HEAD
         if "tunetables-long" in task:
             UPPER_CUTOFF = 1e10
         elif "tunetables-short" in task:
-=======
-        if task == "tunetables-long":
-            UPPER_CUTOFF = 10000000
-        elif task == "tunetables-short":
->>>>>>> 0c427edef1fcab67b43d96fc1c48819b7bf8e86f
             UPPER_CUTOFF = 10000
         else:
             UPPER_CUTOFF = 100000
@@ -117,8 +111,8 @@ def main_f(args):
             args.edg = f"{args.edg.split(' ')[0]} {new_delta} {args.edg.split(' ')[2]}"
         all_res = {}
         all_res_d = {}
-        if n_features > MAX_FEATURES and task == "tunetables-short":
-            print("Sweeping feature subselection methods.")
+        if n_features > MAX_FEATURES and "tunetables-short" in task:
+            print("Running one-shot feature selection method (tunetables-short)")
             #NOTE: Other options: zs-pca_white-32, zs-isomap-32, zs-ica-32, zs-random-32, zs-sparse_random_projection-32
             tt_tasks = ['zs-pca-16', 'zs-mutual_information-16']
             for task in tt_tasks:
@@ -138,7 +132,7 @@ def main_f(args):
             feat_sel_method = ['']
             skip_fs = True
         if n_classes > 100:
-            raise NotImplementedError("Please add a task to all_tasks for the correct number of classes (modify task pt1000-10ens-randinit-avg-top2-unif-reseed-25cl-long).")
+            raise NotImplementedError("Sorry, this problem has more classes than the current maximum for any template. Please add a task to all_tasks for the correct number of classes (modify task pt1000-10ens-randinit-avg-top2-unif-reseed-100cl-long).")
         #CASE 1: large-class datasets
         if n_classes > MAX_CLASSES and n_classes < 101:
             if skip_fs:
