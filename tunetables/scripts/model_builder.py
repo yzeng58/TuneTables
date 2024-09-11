@@ -5,7 +5,7 @@ from functools import partial
 import torch
 import math
 import numpy as np
-
+import pdb
 import tunetables.encoders as encoders
 from tunetables.transformer import TransformerModel
 from tunetables.utils import get_uniform_single_eval_pos_sampler, get_fixed_batch_sampler
@@ -240,7 +240,7 @@ def get_model(config, device, should_train=True, verbose=False, state_dict=None,
 
     #Real Data Training
     if config['prior_type'] == 'real':
-        from priors.real import TabularDataset
+        from tunetables.priors.real import TabularDataset
 
         print("is_wrapper",is_wrapper)
 
@@ -449,7 +449,6 @@ def get_model(config, device, should_train=True, verbose=False, state_dict=None,
                   , is_wrapper = is_wrapper
                   , x_wrapper = x_wrapper, 
                   y_wrapper = y_wrapper)
-
     return model, results_dict, data_for_fitting, test_loader
 
     return model, results_dict

@@ -2,8 +2,9 @@ import torch
 import random
 import pathlib
 
-import sys
-sys.path.append("../")
+import sys, os
+root_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+sys.path.append(root_dir)
 
 from torch.utils.checkpoint import checkpoint
 from tunetables.train_loop import reload_config, train_function
@@ -21,7 +22,6 @@ from sklearn.utils.multiclass import check_classification_targets
 from sklearn.utils import column_or_1d
 from sklearn.preprocessing import LabelEncoder
 from pathlib import Path
-import os
 import pickle
 import io
 
@@ -604,7 +604,7 @@ class TuneTablesClassifier(BaseEstimator, ClassifierMixin):
 
     def get_default_config(self, args):
         # Hardcoded parameters
-        args.resume = '../models/prior_diff_real_checkpoint_n_0_epoch_42.cpkt'
+        args.resume = f'{root_dir}/models/prior_diff_real_checkpoint_n_0_epoch_42.cpkt'
         args.save_path = './logs'
         args.prior_type = 'real'
         args.data_path = "" #'/home/benfeuer/TabPFN-pt/tabpfn/data/openml__colic__27'

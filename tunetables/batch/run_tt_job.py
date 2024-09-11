@@ -14,6 +14,7 @@ from all_tasks import get_all_tasks
 
 import wandb
 import torch
+import pdb
 
 MAX_CLASSES = 10
 MAX_FEATURES = 100
@@ -389,6 +390,7 @@ def main_f(args):
         if args.gcp_run:
             return {}, job_str
         else:
+            print(' '.join(command))
             returncode, stdout, stderr = asyncio.run(run_command(' '.join(command)))
             stdout = stdout.decode()
             print("Stderr:", stderr.decode())
