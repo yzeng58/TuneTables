@@ -12,7 +12,15 @@ from tunetables.priors.utils import uniform_int_sampler_f
 from tunetables.notebook_utils import *
 from tunetables.utils import make_serializable, wandb_init
 
-def train_function(config_sample, i=0, add_name='', is_wrapper = False, x_wrapper = None, y_wrapper = None, cat_idx = []):
+def train_function(
+    config_sample, 
+    i=0, 
+    add_name='', 
+    is_wrapper = False, 
+    x_wrapper = None, 
+    y_wrapper = None, 
+    cat_idx = []
+):
 
     if config_sample['boosting'] or config_sample['rand_init_ensemble'] or config_sample['bagging']:
         #don't save checkpoints for ensembling, just prefixes
@@ -29,8 +37,12 @@ def train_function(config_sample, i=0, add_name='', is_wrapper = False, x_wrappe
         if len(epochs) % save_every_k == 0:
             print('Saving model..')
             config_sample['epoch_in_training'] = epoch
-            save_model(model, config_sample['base_path'], f'prior_diff_real_checkpoint{add_name}_n_{i}_epoch_{model.last_saved_epoch}.cpkt',
-                           config_sample)
+            save_model(
+                model, 
+                config_sample['base_path'], 
+                f'prior_diff_real_checkpoint{add_name}_n_{i}_epoch_{model.last_saved_epoch}.cpkt',
+                config_sample
+            )
             model.last_saved_epoch = model.last_saved_epoch + 1 # TODO: Rename to checkpoint
 
     def no_callback(model, epoch, values_to_log):
@@ -42,11 +54,17 @@ def train_function(config_sample, i=0, add_name='', is_wrapper = False, x_wrappe
         my_callback = save_callback
 
     #TODO: get_model shouldn't be the method that trains the model
-    model, results_dict, data_for_fitting, test_loader = get_model(config_sample
-                      , config_sample["device"]
-                      , should_train=True
-                      , state_dict=config_sample["state_dict"]
-                      , epoch_callback = my_callback, is_wrapper = is_wrapper, x_wrapper = x_wrapper, y_wrapper = y_wrapper, cat_idx = cat_idx)
+    model, results_dict, data_for_fitting, test_loader = get_model(
+        config_sample, 
+        config_sample["device"], 
+        should_train=True, 
+        state_dict=config_sample["state_dict"], 
+        epoch_callback=my_callback, 
+        is_wrapper=is_wrapper, 
+        x_wrapper=x_wrapper, 
+        y_wrapper=y_wrapper, 
+        cat_idx=cat_idx,
+    )
     if is_wrapper:
         return model, data_for_fitting, test_loader
     else:

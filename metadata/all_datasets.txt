@@ -1,7 +1,3 @@
-openml__blood-transfusion-service-center__10101
-openml__connect-4__146195
-openml__Bioresponse__9910
-openml__breast-cancer__145799
 openml__BNG(labor)__2137
 openml__BNG(vote)__212
 openml__christine__168908

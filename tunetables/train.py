@@ -34,13 +34,22 @@ import tunetables.encoders as encoders
 import tunetables.positional_encodings as positional_encodings
 from tunetables.utils import init_dist, seed_all, EmbeddingConcatenator
 
-def real_data_eval_out(r_model, cl=1000, train_data=None, val_dl=None, softmax_temperature = torch.log(torch.tensor([0.8])), return_probs=False):
+def real_data_eval_out(
+    r_model, 
+    cl=1000, 
+    train_data=None, 
+    val_dl=None, 
+    softmax_temperature = torch.log(torch.tensor([0.8])), 
+    return_probs=False,
+    num_classes=None,
+):
 
         verbose = False
 
         start_time = time.time()
         td = copy.deepcopy(train_data)
-        num_classes_local = len(torch.unique(td[1]))
+            
+        num_classes_local = len(torch.unique(td[1])) if num_classes is None else num_classes
         td[0] = td[0][:cl, ...]
         td[1] = td[1][:cl, ...]
         single_eval_pos = len(td[0])
@@ -71,51 +80,57 @@ def real_data_eval_out(r_model, cl=1000, train_data=None, val_dl=None, softmax_t
             predictions = torch.cat(prediction_list, dim=0).cpu().numpy()
             targets = torch.cat(target_list, dim=0).cpu().numpy()
 
-        results = dict()
-        warnings.filterwarnings("ignore")
-        results['Eval_Time'] = np.round(time.time() - start_time, 3).item()
-        results['Accuracy'] = np.round(accuracy_score(targets, predictions), 3).item()
-        try:
-            results['Log_Loss'] = np.round(log_loss(targets, outputs, labels=np.arange(num_classes_local)), 3).item()
-        except Exception as e:
-            if verbose:
-                print("Error calculating log loss: ", e)
-            results['Log_Loss'] = 0.0
-        results['F1_Weighted'] = np.round(f1_score(targets, predictions, average='weighted'), 3).item()
-        results['F1_Macro'] = np.round(f1_score(targets, predictions, average='macro'), 3).item()
-        try:
-            if num_classes_local == 2:
-                results['ROC_AUC'] = np.round(roc_auc_score(targets, outputs[:, 1], labels=np.arange(num_classes_local)), 3).item()
-            else:
-                results['ROC_AUC'] = np.round(roc_auc_score(targets, outputs, labels=np.arange(num_classes_local), multi_class='ovr'), 3).item()
-        except Exception as e:
-            if verbose:
-                print("Error calculating ROC AUC: ", e)
-            results['ROC_AUC'] = 0.0
-        try:
-            results['ECE'] = np.round(um.ece(targets, outputs, num_bins=30), 3).item()
-            results['TACE'] = np.round(um.tace(targets, outputs, num_bins=30), 3).item()
-        except Exception as e:
-            if verbose:
-                print("Error calculating ECE/TACE: ", e)
-            results['ECE'] = 0.0
-            results['TACE'] = 0.0
-
-        warnings.filterwarnings("default")
         if return_probs:
-            return results, outputs, targets
+            return None, outputs, targets
         else:
-            return results, predictions, targets
+            return None, predictions, targets
 
-def train(args, dataset, criterion, encoder_generator, emsize=200, nhid=200, nlayers=6, nhead=2, dropout=0.0,
-          epochs=10, steps_per_epoch=100, batch_size=200, bptt=10, lr=None, weight_decay=0.0, warmup_epochs=10, input_normalization=False,
-          y_encoder_generator=None, pos_encoder_generator=None, decoder=None, extra_prior_kwargs_dict={}, scheduler=get_cosine_schedule_with_warmup,
-          load_weights_from_this_state_dict=None, validation_period=10, single_eval_pos_gen=None, bptt_extra_samples=None, gpu_device='cuda:0',
-          aggregate_k_gradients=1, verbose=False, style_encoder_generator=None, epoch_callback=None,
-          initializer=None, initialize_with_model=None, train_mixed_precision=False, efficient_eval_masking=True, 
-          boosting=False, boosting_lr=1e-3, boosting_n_iters=10, rand_init_ensemble=False, do_concat="", is_wrapper=False, x_wrapper = None, y_wrapper = None, 
-          **model_extra_args
-          ):
+def train(
+    args, 
+    dataset, 
+    criterion, 
+    encoder_generator, 
+    emsize=200, 
+    nhid=200, 
+    nlayers=6, 
+    nhead=2, 
+    dropout=0.0,
+    epochs=10, 
+    steps_per_epoch=100, 
+    batch_size=200, 
+    bptt=10, 
+    lr=None, 
+    weight_decay=0.0, 
+    warmup_epochs=10, 
+    input_normalization=False,
+    y_encoder_generator=None, 
+    pos_encoder_generator=None, 
+    decoder=None, 
+    extra_prior_kwargs_dict={}, 
+    scheduler=get_cosine_schedule_with_warmup,
+    load_weights_from_this_state_dict=None, 
+    validation_period=10, 
+    single_eval_pos_gen=None, 
+    bptt_extra_samples=None, 
+    gpu_device='cuda:0',
+    aggregate_k_gradients=1, 
+    verbose=False, 
+    style_encoder_generator=None, 
+    epoch_callback=None,
+    initializer=None, 
+    initialize_with_model=None, 
+    train_mixed_precision=False, 
+    efficient_eval_masking=True, 
+    boosting=False, 
+    boosting_lr=1e-3, 
+    boosting_n_iters=10, 
+    rand_init_ensemble=False, 
+    do_concat="", 
+    is_wrapper=False, 
+    x_wrapper = None, 
+    y_wrapper = None, 
+    **model_extra_args,
+):
     #ulimit error fix
     torch.multiprocessing.set_sharing_strategy('file_system')
     #set gpu device
@@ -308,13 +323,15 @@ def train(args, dataset, criterion, encoder_generator, emsize=200, nhid=200, nla
 
     def make_dataloaders(bptt=bptt, not_zs=True):
 
-        dl, bptt = get_train_dataloader(train_ds, 
-                                  bptt=bptt, 
-                                  shuffle=False, 
-                                  num_workers=n_workers, 
-                                  drop_last=True, 
-                                  agg_k_grads=aggregate_k_gradients,
-                                  not_zs=not_zs)
+        dl, bptt = get_train_dataloader(
+            train_ds, 
+            bptt=bptt, 
+            shuffle=False, 
+            num_workers=n_workers, 
+            drop_last=True, 
+            agg_k_grads=aggregate_k_gradients,
+            not_zs=not_zs
+        )
 
         val_dl = DataLoader(
             val_ds, batch_size=min(128, y_val.shape[0] // 2), shuffle=False, num_workers=n_workers,
@@ -334,6 +351,7 @@ def train(args, dataset, criterion, encoder_generator, emsize=200, nhid=200, nla
             y_data_concat = torch.cat(y_data_for_fitting, dim=0)
             if X_data_concat.shape[0] >= real_data_qty:
                 break
+            
         data_for_fitting = [X_data_concat, y_data_concat]
         return dl, val_dl, test_dl, bptt, data_for_fitting
 
@@ -350,9 +368,16 @@ def train(args, dataset, criterion, encoder_generator, emsize=200, nhid=200, nla
                 extra_prior_kwargs_dict['uniform_bptt'] = True
             
         data_for_fitting = None
-        X, y, X_val, y_val, X_test, y_test, invert_perm_map, steps_per_epoch, num_classes, label_weights, train_ds, val_ds, test_ds = make_datasets(extra_prior_kwargs_dict, do_permute=not_zs, bptt=bptt, steps_per_epoch=steps_per_epoch, is_wrapper=is_wrapper)
+        X, y, X_val, y_val, X_test, y_test, invert_perm_map, steps_per_epoch, num_classes, label_weights, train_ds, val_ds, test_ds = make_datasets(
+            extra_prior_kwargs_dict, 
+            do_permute=not_zs, 
+            bptt=bptt, 
+            steps_per_epoch=steps_per_epoch, 
+            is_wrapper=is_wrapper
+        )
         old_bptt = bptt
         dl, val_dl, test_dl, bptt, data_for_fitting  = make_dataloaders(bptt=bptt, not_zs=not_zs)
+
 
         if epochs == 0:
             return None, None, None, test_dl
@@ -371,12 +396,13 @@ def train(args, dataset, criterion, encoder_generator, emsize=200, nhid=200, nla
                 ens_size = extra_prior_kwargs_dict.get('zs_eval_ensemble', 0)
             else:
                 ens_size = 32
-            eval_model = TabPFNClassifier(device='cuda', 
-                                                    N_ensemble_configurations=ens_size, 
-                                                    base_path=".",
-                                                    seed=extra_prior_kwargs_dict.get('rand_seed', 0),
-                                                    batch_size_inference=1,
-                                        )
+            eval_model = TabPFNClassifier(
+                device='cuda', 
+                N_ensemble_configurations=ens_size, 
+                base_path=".",
+                seed=extra_prior_kwargs_dict.get('rand_seed', 0),
+                batch_size_inference=1,
+            )
             if do_kl_loss:
                 eval_model.fit(data_for_fitting[0], data_for_fitting[1], overwrite_warning=True)
         else:
@@ -413,32 +439,6 @@ def train(args, dataset, criterion, encoder_generator, emsize=200, nhid=200, nla
                     end_time = time.time()
                     results['Eval_Time'] = np.round(end_time - start_time, 3).item()
                     results['Accuracy'] = np.round(accuracy_score(targets, predictions), 3).item()
-                    try:
-                        results['Log_Loss'] = np.round(log_loss(targets, outputs, labels=np.arange(num_classes_local)), 3).item()
-                    except Exception as e:
-                        if verbose:
-                            print("Error calculating log loss: ", e)
-                        results['Log_Loss'] = 0.0
-                    results['F1_Weighted'] = np.round(f1_score(targets, predictions, average='weighted'), 3).item()
-                    results['F1_Macro'] = np.round(f1_score(targets, predictions, average='macro'), 3).item()
-                    try:
-                        if num_classes == 2:
-                            results['ROC_AUC'] = np.round(roc_auc_score(targets, outputs[:, 1], labels=np.arange(num_classes_local)), 3).item()
-                        else:
-                            results['ROC_AUC'] = np.round(roc_auc_score(targets, outputs, labels=np.arange(num_classes_local), multi_class='ovr'), 3).item()
-                    except Exception as e:
-                        if verbose:
-                            print("Error calculating ROC AUC: ", e)
-                        results['ROC_AUC'] = 0.0
-                    try:
-                        results['ECE'] = np.round(um.ece(targets, outputs, num_bins=30), 3).item()
-                        results['TACE'] = np.round(um.tace(targets, outputs, num_bins=30), 3).item()
-                    except Exception as e:
-                        if verbose:
-                            print("Error calculating ECE/TACE: ", e)
-                        results['ECE'] = 0.0
-                        results['TACE'] = 0.0
-                    warnings.filterwarnings("default")
                     return results
             res_dict = dict()
             val_results = tpc_data_eval(cl=real_data_qty, X=data_for_fitting[0], y=data_for_fitting[1], X_val=X_val, y_val=y_val, ens_size=extra_prior_kwargs_dict.get('zs_eval_ensemble', 0))
@@ -471,12 +471,27 @@ def train(args, dataset, criterion, encoder_generator, emsize=200, nhid=200, nla
         n_out = criterion.weight.shape[0]
     else:
         n_out = 1
-    model = TransformerModel(encoder, n_out, emsize, nhead, nhid, nlayers, dropout, style_encoder=style_encoder,
-                             y_encoder=y_encoder_generator(1, emsize), input_normalization=input_normalization,
-                             pos_encoder=(pos_encoder_generator or positional_encodings.NoPositionalEncoding)(emsize, bptt*2),
-                             decoder=decoder, init_method=initializer, efficient_eval_masking=efficient_eval_masking, prefix_size=prefix_size,
-                             n_classes=num_classes, prefix_label_probs=label_weights, num_features=extra_prior_kwargs_dict.get("num_features", 100), **model_extra_args
-                             )
+    model = TransformerModel(
+        encoder, 
+        n_out, 
+        emsize, 
+        nhead, 
+        nhid, 
+        nlayers, 
+        dropout, 
+        style_encoder=style_encoder,
+        y_encoder=y_encoder_generator(1, emsize), 
+        input_normalization=input_normalization,
+        pos_encoder=(pos_encoder_generator or positional_encodings.NoPositionalEncoding)(emsize, bptt*2),
+        decoder=decoder, 
+        init_method=initializer, 
+        efficient_eval_masking=efficient_eval_masking, 
+        prefix_size=prefix_size,
+        n_classes=num_classes, 
+        prefix_label_probs=label_weights, 
+        num_features=extra_prior_kwargs_dict.get("num_features", 100), 
+        **model_extra_args
+    )
     model.criterion = criterion    
     if load_weights_from_this_state_dict is not None:
         encoder_mismatch = False
@@ -524,7 +539,12 @@ def train(args, dataset, criterion, encoder_generator, emsize=200, nhid=200, nla
 
     model.to(device)
     if using_dist:
-        model = torch.nn.parallel.DistributedDataParallel(model, device_ids=[rank], output_device=rank, broadcast_buffers=False)
+        model = torch.nn.parallel.DistributedDataParallel(
+            model, 
+            device_ids=[rank], 
+            output_device=rank, 
+            broadcast_buffers=False
+        )
     
     if not real_prior:
         dl.model = model
@@ -534,8 +554,16 @@ def train(args, dataset, criterion, encoder_generator, emsize=200, nhid=200, nla
         lr = get_openai_lr(model)
         if verbose:
             print(f"Using OpenAI max lr of {lr}.")
-    optimizer = torch.optim.AdamW(model.parameters(), lr=lr, weight_decay=weight_decay)
-    sched_obj = scheduler(optimizer, warmup_epochs, epochs if epochs is not None else 100) # when training for fixed time lr schedule takes 100 steps
+    optimizer = torch.optim.AdamW(
+        model.parameters(), 
+        lr=lr, 
+        weight_decay=weight_decay
+    )
+    sched_obj = scheduler(
+        optimizer, 
+        warmup_epochs, 
+        epochs if epochs is not None else 100
+    ) # when training for fixed time lr schedule takes 100 steps
 
     scaler = GradScaler() if train_mixed_precision else None
 
@@ -587,31 +615,6 @@ def train(args, dataset, criterion, encoder_generator, emsize=200, nhid=200, nla
         warnings.filterwarnings("ignore")
         results['Eval_Time'] = np.round(time.time() - start_time, 3).item()
         results['Accuracy'] = np.round(accuracy_score(targets, predictions), 3).item()
-        try:
-            results['Log_Loss'] = np.round(log_loss(targets, outputs, labels=np.arange(num_classes_local)), 3).item()
-        except Exception as e:
-            if verbose:
-                print("Error calculating log loss: ", e)
-            results['Log_Loss'] = 0.0
-        results['F1_Weighted'] = np.round(f1_score(targets, predictions, average='weighted'), 3).item()
-        results['F1_Macro'] = np.round(f1_score(targets, predictions, average='macro'), 3).item()
-        try:
-            if num_classes_local == 2:
-                results['ROC_AUC'] = np.round(roc_auc_score(targets, outputs[:, 1], labels=np.arange(num_classes_local)), 3).item()
-            else:
-                results['ROC_AUC'] = np.round(roc_auc_score(targets, outputs, labels=np.arange(num_classes_local), multi_class='ovr'), 3).item()
-        except Exception as e:
-            if verbose:
-                print("Error calculating ROC AUC: ", e)
-            results['ROC_AUC'] = 0.0
-        try:
-            results['ECE'] = np.round(um.ece(targets, outputs, num_bins=30), 3).item()
-            results['TACE'] = np.round(um.tace(targets, outputs, num_bins=30), 3).item()
-        except Exception as e:
-            if verbose:
-                print("Error calculating ECE/TACE: ", e)
-            results['ECE'] = 0.0
-            results['TACE'] = 0.0
 
         warnings.filterwarnings("default")
 
@@ -870,130 +873,12 @@ def train(args, dataset, criterion, encoder_generator, emsize=200, nhid=200, nla
         return prefix_weights_l
 
     def update_ensemble_acc(ens_acc, ens_acc_nc, ens_acc_test, ens_acc_test_nc, num_classes):
-        num_classes_local_val = len(np.unique(labels_np))
-        num_classes_local_test = len(np.unique(labels_np_test))
-        predictions_np = np.argmax(probs_np, axis=1)
-        predictions_np_test = np.argmax(probs_np_test, axis=1)
-        try:
-            if num_classes == 2:
-                roc_auc = np.round(roc_auc_score(labels_np, probs_np[:, 1], labels=np.arange(num_classes_local_val)), 3).item()
-                test_roc_auc = np.round(roc_auc_score(labels_np_test, probs_np_test[:, 1], labels=np.arange(num_classes_local_test)), 3).item()
-            else:
-                roc_auc = np.round(roc_auc_score(labels_np, probs_np, labels=np.arange(num_classes_local_val), multi_class='ovr'), 3).item()
-                test_roc_auc = np.round(roc_auc_score(labels_np_test, probs_np_test, labels=np.arange(num_classes_local_test), multi_class='ovr'), 3).item()
-        except Exception as e:
-            if verbose:
-                print("Error calculating ROC AUC: ", e)
-            roc_auc = 0.0
-            test_roc_auc = 0.0
-        f1_weighted = np.round(f1_score(labels_np, predictions_np, average='weighted'), 3).item()
-        f1_macro = np.round(f1_score(labels_np, predictions_np, average='macro'), 3).item()
-        try:
-            ll = np.round(log_loss(labels_np, probs_np, labels=np.arange(num_classes_local_val)), 3)
-            ece = np.round(um.ece(labels_np, probs_np, num_bins=30), 3)
-            tace = np.round(um.tace(labels_np, probs_np, num_bins=30), 3)
-        except Exception as e:
-            if verbose:
-                print("Error calculating ll/ECE/TACE: ", e)
-            ll = 0.0
-            ece = 0.0
-            tace = 0.0
-        test_f1_weighted = np.round(f1_score(labels_np_test, predictions_np_test, average='weighted'), 3).item()
-        test_f1_macro = np.round(f1_score(labels_np_test, predictions_np_test, average='macro'), 3).item()
-        try:
-            test_ll = np.round(log_loss(labels_np_test, probs_np_test, labels=np.arange(num_classes_local_test)), 3)
-            test_ece = np.round(um.ece(labels_np_test, probs_np_test, num_bins=30), 3)
-            test_tace = np.round(um.tace(labels_np_test, probs_np_test, num_bins=30), 3)
-        except Exception as e:
-            if verbose:
-                print("Error calculating ll/ECE/TACE: ", e)
-            test_ll = 0.0
-            test_ece = 0.0
-            test_tace = 0.0
-        if do_prompt_tuning:
-            predictions_np_nc = np.argmax(probs_np_nc, axis=1)
-            predictions_np_nc_test = np.argmax(probs_np_nc_test, axis=1)
-            nc_f1_weighted = np.round(f1_score(labels_np_nc, predictions_np_nc, average='weighted'), 3).item()
-            nc_f1_macro = np.round(f1_score(labels_np_nc, predictions_np_nc, average='macro'), 3).item()
-            try:
-                if num_classes == 2:
-                    roc_auc_nc = np.round(roc_auc_score(labels_np_nc, probs_np_nc[:, 1], labels=np.arange(num_classes_local_val)), 3).item()
-                    test_roc_auc_nc = np.round(roc_auc_score(labels_np_nc_test, probs_np_nc_test[:, 1], labels=np.arange(num_classes_local_test)), 3).item()
-                else:
-                    roc_auc_nc = np.round(roc_auc_score(labels_np_nc, probs_np_nc, labels=np.arange(num_classes_local_val), multi_class='ovr'), 3).item()
-                    test_roc_auc_nc = np.round(roc_auc_score(labels_np_nc_test, probs_np_nc_test, labels=np.arange(num_classes_local_test), multi_class='ovr'), 3).item()
-            except Exception as e:
-                if verbose:
-                    print("Error calculating ROC AUC: ", e)
-                roc_auc_nc = 0.0
-                test_roc_auc_nc = 0.0
-            try:
-                nc_ll = np.round(log_loss(labels_np_nc, probs_np_nc, labels=np.arange(num_classes_local_val)), 3)
-                nc_ece = np.round(um.ece(labels_np_nc, probs_np_nc, num_bins=30), 3)
-                nc_tace = np.round(um.tace(labels_np_nc, probs_np_nc, num_bins=30), 3)
-            except Exception as e:
-                if verbose:
-                    print("Error calculating ll/ECE/TACE: ", e)
-                nc_ll = 0.0
-                nc_ece = 0.0
-                nc_tace = 0.0
-            nc_test_f1_weighted = np.round(f1_score(labels_np_nc_test, predictions_np_nc_test, average='weighted'), 3).item()
-            nc_test_f1_macro = np.round(f1_score(labels_np_nc_test, predictions_np_nc_test, average='macro'), 3).item()
-            try:
-                nc_test_ll = np.round(log_loss(labels_np_nc_test, probs_np_nc_test, labels=np.arange(num_classes_local_test)), 3)
-                nc_test_ece = np.round(um.ece(labels_np_nc_test, probs_np_nc_test, num_bins=30), 3)
-                nc_test_tace = np.round(um.tace(labels_np_nc_test, probs_np_nc_test, num_bins=30), 3)
-            except Exception as e:
-                if verbose:
-                    print("Error calculating ll/ECE/TACE: ", e)
-                nc_test_ll = 0.0
-                nc_test_ece = 0.0
-                nc_test_tace = 0.0
-        else:
-            nc_f1_weighted = 0
-            nc_f1_macro = 0
-            roc_auc_nc = 0
-            test_roc_auc_nc = 0
-            nc_test_f1_weighted = 0
-            nc_test_f1_macro = 0
-            nc_ll = 0
-            nc_ece = 0
-            nc_tace = 0
-            nc_test_ll = 0
-            nc_test_ece = 0
-            nc_test_tace = 0
-        if verbose:
-            # print("In update ensemble acc, Targets: ", labels_np[:20])
-            print("Ensemble accuracy: ", ens_acc, "Ensemble accuracy (NC): ", ens_acc_nc)
+    
         new_res = {
             "Ens_Val_Accuracy": ens_acc,
             "Ens_Val_Accuracy_NC": ens_acc_nc,
-            "Ens_Val_F1_Weighted": f1_weighted,
-            "Ens_Val_F1_Macro": f1_macro,
-            "Ens_Val_F1_Weighted_NC": nc_f1_weighted,
-            "Ens_Val_F1_Macro_NC": nc_f1_macro,
-            "Ens_Val_Log_Loss": ll,
-            "Ens_Val_Log_Loss_NC": nc_ll,
-            "Ens_Val_ROC_AUC": roc_auc,
-            "Ens_Val_ROC_AUC_NC": roc_auc_nc,
-            "Ens_Val_ECE": ece,
-            "Ens_Val_TACE": tace,
-            "Ens_Val_ECE_NC": nc_ece,
-            "Ens_Val_TACE_NC": nc_tace,
             "Ens_Test_Accuracy": ens_acc_test,
             "Ens_Test_Accuracy_NC": ens_acc_test_nc,
-            "Ens_Test_F1_Weighted": test_f1_weighted,
-            "Ens_Test_F1_Macro": test_f1_macro,
-            "Ens_Test_F1_Weighted_NC": nc_test_f1_weighted,
-            "Ens_Test_F1_Macro_NC": nc_test_f1_macro,
-            "Ens_Test_Log_Loss": test_ll,
-            "Ens_Test_Log_Loss_NC": nc_test_ll,
-            "Ens_Test_ROC_AUC": test_roc_auc,
-            "Ens_Test_ROC_AUC_NC": test_roc_auc_nc,
-            "Ens_Test_ECE": test_ece,
-            "Ens_Test_TACE": test_tace,
-            "Ens_Test_ECE_NC": nc_test_ece,
-            "Ens_Test_TACE_NC": nc_test_tace
         }
         return new_res
 
@@ -1171,13 +1056,31 @@ def train(args, dataset, criterion, encoder_generator, emsize=200, nhid=200, nla
         epochs = 1
         backup_unif_bptt = extra_prior_kwargs_dict.get('uniform_bptt', False)
         extra_prior_kwargs_dict['uniform_bptt'] = True
-        bptt_intervals = ([128, 256, 512, 1024, 2048, 4096, 8192, 16384, 32768, 65536])
+        bptt_intervals = [
+            128,
+            256,
+            512,
+            1024,
+            2048,
+            4096,
+            8192,
+            16384,
+            32768,
+            65536,
+        ]
         STOP = False
         for bptt_idx, bptt in enumerate(bptt_intervals):
             if verbose:
                 print("Trying bptt: ", bptt)
             try:
-                dl, bptt = get_train_dataloader(dl.dataset, bptt=bptt, shuffle=True, num_workers=n_workers, drop_last=True, agg_k_grads=aggregate_k_gradients)
+                dl, bptt = get_train_dataloader(
+                    dl.dataset,
+                    bptt=bptt,
+                    shuffle=True,
+                    num_workers=n_workers,
+                    drop_last=True,
+                    agg_k_grads=aggregate_k_gradients,
+                )
                 with torch.no_grad():
                     total_loss, total_positional_losses, time_to_get_batch, forward_time, step_time, nan_share, ignore_share = train_epoch(model, optimizer, False, eval_model=eval_model, bptt_search=True)
             except RuntimeError as e:
@@ -1301,7 +1204,13 @@ def train(args, dataset, criterion, encoder_generator, emsize=200, nhid=200, nla
                 extra_prior_kwargs_dict['do_impute'] = np.random.choice([True, False])
                 extra_prior_kwargs_dict['ohe'] = np.random.choice([True, False])
                 extra_prior_kwargs_dict['preprocess_type'] = np.random.choice(['none', 'power_all', 'robust_all', 'quantile_all'])
-                X, y, X_val, y_val, X_test, y_test, invert_perm_map, steps_per_epoch, num_classes, label_weights, train_ds, val_ds, test_ds = make_datasets(extra_prior_kwargs_dict, do_permute=not_zs, bptt=bptt, steps_per_epoch=steps_per_epoch, is_wrapper=is_wrapper)
+                X, y, X_val, y_val, X_test, y_test, invert_perm_map, steps_per_epoch, num_classes, label_weights, train_ds, val_ds, test_ds = make_datasets(
+                    extra_prior_kwargs_dict, 
+                    do_permute=not_zs, 
+                    bptt=bptt,
+                    steps_per_epoch=steps_per_epoch, 
+                    is_wrapper=is_wrapper
+                )
                 old_bptt = bptt
                 dl, val_dl, test_dl, bptt, data_for_fitting  = make_dataloaders(bptt=bptt)
                 if old_bptt != bptt:
@@ -1377,11 +1286,13 @@ def train(args, dataset, criterion, encoder_generator, emsize=200, nhid=200, nla
                 labels_np_nc = test_targets[2]
                 probs_np_nc_test = output_dict[0][3]
                 labels_np_nc_test = test_targets[3]
-            best_results = ensembling_acc[i] = update_ensemble_acc(boosting_accs[0], 
-                                                    boosting_accs[2], 
-                                                    boosting_accs[1], 
-                                                    boosting_accs[3],
-                                                    len(np.unique(labels_np)))
+            best_results = ensembling_acc[i] = update_ensemble_acc(
+                boosting_accs[0],
+                boosting_accs[2],
+                boosting_accs[1],
+                boosting_accs[3],
+                len(np.unique(labels_np))
+            )
             cur_ens_acc = ensembling_acc[i][topk_ens_key]
             if cur_ens_acc > best_ens_acc:
                 ens_patience = 0

@@ -215,7 +215,18 @@ def get_meta_gp_prior_hyperparameters(config):
     return config
 
 
-def get_model(config, device, should_train=True, verbose=False, state_dict=None, epoch_callback=None, is_wrapper = False, x_wrapper = None, y_wrapper = None, cat_idx = None):
+def get_model(
+    config, 
+    device, 
+    should_train=True, 
+    verbose=False, 
+    state_dict=None, 
+    epoch_callback=None, 
+    is_wrapper = False, 
+    x_wrapper = None, 
+    y_wrapper = None, 
+    cat_idx = None,
+):
     extra_kwargs = {}
     n_features = config['max_features']
 
@@ -264,14 +275,15 @@ def get_model(config, device, should_train=True, verbose=False, state_dict=None,
 
             split_indeces = [train_indices, val_indices]
 
-            dataset = TabularDataset(name = "user_dataset",
-                                            X = x_wrapper,
-                                            y = y_wrapper,
-                                            cat_idx = cat_idx,
-                                            target_type = target_type,
-                                            num_classes = num_classes,
-                                            split_indeces = [train_indices, val_indices]
-                                        )
+            dataset = TabularDataset(
+                name = "user_dataset",
+                X = x_wrapper,
+                y = y_wrapper,
+                cat_idx = cat_idx,
+                target_type = target_type,
+                num_classes = num_classes,
+                split_indeces = [train_indices, val_indices]
+            )
             prior_hyperparameters = {}
             use_style = False
         else:
@@ -362,48 +374,48 @@ def get_model(config, device, should_train=True, verbose=False, state_dict=None,
         loss = Losses.ce(config['num_classes'])
     
     epkd = {
-                        'prior_type': config['prior_type']
-                        , 'num_features': n_features
-                        , 'split': config['split']
-                        , 'hyperparameters': prior_hyperparameters
-                        , 'num_eval_fitting_samples': config.get('num_eval_fitting_samples', 1000)
-                        , 'val_subset_size' : config.get('val_subset_size', 10)
-                        , 'batch_size_per_gp_sample': config.get('batch_size_per_gp_sample', None)
-                        , 'prompt_tuning': config.get('prompt_tuning', False)
-                        , 'tuned_prompt_size': config.get('tuned_prompt_size', 0)
-                        , 'model_string': config.get('model_string', datetime.now().strftime("%m_%d_%Y_%H_%M_%S"))
-                        , 'save_path': config.get('base_path', '.')
-                        , 'rand_seed': config.get('rand_seed', 135798642)
-                        , 'summerize_after_prep': config.get('summerize_after_prep', False)
-                        , 'average_ensemble': config.get('average_ensemble', False)
-                        , 'permute_feature_position_in_ensemble': config.get('permute_feature_position_in_ensemble', False)
-                        , 'bagging': config.get('bagging', False)
-                        , 'private_model': config.get('private_model', False)
-                        , 'private_data': config.get('private_data', False)
-                        , 'epsilon': config.get('epsilon', 50)
-                        , 'delta': config.get('delta', 1e-5)
-                        , 'gradnorm': config.get('gradnorm', 1.2)
-                        , 'tuned_prompt_label_balance': config.get('tuned_prompt_label_balance', 'equal')
-                        , 'reseed_data': config.get('reseed_data', False)
-                        , 'zs_eval_ensemble': config.get('zs_eval_ensemble', 0)
-                        , 'pad_features': config.get('pad_features', False)
-                        , 'early_stopping_patience': config.get('early_stopping_patience', 2)
-                        , 'num_classes' : config.get('num_classes', 2)
-                        , 'uniform_bptt': config.get('uniform_bptt', False)
-                        , 'min_batches_per_epoch': config.get('min_batches_per_epoch', 10)
-                        , 'keep_topk_ensemble': config.get('keep_topk_ensemble', 0)
-                        , 'topk_key': config.get('topk_key', 'Val_Accuracy')
-                        , 'do_preprocess' : config.get('do_preprocess', False)
-                        , 'preprocess_type' : config.get('preprocess_type', 'none')
-                        , 'wandb_log': config.get('wandb_log', False)
-                        , 'shuffle_every_epoch': config.get('shuffle_every_epoch', False)
-                        , 'real_data_qty': config.get('real_data_qty', False)
-                        , 'max_time': config.get('max_time', 0)
-                        , 'kl_loss': config.get('kl_loss', False)
-                        , 'subset_rows_bagging': config.get('subset_rows_bagging', 0)
-                        , 'bptt_search' : config.get('bptt_search', False)
-                        , 'workers' : config.get('workers', 1)
-                        , **extra_kwargs
+        'prior_type': config['prior_type'],
+        'num_features': n_features,
+        'split': config['split'],
+        'hyperparameters': prior_hyperparameters,
+        'num_eval_fitting_samples': config.get('num_eval_fitting_samples', 1000),
+        'val_subset_size' : config.get('val_subset_size', 10),
+        'batch_size_per_gp_sample': config.get('batch_size_per_gp_sample', None),
+        'prompt_tuning': config.get('prompt_tuning', False),
+        'tuned_prompt_size': config.get('tuned_prompt_size', 0),
+        'model_string': config.get('model_string', datetime.now().strftime("%m_%d_%Y_%H_%M_%S")),
+        'save_path': config.get('base_path', '.'),
+        'rand_seed': config.get('rand_seed', 135798642),
+        'summerize_after_prep': config.get('summerize_after_prep', False),
+        'average_ensemble': config.get('average_ensemble', False),
+        'permute_feature_position_in_ensemble': config.get('permute_feature_position_in_ensemble', False),
+        'bagging': config.get('bagging', False),
+        'private_model': config.get('private_model', False),
+        'private_data': config.get('private_data', False),
+        'epsilon': config.get('epsilon', 50),
+        'delta': config.get('delta', 1e-5),
+        'gradnorm': config.get('gradnorm', 1.2),
+        'tuned_prompt_label_balance': config.get('tuned_prompt_label_balance', 'equal'),
+        'reseed_data': config.get('reseed_data', False),
+        'zs_eval_ensemble': config.get('zs_eval_ensemble', 0),
+        'pad_features': config.get('pad_features', False),
+        'early_stopping_patience': config.get('early_stopping_patience', 2),
+        'num_classes' : config.get('num_classes', 2),
+        'uniform_bptt': config.get('uniform_bptt', False),
+        'min_batches_per_epoch': config.get('min_batches_per_epoch', 10),
+        'keep_topk_ensemble': config.get('keep_topk_ensemble', 0),
+        'topk_key': config.get('topk_key', 'Val_Accuracy'),
+        'do_preprocess' : config.get('do_preprocess', False),
+        'preprocess_type' : config.get('preprocess_type', 'none'),
+        'wandb_log': config.get('wandb_log', False),
+        'shuffle_every_epoch': config.get('shuffle_every_epoch', False),
+        'real_data_qty': config.get('real_data_qty', False),
+        'max_time': config.get('max_time', 0),
+        'kl_loss': config.get('kl_loss', False),
+        'subset_rows_bagging': config.get('subset_rows_bagging', 0),
+        'bptt_search' : config.get('bptt_search', False),
+        'workers' : config.get('workers', 1),
+        **extra_kwargs
     }
 
     if config['boosting'] or config.get('uniform_bptt', False):
@@ -411,44 +423,46 @@ def get_model(config, device, should_train=True, verbose=False, state_dict=None,
     else:
         sep_samp = get_uniform_single_eval_pos_sampler(config.get('max_eval_pos', config['bptt']), min_len=config.get('min_eval_pos', 0))
         
-    model, results_dict, data_for_fitting, test_loader = train(args
-                  , dataloader
-                  , loss
-                  , encoder
-                  , style_encoder_generator = encoders.StyleEncoder if use_style else None
-                  , emsize=config['emsize']
-                  , nhead=config['nhead']
-                  # For unsupervised learning change to NanHandlingEncoder
-                  , y_encoder_generator= encoders.get_Canonical(config['max_num_classes']) if config.get('canonical_y_encoder', False) else encoders.Linear
-                  , pos_encoder_generator=None
-                  , batch_size=config['batch_size']
-                  , nlayers=config['nlayers']
-                  , nhid=config['emsize'] * config['nhid_factor']
-                  , epochs=epochs
-                  , warmup_epochs=config['warmup_epochs']
-                  , bptt=config['bptt']
-                  , gpu_device=device
-                  , dropout=config['dropout']
-                  , steps_per_epoch=config['num_steps']
-                  , single_eval_pos_gen=sep_samp
-                  , load_weights_from_this_state_dict=state_dict
-                  , validation_period=config['validation_period']
-                  , aggregate_k_gradients=config['aggregate_k_gradients']
-                  , recompute_attn=config['recompute_attn']
-                  , epoch_callback=epoch_callback
-                  , bptt_extra_samples = config['bptt_extra_samples']
-                  , extra_prior_kwargs_dict=epkd
-                  , lr=config['lr']
-                  , verbose=config['verbose']
-                  , boosting = config['boosting']
-                  , boosting_lr = config.get('boosting_lr', 1e-3)
-                  , boosting_n_iters = config.get('boosting_n_iters', 10)
-                  , rand_init_ensemble = config.get('rand_init_ensemble', False)
-                  , do_concat = config.get('concat_method', '')
-                  , weight_decay=config.get('weight_decay', 0.0)
-                  , is_wrapper = is_wrapper
-                  , x_wrapper = x_wrapper, 
-                  y_wrapper = y_wrapper)
+    model, results_dict, data_for_fitting, test_loader = train(
+        args, 
+        dataloader, 
+        loss, 
+        encoder,
+        style_encoder_generator = encoders.StyleEncoder if use_style else None,
+        emsize=config['emsize'],
+        nhead=config['nhead'],
+        # For unsupervised learning change to NanHandlingEncoder
+        y_encoder_generator= encoders.get_Canonical(config['max_num_classes']) if config.get('canonical_y_encoder', False) else encoders.Linear,
+        pos_encoder_generator=None,
+        batch_size=config['batch_size'],
+        nlayers=config['nlayers'],
+        nhid=config['emsize'] * config['nhid_factor'],
+        epochs=epochs,
+        warmup_epochs=config['warmup_epochs'],
+        bptt=config['bptt'],
+        gpu_device=device,
+        dropout=config['dropout'],
+        steps_per_epoch=config['num_steps'],
+        single_eval_pos_gen=sep_samp,
+        load_weights_from_this_state_dict=state_dict,
+        validation_period=config['validation_period'],
+        aggregate_k_gradients=config['aggregate_k_gradients'],
+        recompute_attn=config['recompute_attn'],
+        epoch_callback=epoch_callback,
+        bptt_extra_samples = config['bptt_extra_samples'],
+        extra_prior_kwargs_dict=epkd,
+        lr=config['lr'],
+        verbose=config['verbose'],
+        boosting = config['boosting'],
+        boosting_lr = config.get('boosting_lr', 1e-3),
+        boosting_n_iters = config.get('boosting_n_iters', 10),
+        rand_init_ensemble = config.get('rand_init_ensemble', False),
+        do_concat = config.get('concat_method', ''),
+        weight_decay=config.get('weight_decay', 0.0),
+        is_wrapper = is_wrapper,
+        x_wrapper = x_wrapper, 
+        y_wrapper = y_wrapper
+    )
     return model, results_dict, data_for_fitting, test_loader
 
     return model, results_dict

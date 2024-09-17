@@ -1,3 +1,5 @@
+from mothernet.prediction.tabpfn import TabPFNClassifier
+
 import argparse
 import os
 from pathlib import Path
@@ -66,8 +68,9 @@ def run_eval(dataset_name, base_path, max_time):
     # This is the metric used for fitting the models
     metric_used = tabular_metrics.auc_metric
     # methods = ['random_forest', 'lightgbm', 'cocktail', 'logistic', 'gp', 'knn', 'catboost', 'xgb', 'autosklearn2', 'autogluon']
-    methods = ['autogluon']
+    # methods = ['autogluon']
     # methods = ['knn']
+    methods = ['tabflex']
     device = '0'
 
     config = dict()
@@ -137,9 +140,8 @@ def run_eval(dataset_name, base_path, max_time):
             config['split'] = i
             config['n_configs'] = 100
             model_string = f"{dataset_name}" + '_' + f"{method}" + '_split_' + f"{i}" + '_' + datetime.now().strftime("%m_%d_%Y_%H_%M_%S")
-            wandb.login(key=get_wandb_api_key())
             wandb.init(config=config, name=model_string, group='baselines',
-                project='tt-dp', entity='nyu-dice-lab')
+                project='tunetables', entity='mothernet')
             num_classes = len(np.unique(y_train))
 
             # if num_classes == 2 and method == 'lightgbm':

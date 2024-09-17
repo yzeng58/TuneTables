@@ -24,6 +24,7 @@ from sklearn.preprocessing import LabelEncoder
 from pathlib import Path
 import pickle
 import io
+import pdb
 
 class CustomUnpickler(pickle.Unpickler):
     def find_class(self, module, name):
@@ -605,7 +606,7 @@ class TuneTablesClassifier(BaseEstimator, ClassifierMixin):
     def get_default_config(self, args):
         # Hardcoded parameters
         args.resume = f'{root_dir}/models/prior_diff_real_checkpoint_n_0_epoch_42.cpkt'
-        args.save_path = './logs'
+        args.save_path = f'{root_dir}/tunetables/logs'
         args.prior_type = 'real'
         args.data_path = "" #'/home/benfeuer/TabPFN-pt/tabpfn/data/openml__colic__27'
         args.prompt_tuning = True
@@ -674,14 +675,30 @@ class TuneTablesClassifier(BaseEstimator, ClassifierMixin):
         self.model, self.data_for_fitting, _ = train_function(self.config.copy(), 0, self.model_string, is_wrapper = True, x_wrapper = x, y_wrapper = y, cat_idx = cat_idx)
         self.eval_pos = self.data_for_fitting[0].shape[0]
         self.num_classes = len(np.unique(y))
+        y = y_ = column_or_1d(y, warn=True)
+        cls = np.unique(y_)
+        self.classes_ = cls
 
     def predict(self, x, cat_idx = []):
 
         assert isinstance(x, np.ndarray), "x must be a numpy array"
         
         self.config['epochs'] = 0 # only process data
-        _, _, test_loader = train_function(self.config, 0, self.model_string, is_wrapper = True, x_wrapper = x, y_wrapper = np.random.randint(self.num_classes, size=x.shape[0]), cat_idx = cat_idx)
-        out = real_data_eval_out(r_model=self.model, cl=self.eval_pos, train_data=self.data_for_fitting, val_dl=test_loader)
+        _, _, test_loader = train_function(
+            self.config, 
+            0, 
+            self.model_string, 
+            is_wrapper = True, 
+            x_wrapper = x, 
+            y_wrapper = np.random.randint(self.num_classes, size=x.shape[0]), 
+            cat_idx = cat_idx
+        )
+        out = real_data_eval_out(
+            r_model=self.model,
+            cl=self.eval_pos,
+            train_data=self.data_for_fitting,
+            val_dl=test_loader,
+        )
         return out[1]
 
     def predict_proba(self, x, cat_idx = []):
@@ -689,6 +706,21 @@ class TuneTablesClassifier(BaseEstimator, ClassifierMixin):
         assert isinstance(x, np.ndarray), "x must be a numpy array"
         
         self.config['epochs'] = 0 # only process data
-        _, _, test_loader = train_function(self.config, 0, self.model_string, is_wrapper = True, x_wrapper = x, y_wrapper = np.random.randint(self.num_classes, size=x.shape[0]), cat_idx = cat_idx)
-        out = real_data_eval_out(r_model=self.model, cl=self.eval_pos, train_data=self.data_for_fitting, val_dl=test_loader, return_probs=True)
+        _, _, test_loader = train_function(
+            self.config, 
+            0, 
+            self.model_string, 
+            is_wrapper = True, 
+            x_wrapper = x, 
+            y_wrapper = np.random.randint(self.num_classes, size=x.shape[0]), 
+            cat_idx = cat_idx
+        )
+        out = real_data_eval_out(
+            r_model=self.model, 
+            cl=self.eval_pos, 
+            train_data=self.data_for_fitting, 
+            val_dl=test_loader, 
+            return_probs=True,
+            num_classes=self.num_classes,
+        )
         return out[1]

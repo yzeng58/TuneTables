@@ -1,8 +1,10 @@
+from mothernet.prediction.tabpfn import TabPFNClassifier
+
 import sys
 tabpfn_path = '../../'
 sys.path.insert(0, tabpfn_path)
 
-import pandas
+import pandas, pdb
 try:
     from catboost import CatBoostClassifier, Pool
     import xgboost as xgb
@@ -246,7 +248,17 @@ def preprocess_impute(x, y, test_x, test_y, impute, one_hot, standardize, cat_fe
 import torch
 import random
 from tqdm import tqdm
-def transformer_metric(x, y, test_x, test_y, cat_features, metric_used, max_time=300, device='cpu', N_ensemble_configurations=3, classifier=None):
+def transformer_metric(
+    x, 
+    y, 
+    test_x, 
+    test_y, 
+    cat_features, 
+    metric_used, 
+    max_time=300, 
+    device='cpu', 
+    N_ensemble_configurations=3, 
+    classifier=None):
     from tunetables.scripts.transformer_prediction_interface import TabPFNClassifier
 
     if classifier is None:
@@ -259,6 +271,54 @@ def transformer_metric(x, y, test_x, test_y, cat_features, metric_used, max_time
 
     return metric, pred, None
 
+def tabflex_metric(
+    x, 
+    y, 
+    test_x, 
+    test_y, 
+    cat_features, 
+    metric_used, 
+    max_time=300, 
+    device='cuda', 
+    N_ensemble_configurations=3, 
+    classifier=None,
+    **kwargs,
+):
+    if x.shape[0] >= 50000 and x.shape[1] <= 100:
+        classifier = TabPFNClassifier(
+            device='cuda', 
+            model_string = f'ssm_tabpfn_b4_largedatasetTrue_modellinear_attention_nsamples50000_08_01_2024_22_05_50',
+            N_ensemble_configurations=1,
+            epoch = '110', 
+        )
+    elif x.shape[1] > 100 or (x.shape[1] / x.shape[0] >= 0.2 and x.shape[0] >= 3000):
+        classifier = TabPFNClassifier(
+            device='cuda', 
+            model_string = f'ssm_tabpfn_b4_maxnumclasses100_modellinear_attention_numfeatures1000_n1024_validdatanew_warm_08_23_2024_19_25_40',
+            N_ensemble_configurations=3,
+            epoch = '1410',
+        )
+    else:
+        classifier = TabPFNClassifier(
+            device='cuda', 
+            model_string = f'ssm_tabpfn_modellinear_attention_08_28_2024_19_00_44',
+            N_ensemble_configurations=3,
+            epoch = '1210',
+        )
+        
+        
+    with torch.no_grad():
+        if x.shape[1] > 1000: 
+            random_proj = torch.nn.Linear(x.shape[1], 1000)
+            x = random_proj(x)
+            test_x = random_proj(test_x)
+
+    classifier.fit(x, y)
+    pred = classifier.predict_proba(test_x)
+
+    metric = metric_used(test_y, pred)
+
+    return metric, pred, None
 ## Auto Gluon
 # WARNING: Crashes for some predictors for regression
 def autogluon_metric(x, y, test_x, test_y, cat_features, metric_used, max_time=300):
@@ -1416,17 +1476,20 @@ def mlp_acc(x, y, test_x, test_y, hyperparameters):
     acc = (pred_y == test_y).float().mean()
     return acc
 
-clf_dict = {'gp': gp_metric
-, 'transformer': transformer_metric
-, 'random_forest': random_forest_metric
-                , 'knn': knn_metric
-                , 'catboost': catboost_metric
-                , 'tabnet': tabnet_metric
-                , 'xgb': xgb_metric
-                , 'lightgbm': lightgbm_metric
-            , 'ridge': ridge_metric
-                , 'logistic': logistic_metric
-           , 'autosklearn': autosklearn_metric
-             , 'autosklearn2': autosklearn2_metric
-            , 'autogluon': autogluon_metric,
-            'cocktail': well_tuned_simple_nets_metric}
+clf_dict = {
+    'gp': gp_metric,
+    'transformer': transformer_metric,
+    'random_forest': random_forest_metric,
+    'knn': knn_metric,
+    'catboost': catboost_metric,
+    'tabnet': tabnet_metric,
+    'xgb': xgb_metric,
+    'lightgbm': lightgbm_metric,
+    'ridge': ridge_metric,
+    'logistic': logistic_metric,
+    'autosklearn': autosklearn_metric,
+    'autosklearn2': autosklearn2_metric,
+    'autogluon': autogluon_metric,
+    'cocktail': well_tuned_simple_nets_metric,
+    'tabflex': tabflex_metric,
+}

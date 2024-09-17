@@ -3,7 +3,7 @@ import json
 from pathlib import Path
 from typing import Optional
 import time
-import warnings
+import warnings, pdb
 
 try:
     import faiss
@@ -43,8 +43,12 @@ class TabDS(Dataset):
         if np.isnan(y).any():
             print("WARNING: NaNs present in y, dropping them")
             nan_mask = ~np.isnan(y)
-            X = X[nan_mask, ...]
-            y = y[nan_mask, ...]
+            # if nan_mask is empty, then we need to raise an error
+            if nan_mask.sum() == 0:
+                y = np.zeros_like(y)
+            else:
+                X = X[nan_mask, ...]
+                y = y[nan_mask, ...]
             print("New X shape: ", X.shape)
             print("New y shape: ", y.shape)
 
@@ -349,7 +353,7 @@ class SubsetMaker(object):
         if split not in ["train", "val", "test"]:
             raise ValueError("split must be 'train', 'val', or 'test'")        
         if split == "train":
-            self.feature_selector = PCA(n_components=self.subset_features)
+            self.feature_selector = PCA(n_components=min(self.subset_features, X.shape[0]))
             print("Fitting pca selector ...")
             timer = time.time()
             X = self.feature_selector.fit_transform(X)
@@ -889,7 +893,7 @@ def get_train_dataloader(ds, bptt=1000, shuffle=True, num_workers=1, drop_last=T
                 n_batches = 10
             else:
                 n_batches = 1
-            bptt = int(ds_len // n_batches)
+            bptt = max(int(ds_len // n_batches), 1)
             dl = DataLoader(
                 ds, batch_size=bptt, shuffle=shuffle, num_workers=num_workers, drop_last=drop_last,
             )
