@@ -312,9 +312,21 @@ def tabflex_metric(
             random_proj = torch.nn.Linear(x.shape[1], 1000)
             x = random_proj(x)
             test_x = random_proj(test_x)
-
+    if x.shape[0] > 100000:
+        selected_indices = np.random.choice(x.shape[0], 100000, replace=False)
+        x = x[selected_indices]
+        y = y[selected_indices]
     classifier.fit(x, y)
-    pred = classifier.predict_proba(test_x)
+    if test_x.shape[0] > 100000:
+        batch_size = 100000
+        pred = []
+        for i in range(0, test_x.shape[0], batch_size):
+            pred.append(classifier.predict_proba(test_x[i:i+batch_size]))
+        if test_x.shape[0] % batch_size != 0:
+            pred.append(classifier.predict_proba(test_x[-(test_x.shape[0] % batch_size):]))
+        pred = torch.cat(pred, dim=0)
+    else:
+        pred = classifier.predict_proba(test_x)
 
     metric = metric_used(test_y, pred)
 
