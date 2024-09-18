@@ -21,7 +21,7 @@ import tempfile
 import random
 import math
 import sklearn
-import os
+import os, pdb
 #from pytorch_tabnet.tab_model import TabNetClassifier, TabNetRegressor
 from sklearn import preprocessing
 from torch import nn
@@ -312,19 +312,19 @@ def tabflex_metric(
             random_proj = torch.nn.Linear(x.shape[1], 1000)
             x = random_proj(x)
             test_x = random_proj(test_x)
+            
     if x.shape[0] > 100000:
         selected_indices = np.random.choice(x.shape[0], 100000, replace=False)
         x = x[selected_indices]
         y = y[selected_indices]
     classifier.fit(x, y)
+    
     if test_x.shape[0] > 100000:
         batch_size = 100000
         pred = []
         for i in range(0, test_x.shape[0], batch_size):
             pred.append(classifier.predict_proba(test_x[i:i+batch_size]))
-        if test_x.shape[0] % batch_size != 0:
-            pred.append(classifier.predict_proba(test_x[-(test_x.shape[0] % batch_size):]))
-        pred = torch.cat(pred, dim=0)
+        pred = np.concatenate(pred, axis=0)
     else:
         pred = classifier.predict_proba(test_x)
 

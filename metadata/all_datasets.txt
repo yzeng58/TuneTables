@@ -1,5 +1,3 @@
-openml__Click_prediction_small__7294
-openml__ecoli__145977
 openml__eeg-eye-state__14951
 openml__elevators__3711
 openml__har__14970
